@@ -1,0 +1,14 @@
+{
+  "name": "sisunautti",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "npx --yes serve@14 -l 8000 .",
+    "test": "vitest run"
+  },
+  "devDependencies": {
+    "astronomy-engine": "^2.1.19",
+    "vitest": "^5.0.5"
+  }
+}
