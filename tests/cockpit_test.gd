@@ -62,7 +62,24 @@ func _ready() -> void:
 	check("tarkkuuden yläraja", BodyTextures.best_width("Maa", 4096) == 4096 and BodyTextures.best_width("Uranus", 8192) == 2048)
 	# Ohjaamonäkymä ja laatutasot
 	var cv: CockpitView = get_parent().ui.cockpit_view
-	check("ohjaamo luotu", cv != null and cv.cabin.screens.size() == 3 and cv.space.bodies.size() == 16)
+	check("ohjaamo luotu", cv != null and cv.cabin.screens.size() == 3 and cv.cabin.monitors.size() == 6 and cv.space.bodies.size() == 16)
+	var facing := true
+	for m: Dictionary in cv.cabin.monitors:
+		var n: Node3D = m.node
+		facing = facing and n.basis.z.dot(-n.position.normalized()) > 0.99
+	check("näytöt katsovat silmään", facing)
+	check("ikkunasta näkyy eteen ja sivulle, ei alas eikä taakse", Cabin.through_window(Vector3(0, 0.2, -1).normalized())
+		and Cabin.through_window(Vector3(-1, 0.2, -0.5).normalized()) and not Cabin.through_window(Vector3(0, -0.5, -1).normalized())
+		and not Cabin.through_window(Vector3(0, 0.1, 1).normalized()))
+	cv.reset_view()
+	cv.zoom_to(2)
+	check("zoomaus keskinäyttöön kaventaa kuvakulmaa", cv.zoom_index == 2 and cv.fov_target < cv.base_fov * 0.5)
+	cv.zoom_out()
+	check("loitonnus palauttaa kuvakulman", cv.zoom_index == -1 and cv.fov_target == cv.base_fov)
+	cv.zoom_by(0.5)
+	cv.zoom_by(100.0)
+	check("vapaa zoomaus rajoissa", cv.fov_target == cv.base_fov)
+	cv.reset_view()
 	cv.apply_quality(Settings.Quality.LOW)
 	check("Matala: 2k-kartat, ei SSAO:ta", cv.space.max_texture == 2048 and not cv.env.ssao_enabled)
 	if not Settings.is_compatibility():

@@ -3,7 +3,7 @@ extends TestCase
 ##   godot -- --cockpitshotstest=/polku/kuviin [--size=1600x900] [--quality=2] [--only=nimi] [--state=tallennus.json]
 ## --state: kuva annetusta tallennuksesta (pelaajan näkymä sellaisenaan ja katse alas), muut näkymät ohitetaan.
 ## Näkymät: laukaisualusta päivällä, Max Q, kiertorata Maan päivä- ja yöpuolen yllä, Mars lähellä, Jupiterin
-## ilmajarrutus, Saturnus renkaineen, Aurinko kohti katsottaessa ja planeetan varjo. Lopuksi mitataan ruutunopeus.
+## ilmajarrutus, Saturnus renkaineen, Aurinko kohti katsottaessa, planeetan varjo ja zoomaus näyttöihin. Lopuksi mitataan ruutunopeus.
 
 const START := 1794614400000.0 # 2026-11-14T00:00:00Z
 
@@ -208,6 +208,15 @@ func _run() -> void:
 		await _frames(3)
 		cv.reset_view()
 		await shot("saturnus", 120)
+	# Zoomaus näyttöihin: keskinäyttö, tutka ja etukamera.
+	if want("zoom"):
+		orbit_at("Maa", t0, sun_angle("Maa", t0, false) + 0.3)
+		await _frames(2)
+		cv.reset_view()
+		for i: int in [2, 0, 4]:
+			cv.zoom_to(i)
+			await shot("zoom-%d" % i, 60)
+		cv.reset_view()
 	# Ruutunopeus: kiertorata Maan yllä, katse Maahan, 5 s.
 	orbit_at("Maa", t0, sun_angle("Maa", t0, false) + 0.3)
 	cv.reset_view()

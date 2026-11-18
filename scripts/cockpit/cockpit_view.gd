@@ -2,7 +2,7 @@ class_name CockpitView
 extends SubViewportContainer
 ## 3D-ohjaamo (web/js/cockpit.js): pelaaja istuu aluksessa ja katsoo ikkunasta ulos. Näkymä on oma SubViewport,
 ## jolla on oma 3D-maailma, ympäristö ja laatutasot. Aluksen asento kääntyy pehmeästi kohti kohdetta, katsetta
-## käännetään raahaamalla, ja ohjaamon valaistus tulee Auringon suunnasta (varjot), lähimmästä kappaleesta
+## käännetään raahaamalla, näyttöä napsauttamalla katse zoomaa siihen (rullalla tai nipistämällä vapaasti), ja ohjaamon valaistus tulee Auringon suunnasta (varjot), lähimmästä kappaleesta
 ## (heijastunut valo), moottorista, näytöistä ja kattovalosta.
 
 const SKY_DAY := Color(0.31, 0.56, 0.82)
@@ -30,12 +30,21 @@ var exhaust: GPUParticles3D
 var smoke: GPUParticles3D
 var sparks: GPUParticles3D
 var tools: HBoxContainer
+var zoom_out_button: Button
+
+## Pystykulma ilman zoomausta, tavoitekulma ja näyttö, johon on zoomattu (−1 = ei mihinkään).
+var base_fov := 70.0
+var fov_target := 70.0
+var zoom_index := -1
+var _look_target: Variant = null # Vector2(yaw, pitch), kun katse kääntyy itsestään
+var _pre_zoom := Vector2(0.0, -0.05)
+var _press_moved := 0.0
+var _bodies := {} # nimi → avaruuden kappale (näyttöjen pallot)
 
 var yaw := 0.0
 var pitch := -0.05
 var _dragging := false
 var _attitude_ready := false
-var _aux_at := 0.0
 var _main_at := 0.0
 var _state: Dictionary = {}
 var _sky_key := Vector4(-1, 0, 0, 0)
@@ -142,7 +151,7 @@ func _build_lights() -> void:
 	screen_glow.light_color = Color(0.37, 0.84, 1.0)
 	screen_glow.light_energy = 0.35
 	screen_glow.omni_range = 1.6
-	screen_glow.position = Vector3(0, -0.3, -0.85)
+	screen_glow.position = Vector3(0, -0.1, -1.0)
 	screen_glow.light_specular = 0.0 # näytöt valaisevat, mutta eivät näy heijastuksena
 	cabin.add_child(screen_glow)
 	engine = OmniLight3D.new()
@@ -258,8 +267,12 @@ func _build_tools() -> void:
 	tools = UiKit.hbox(6)
 	m.add_child(tools)
 	var reset := UiKit.button("Katse eteen", reset_view)
-	reset.tooltip_text = "Palauta katse eteenpäin (raahaa kääntääksesi)"
+	reset.tooltip_text = "Palauta katse eteenpäin (raahaa kääntääksesi, napsauta näyttöä zoomataksesi)"
 	tools.add_child(reset)
+	zoom_out_button = UiKit.button("Loitonna", zoom_out)
+	zoom_out_button.tooltip_text = "Palauta näkymä (Esc)"
+	zoom_out_button.visible = false
+	tools.add_child(zoom_out_button)
 
 
 ## Kääntää katseen scene-suuntaan dir (kuvakaappaukset ja testit).
@@ -291,20 +304,115 @@ func snap_attitude() -> void:
 func reset_view() -> void:
 	yaw = 0.0
 	pitch = -0.05
+	zoom_index = -1
+	_look_target = null
+	fov_target = base_fov
+	camera.fov = base_fov
+
+
+## Zoomaa näyttöön i (cabin.monitors): katse kääntyy sen keskelle ja kuvakulma kapenee niin, että näyttö täyttää kuvan.
+func zoom_to(i: int) -> void:
+	if i < 0 or i >= cabin.monitors.size():
+		return
+	if zoom_index < 0:
+		_pre_zoom = Vector2(yaw, pitch)
+	var m: Dictionary = cabin.monitors[i]
+	var local: Vector3 = cabin.transform * (m.node as Node3D).position
+	var dir := local.normalized()
+	var sz: Vector2 = m.size
+	var aspect := size.x / size.y if size.x > 0.0 and size.y > 0.0 else 16.0 / 9.0
+	var half_h := maxf(sz.y, sz.x / aspect) * 0.5 * 1.1
+	fov_target = rad_to_deg(2.0 * atan(half_h / local.length()))
+	_look_target = Vector2(atan2(-dir.x, -dir.z), asin(clampf(dir.y, -1.0, 1.0)))
+	zoom_index = i
+
+
+## Palauttaa kuvakulman ja katseen zoomausta edeltäneeseen suuntaan.
+func zoom_out() -> void:
+	if zoom_index >= 0:
+		_look_target = _pre_zoom
+	zoom_index = -1
+	fov_target = base_fov
+
+
+## Vapaa zoomaus kertoimella (rulla, nipistys): < 1 lähemmäs.
+func zoom_by(f: float) -> void:
+	fov_target = clampf(fov_target * f, 5.0, base_fov)
+	zoom_index = -1
+
+
+## Näyttö, jonka päällä kohta p (näkymän koordinaatit) on, tai −1.
+func monitor_at(p: Vector2) -> int:
+	for i in cabin.monitors.size():
+		var m: Dictionary = cabin.monitors[i]
+		var node: Node3D = m.node
+		var hs: Vector2 = m.size / 2.0
+		var poly := PackedVector2Array()
+		for c: Vector2 in [Vector2(-1, -1), Vector2(1, -1), Vector2(1, 1), Vector2(-1, 1)]:
+			var wp := node.global_transform * Vector3(c.x * hs.x, c.y * hs.y, 0.0)
+			if camera.is_position_behind(wp):
+				break
+			poly.append(camera.unproject_position(wp))
+		if poly.size() == 4 and Geometry2D.is_point_in_polygon(p, poly):
+			return i
+	return -1
+
+
+func _click(p: Vector2) -> void:
+	var i := monitor_at(p)
+	if i >= 0 and i != zoom_index:
+		zoom_to(i)
+	elif zoom_index >= 0 or fov_target < base_fov - 0.5:
+		zoom_out()
 
 
 func _gui_input(event: InputEvent) -> void:
-	if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT:
-		_dragging = event.pressed
-		accept_event()
+	if event is InputEventMouseButton:
+		var mb := event as InputEventMouseButton
+		if mb.button_index == MOUSE_BUTTON_LEFT:
+			_dragging = mb.pressed
+			if mb.pressed:
+				_press_moved = 0.0
+			elif _press_moved < 8.0:
+				_click(mb.position)
+			accept_event()
+		elif mb.pressed and mb.button_index == MOUSE_BUTTON_WHEEL_UP:
+			zoom_by(0.85)
+			accept_event()
+		elif mb.pressed and mb.button_index == MOUSE_BUTTON_WHEEL_DOWN:
+			zoom_by(1.0 / 0.85)
+			accept_event()
 	elif event is InputEventScreenTouch:
-		_dragging = event.pressed
+		var st := event as InputEventScreenTouch
+		if st.index == 0:
+			_dragging = st.pressed
+			if st.pressed:
+				_press_moved = 0.0
+			elif _press_moved < 12.0:
+				_click(st.position)
+		accept_event()
+	elif event is InputEventMagnifyGesture:
+		zoom_by(1.0 / maxf(0.01, (event as InputEventMagnifyGesture).factor))
 		accept_event()
 	elif (event is InputEventMouseMotion and _dragging) or event is InputEventScreenDrag:
 		var rel: Vector2 = event.relative
-		yaw = clampf(yaw - rel.x * 0.005, -2.6, 2.6)
-		pitch = clampf(pitch - rel.y * 0.005, -1.2, 1.05)
+		_press_moved += rel.length()
+		if _press_moved >= 8.0:
+			# Raahaus kääntää katsetta; zoomattuna hitaammin.
+			var k := 0.005 * camera.fov / base_fov
+			yaw = clampf(yaw - rel.x * k, -2.6, 2.6)
+			pitch = clampf(pitch - rel.y * k, -1.2, 1.05)
+			_look_target = null
+			zoom_index = -1
 		accept_event()
+	elif event is InputEventMouseMotion:
+		mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND if monitor_at((event as InputEventMouseMotion).position) >= 0 else Control.CURSOR_ARROW
+
+
+func _unhandled_key_input(event: InputEvent) -> void:
+	if is_visible_in_tree() and event.is_action_pressed("ui_cancel") and fov_target < base_fov - 0.5:
+		zoom_out()
+		get_viewport().set_input_as_handled()
 
 
 # Pystykulma niin, että kojelaudan näytöt ja kattonäytöt mahtuvat kuvaan myös kapeassa ikkunassa.
@@ -312,7 +420,13 @@ func _fit_fov() -> void:
 	if size.y <= 0.0:
 		return
 	var aspect := size.x / size.y
-	camera.fov = clampf(2.0 * atan(tan(deg_to_rad(48.0)) / aspect) * 180.0 / PI, 65.0, 80.0)
+	var zoomed := fov_target < base_fov - 0.5
+	base_fov = clampf(2.0 * atan(tan(deg_to_rad(48.0)) / aspect) * 180.0 / PI, 65.0, 80.0)
+	if zoom_index >= 0:
+		zoom_to(zoom_index)
+	elif not zoomed:
+		fov_target = base_fov
+		camera.fov = base_fov
 
 
 ## Laatutaso: varjot, SSAO, SSR, reunanpehmennys, partikkelit, karttojen tarkkuus ja ilmakehän näytteet.
@@ -359,8 +473,9 @@ func _process(delta: float) -> void:
 	var px_per_rad := size.y / 2.0 / tan(deg_to_rad(camera.fov) / 2.0)
 	space.update(ship_km, t, px_per_rad)
 	_attitude(s, delta)
-	# Katse ja tärinä: nopeaa värinää, hitaampaa heiluntaa ja pientä kiertoa.
-	var rumble := clampf(float(s.shake), 0.0, 1.0)
+	_zoom_step(delta)
+	# Katse ja tärinä: nopeaa värinää, hitaampaa heiluntaa ja pientä kiertoa (zoomattuna vähemmän).
+	var rumble := clampf(float(s.shake), 0.0, 1.0) * camera.fov / base_fov
 	var tt := Time.get_ticks_msec() / 1000.0
 	var jitter := func(k: float) -> float: return (randf() - 0.5) * k * rumble
 	head.basis = Basis.from_euler(Vector3(pitch, yaw, 0.0), EULER_ORDER_YXZ) * Basis.from_euler(Vector3(jitter.call(0.014), jitter.call(0.01), jitter.call(0.012)))
@@ -370,6 +485,19 @@ func _process(delta: float) -> void:
 	_effects(s)
 	_screens(s)
 	frame_ms = (Time.get_ticks_usec() - t0) / 1000.0
+
+
+# Zoomaus ja katseen kääntö kohti zoomattua näyttöä pehmeästi.
+func _zoom_step(delta: float) -> void:
+	var k := minf(1.0, delta * 7.0)
+	if _look_target != null:
+		var t: Vector2 = _look_target
+		yaw = lerp_angle(yaw, t.x, k)
+		pitch = lerpf(pitch, t.y, k)
+		if absf(angle_difference(yaw, t.x)) < 1e-4 and absf(pitch - t.y) < 1e-4:
+			_look_target = null
+	camera.fov = lerpf(camera.fov, fov_target, k)
+	zoom_out_button.visible = fov_target < base_fov - 0.5
 
 
 # Aluksen asento: nokka kohteeseen (aim) tai annettuun suuntaan (nose, up), käännös pehmeästi.
@@ -428,7 +556,7 @@ func _lighting(s: Dictionary) -> void:
 	var view_inv := camera.global_transform.basis.inverse()
 	var sun_view := view_inv * space.sun_dir
 	cabin.glass_material.set_shader_parameter("sun_dir_view", sun_view)
-	var through := _through_window(sun_local)
+	var through := Cabin.through_window(sun_local)
 	cabin.glass_material.set_shader_parameter("sun_visible", space.sunlit * (1.0 if through else 0.0) * (1.0 - sky))
 	var vis := 0.0
 	var sun_uv := Vector2(-1, -1)
@@ -443,13 +571,6 @@ func _lighting(s: Dictionary) -> void:
 	flare_mat.set_shader_parameter("intensity", vis * (0.6 if quality >= 1 else 0.4))
 	flare_mat.set_shader_parameter("glare", pow(look, 60.0) * vis)
 	flare_mat.set_shader_parameter("aspect", size.x / maxf(1.0, size.y))
-
-
-# Näkyykö suunta (aluksen koordinaateissa) ikkunasta: etulasi kaaren sisällä ja kylkilasit.
-func _through_window(d: Vector3) -> bool:
-	if d.z < -0.25 and d.y > -0.32:
-		return true
-	return absf(d.x) > 0.55 and d.y > -0.3 and d.y < 0.75 and d.z < 0.35
 
 
 func _effects(s: Dictionary) -> void:
@@ -474,7 +595,8 @@ func _effects(s: Dictionary) -> void:
 	cabin.set_light("vaikutuspiiri", 1.0 if f != null and float(s.t) >= float(f.soi) else 0.1)
 	cabin.set_light("suunta", 1.0 if s.get("aim") != null or s.get("nose") != null else 0.1)
 	var lever := cabin.throttle.get_node("Vipu") as Node3D
-	lever.rotation.x = lerpf(lever.rotation.x, -0.6 * thrust, 0.1)
+	lever.rotation.x = lerpf(lever.rotation.x, -0.3 * thrust, 0.1)
+	cabin.stick.rotation = Vector3((randf() - 0.5) * 0.04, 0.0, (randf() - 0.5) * 0.04) * float(s.shake)
 
 
 func _screens(s: Dictionary) -> void:
@@ -485,8 +607,22 @@ func _screens(s: Dictionary) -> void:
 		for i in 3:
 			var sc: Array = list[i]
 			cabin.screens[i].set_main(sc[0], sc[1], sc[2] if sc.size() > 2 else null)
-	if now - _aux_at > 500:
-		_aux_at = now
-		cabin.nav_screen.set_nav({"t": s.t, "ship": s.ship.r, "aim": s.get("aim")})
-		var engine_text := "poltto" if float(s.thrust) > 0.05 else "valmius"
-		cabin.systems_screen.set_systems({"fuel": s.fuel, "warp": s.warp, "aim": s.get("aim"), "engine": engine_text})
+	var aim: Variant = s.get("aim")
+	var data := {"t": s.t, "ship": s.ship.r, "aim": aim, "fuel": s.fuel, "thrust": float(s.thrust), "warp": s.warp,
+		"engine": "poltto" if float(s.thrust) > 0.05 else "valmius"}
+	# Etukamera ja hologrammi näyttävät kohteen (ilman kohdetta Auringon).
+	var name: String = aim if aim != null else "Aurinko"
+	if _bodies.is_empty():
+		for b: Dictionary in space.bodies:
+			_bodies[b.name] = b
+	var body: Dictionary = _bodies.get(name, {})
+	var tex: Texture2D = null
+	var color := Color(1.0, 0.85, 0.5)
+	if not body.is_empty():
+		tex = (body.mat as ShaderMaterial).get_shader_parameter("albedo_tex")
+		color = body.color
+	for m: Dictionary in cabin.monitors:
+		var screen: CockpitScreen = m.screen
+		screen.set_data(data)
+		screen.set_globe(name, tex, color)
+		screen.tick()
