@@ -42,16 +42,20 @@ tools/run_tests.sh          # ikkunattomat testit, esim. tools/run_tests.sh sett
   Teema on selainversion väreissä (`ui/theme.tres`, luodaan komennolla `godot --headless -s tools/make_theme.gd`).
   Näppäimet: 1–8 aikakiihdytys, + ja − zoomaus, P sivupaneeli, F11 koko näyttö. Kartan zoomaus myös hiiren rullalla ja
   nipistämällä.
-- 3D-ohjaamo (`scripts/cockpit/`, varjostimet `shaders/`): sisätila on rakennettu koodissa (panoraamaikkuna raskaine
-  kehyksineen ja valolistoineen, kaareva kojelauta viisine näyttöineen ja painikeriveineen, keskikonsoli pikkunäyttöineen,
-  ohjainsauva ja tehovipu lentäjän käsineen, istuimen niskatuki, sivukonsolit) PBR-materiaalein: kulunut metalli on
-  varjostin, jossa on naarmut, levyjen saumat ja niitit normaali- ja karheuskarttoina. Kiinteät osat kootaan
-  materiaaleittain yhdeksi verkoksi. Näytöt (tutka, aluskaavio, tähtäin, järjestelmät, etukamera ja pikkunäyttö) ovat
-  hehkuvia `SubViewport`-tekstuureja (1024 × 576), jotka piirretään uudelleen enintään 20 kertaa sekunnissa; etukamera ja
-  järjestelmänäytön hologrammi näyttävät kohteen pinnan pyörivänä pallona (`shaders/globe.gdshader`). Näyttöä
-  napsauttamalla katse kääntyy siihen ja kuvakulma kapenee niin, että näyttö täyttää kuvan; uusi napsautus, Esc tai
-  Loitonna palauttaa näkymän. Rullalla ja nipistämällä zoomataan vapaasti. Merkkivalot ja tehovipu seuraavat pelin
-  tilaa, ja ikkunan lasissa on likaa ja naarmuja, jotka
+- 3D-ohjaamo (`scripts/cockpit/`, varjostimet `shaders/`): etuseinä on ohjaamon kuva (`assets/cockpit/ohjaamo.png`)
+  täsmälleen kuvan kuvakulmassa (vaakakulma noin 95°). Koska kamera vain kääntyy paikallaan, tasainen kuva näkyy oikein
+  joka suuntaan katsottaessa. Kuva piirretään 2D-kerroksena 3D-näkymän päälle (`shaders/cockpit_overlay.gdshader`):
+  jokaiselle pikselille lasketaan katsesuunta ja siitä kohta kuvassa, joten kuvan värit säilyvät ilman sävykartoitusta.
+  Kuvan ikkuna-alue on läpinäkyvä (alfakanava, ääriviiva `Cabin.WINDOW`), joten avaruus näkyy sen läpi, ja kuvan
+  näyttöjen päälle piirretään pelin näytöt projektiivisella kuvauksella (kulmat kuvasta, `Cabin.MONITORS`). Kuvan
+  reunojen yli katsottaessa jatkuu koodissa rakennettu tumma sisätila (seinät, katto, lattia) PBR-materiaalein:
+  kulunut metalli on varjostin, jossa on naarmut, levyjen saumat ja niitit. Näytöt (tutka, aluskaavio, tähtäin,
+  järjestelmät, etukamera ja pikkunäyttö) ovat `SubViewport`-tekstuureja kuvan näyttöjen muodossa (leveys 1024),
+  jotka piirretään uudelleen enintään 20 kertaa sekunnissa; etukamera ja järjestelmänäytön hologrammi näyttävät
+  kohteen pinnan pyörivänä pallona (`shaders/globe.gdshader`). Näyttöä napsauttamalla katse kääntyy siihen ja
+  kuvakulma kapenee niin, että näyttö täyttää kuvan; uusi napsautus, Esc tai Loitonna palauttaa näkymän. Rullalla
+  ja nipistämällä zoomataan vapaasti. Moottorin ja plasman hehku sävyttää ohjaamon kuvaa, ja ikkunan lasissa on
+  likaa ja naarmuja, jotkatilaa, ja ikkunan lasissa on likaa ja naarmuja, jotka
   Aurinko sytyttää häikäisyksi. Avaruudessa ovat kirkkaat tähdet HDR-pisteinä ja Linnunrata taustana, Auringon
   HDR-kiekko hehkuineen ja linssiheijastus (ohjaamon rakenteet peittävät sen syvyyspuskurin perusteella), planeettojen
   ja kuiden pintakartat (2k, lähellä 4k tai 8k), ilmakehän sironta varjostimella, Maan erillinen pilvikerros,
@@ -96,7 +100,7 @@ peli, jossa lähdetään raketilla Maan pinnalta kiertoradalle ja sieltä muille
 - - **Tutkiminen ja lokikirja**: perillä jarrutetaan kiertoradalle (jos polttoaine ei riitä, alus ohittaa planeetan ja jää Auringon kiertoradalle). Planeetan tietokortissa ovat koko, massa, painovoima, päivän ja vuoden pituus, lämpötila, kaasukehä ja kuut. Vuorokauden kartoituksen jälkeen planeetta on tutkittu, sen faktat paljastuvat ja polttoaine täydennetään. Lokikirjassa ovat lennot, tutkitut planeetat (x/8), kokonaislentoaika, kuljettu matka ja huippunopeus.
 - - **Kurssikorjaukset**: lennon aikana moottoria voi polttaa eteen, taakse, sisään tai ulos (10 m/s–1 km/s). Ennuste kertoo ennen polttoa, osuuko alus kohteen vaikutuspiiriin vai ohittaako se kohteen, ja uusi rata näkyy kartalla. Automaattinen korjaus laskee reitin takaisin kohteeseen.
 - - **Linkous, kuut ja alukset**: reittihaku ehdottaa myös yhden painovoimalinkouksen reittejä (esim. Maa → Venus → Merkurius), kun ne ovat suoraa lentoa halvempia tai nopeampia. Kohteina ovat myös Kuu, Phobos, Io, Europa, Ganymedes, Titan, Enceladus ja Triton, joihin lennetään emoplaneetan kiertoradalta, ja niillä on omat tietokorttinsa. Maan kiertoradalla voi vaihtaa alusta: kemiallinen raketti (14 km/s), ydinlämpöraketti (22 km/s, vetyä vain Maasta ja kaasujättiläisiltä) tai ionialus (45 km/s, mutta lähtö ja jarrutus ovat kuukausien spiraaleja).
-- - **3D-ohjaamo**: lentoa seurataan aluksen ikkunasta. Ohjaamo on mallinnettu PBR-materiaalein (kulunut metalli, kumi, kangas, lasi), näytöt hehkuvat ja merkkivalot seuraavat pelin tilaa. Tähdet, Aurinko, planeetat ja kuut ovat oikeissa suunnissa ja oikean kokoisina; planeetoilla on ilmakehän sironta, Maalla pilvikerros, yövalot ja meriheijastus, Saturnuksella renkaat varjoineen. Auringonvalo tulee ikkunoista pehmeine varjoineen, ja pimennyksessä se sammuu sen mukaan, kuinka paljon kappale peittää Auringosta. Kojelaudan viidellä näytöllä ovat tutka, aluskaavio, tähtäin nopeuksineen, järjestelmät ja etukameran kuva kohteesta. Katsetta käännetään raahaamalla, ja näyttöä napsauttamalla siihen zoomataan, jotta lukemat näkyvät tarkasti (myös rulla ja nipistys). Tarkemmin kohdassa [Kehitys](#kehitys) ja kuvien lähteet kohdassa [Tekstuurien lähteet](#tekstuurien-lähteet).
+- - **3D-ohjaamo**: lentoa seurataan aluksen ikkunasta. Ohjaamo on mallinnettu PBR-materiaalein (kulunut metalli, kumi, kangas, lasi), näytöt hehkuvat ja merkkivalot seuraavat pelin tilaa. Tähdet, Aurinko, planeetat ja kuut ovat oikeissa suunnissa ja oikean kokoisina; planeetoilla on ilmakehän sironta, Maalla pilvikerros, yövalot ja meriheijastus, Saturnuksella renkaat varjoineen. Auringonvalo tulee ikkunoista pehmeine varjoineen, ja pimennyksessä se sammuu sen mukaan, kuinka paljon kappale peittää Auringosta. Ohjaamo on käyttäjän antama kuva, jonka ikkunasta näkyy oikea avaruus ja jonka näytöillä näkyvät pelin tiedot. Kojelaudan viidellä näytöllä ovat tutka, aluskaavio, tähtäin nopeuksineen, järjestelmät ja etukameran kuva kohteesta. Katsetta käännetään raahaamalla, ja näyttöä napsauttamalla siihen zoomataan, jotta lukemat näkyvät tarkasti (myös rulla ja nipistys). Tarkemmin kohdassa [Kehitys](#kehitys) ja kuvien lähteet kohdassa [Tekstuurien lähteet](#tekstuurien-lähteet).
 - - **Leveä näyttö**: vähintään 1000 pikselin levyisessä ikkunassa ohjaamo tai kartta täyttää ikkunan ja ohjaimet ovat oikean reunan paneelissa, jonka voi piilottaa (P). Kapeammassa ikkunassa paneeli on näkymän alla. Yläpalkin painike vie pelin koko näytön tilaan (F11).
 
 ## Rakenne
@@ -114,6 +118,8 @@ tests/, tools/                      # Godot: ikkunattomat testit, vertailuarvot 
 ```
 
 ## Tekstuurien lähteet
+
+Ohjaamon kuva `assets/cockpit/ohjaamo.png` (1382 × 777) on pelin tekijän antama kuva; sen ikkuna-alue on tehty läpinäkyväksi.
 
 Ohjaamon pintakartat ovat hakemistossa `assets/textures/` (tasavälinen lieriöprojektio, WebP, yhteensä noin 41 Mt). Jokaisesta kohteesta on peruskartta (enintään 2048 × 1024). Lisäksi on tarkat kartat, jotka haetaan vasta, kun kohde täyttää suuren osan ikkunasta: 8k (8192 × 4096) ja 4k Merkuriuksesta, Maasta, Marsista, Kuusta, Iosta, Europasta, Ganymedeestä ja Enceladuksesta sekä 4k Venuksesta, Jupiterista, Saturnuksesta, Phoboksesta ja Tritonista (näistä ei ole tarkempaa lähdettä tai lähteen tarkkuus ei riitä 8k:hon). 8k-karttaa käytetään vain tietokoneella; kosketusnäyttölaitteet ja heikommat näytönohjaimet saavat 4k-kartan.
 

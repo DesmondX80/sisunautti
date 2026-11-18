@@ -30,6 +30,8 @@ var exhaust: GPUParticles3D
 var smoke: GPUParticles3D
 var sparks: GPUParticles3D
 var tools: HBoxContainer
+var overlay: ColorRect # ohjaamon kuva ja näytöt 3D-näkymän päällä
+var overlay_mat: ShaderMaterial
 var zoom_out_button: Button
 
 ## Pystykulma ilman zoomausta, tavoitekulma ja näyttö, johon on zoomattu (−1 = ei mihinkään).
@@ -37,12 +39,12 @@ var base_fov := 70.0
 var fov_target := 70.0
 var zoom_index := -1
 var _look_target: Variant = null # Vector2(yaw, pitch), kun katse kääntyy itsestään
-var _pre_zoom := Vector2(0.0, -0.05)
+var _pre_zoom := Vector2.ZERO
 var _press_moved := 0.0
 var _bodies := {} # nimi → avaruuden kappale (näyttöjen pallot)
 
 var yaw := 0.0
-var pitch := -0.05
+var pitch := 0.0
 var _dragging := false
 var _attitude_ready := false
 var _main_at := 0.0
@@ -80,6 +82,7 @@ func _ready() -> void:
 	_build_lights()
 	_build_particles()
 	_build_flare()
+	_build_overlay()
 	_build_tools()
 	Settings.quality_changed.connect(apply_quality)
 	apply_quality(Settings.quality)
@@ -144,7 +147,7 @@ func _build_lights() -> void:
 	ceiling.light_color = Color(1.0, 0.91, 0.8)
 	ceiling.light_energy = 0.6
 	ceiling.omni_range = 4.0
-	ceiling.position = Vector3(0, 0.9, -0.1)
+	ceiling.position = Vector3(0, 0.6, 0.2)
 	ceiling.light_specular = 0.0
 	cabin.add_child(ceiling)
 	screen_glow = OmniLight3D.new()
@@ -257,6 +260,30 @@ func _build_flare() -> void:
 	camera.add_child(flare)
 
 
+func _build_overlay() -> void:
+	overlay = ColorRect.new()
+	overlay.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	overlay.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	overlay_mat = ShaderMaterial.new()
+	overlay_mat.shader = load("res://shaders/cockpit_overlay.gdshader")
+	overlay_mat.set_shader_parameter("image", load("res://assets/cockpit/ohjaamo.png"))
+	overlay_mat.set_shader_parameter("image_size", Cabin.IMAGE_SIZE)
+	overlay_mat.set_shader_parameter("image_center", Cabin.CENTER)
+	overlay_mat.set_shader_parameter("focal", Cabin.FOCAL)
+	for i in cabin.monitors.size():
+		overlay_mat.set_shader_parameter("screen%d" % i, cabin.monitors[i].texture)
+		overlay_mat.set_shader_parameter("homography%d" % i, cabin.monitors[i].homography)
+	overlay.material = overlay_mat
+	add_child(overlay)
+
+
+## Kerroksen kamera: kanta aluksen koordinaateissa, kuvakulma ja kuvasuhde.
+func _update_overlay() -> void:
+	overlay_mat.set_shader_parameter("cam_basis", ship.global_transform.basis.inverse() * camera.global_transform.basis)
+	overlay_mat.set_shader_parameter("tan_half", tan(deg_to_rad(camera.fov) / 2.0))
+	overlay_mat.set_shader_parameter("aspect", size.x / maxf(1.0, size.y))
+
+
 func _build_tools() -> void:
 	var m := MarginContainer.new()
 	for side in ["left", "right", "top", "bottom"]:
@@ -303,7 +330,7 @@ func snap_attitude() -> void:
 
 func reset_view() -> void:
 	yaw = 0.0
-	pitch = -0.05
+	pitch = 0.0
 	zoom_index = -1
 	_look_target = null
 	fov_target = base_fov
@@ -316,14 +343,21 @@ func zoom_to(i: int) -> void:
 		return
 	if zoom_index < 0:
 		_pre_zoom = Vector2(yaw, pitch)
-	var m: Dictionary = cabin.monitors[i]
-	var local: Vector3 = cabin.transform * (m.node as Node3D).position
-	var dir := local.normalized()
-	var sz: Vector2 = m.size
+	var corners: PackedVector3Array = cabin.monitors[i].corners
+	var center := Vector3.ZERO
+	for c in corners:
+		center += c / 4.0
+	var dir := (cabin.transform * center).normalized()
+	var look := Vector2(atan2(-dir.x, -dir.z), asin(clampf(dir.y, -1.0, 1.0)))
+	# Kulmien suunnat katseen koordinaateissa: kuvakulma niin, että koko näyttö mahtuu kuvaan.
+	var inv := Basis.from_euler(Vector3(look.y, look.x, 0.0), EULER_ORDER_YXZ).inverse()
 	var aspect := size.x / size.y if size.x > 0.0 and size.y > 0.0 else 16.0 / 9.0
-	var half_h := maxf(sz.y, sz.x / aspect) * 0.5 * 1.1
-	fov_target = rad_to_deg(2.0 * atan(half_h / local.length()))
-	_look_target = Vector2(atan2(-dir.x, -dir.z), asin(clampf(dir.y, -1.0, 1.0)))
+	var half := 0.0
+	for c in corners:
+		var v := inv * (cabin.transform * c)
+		half = maxf(half, maxf(absf(v.y / v.z), absf(v.x / v.z) / aspect))
+	fov_target = rad_to_deg(2.0 * atan(half * 1.08))
+	_look_target = look
 	zoom_index = i
 
 
@@ -344,12 +378,9 @@ func zoom_by(f: float) -> void:
 ## Näyttö, jonka päällä kohta p (näkymän koordinaatit) on, tai −1.
 func monitor_at(p: Vector2) -> int:
 	for i in cabin.monitors.size():
-		var m: Dictionary = cabin.monitors[i]
-		var node: Node3D = m.node
-		var hs: Vector2 = m.size / 2.0
 		var poly := PackedVector2Array()
-		for c: Vector2 in [Vector2(-1, -1), Vector2(1, -1), Vector2(1, 1), Vector2(-1, 1)]:
-			var wp := node.global_transform * Vector3(c.x * hs.x, c.y * hs.y, 0.0)
+		for c: Vector3 in cabin.monitors[i].corners:
+			var wp := cabin.global_transform * c
 			if camera.is_position_behind(wp):
 				break
 			poly.append(camera.unproject_position(wp))
@@ -415,13 +446,16 @@ func _unhandled_key_input(event: InputEvent) -> void:
 		get_viewport().set_input_as_handled()
 
 
-# Pystykulma niin, että kojelaudan näytöt ja kattonäytöt mahtuvat kuvaan myös kapeassa ikkunassa.
+# Pystykulma niin, että ohjaamon kuva täyttää näkymän (kapeassa ikkunassa katsetta käännetään sivuille).
 func _fit_fov() -> void:
 	if size.y <= 0.0:
 		return
 	var aspect := size.x / size.y
 	var zoomed := fov_target < base_fov - 0.5
-	base_fov = clampf(2.0 * atan(tan(deg_to_rad(48.0)) / aspect) * 180.0 / PI, 65.0, 80.0)
+	# Ohjaamon kuva täyttää näkymän: kuvakulma enintään kuvan pysty- ja vaakakulma.
+	var half_v := Cabin.IMAGE_SIZE.y / 2.0 / Cabin.FOCAL
+	var half_h := Cabin.IMAGE_SIZE.x / 2.0 / Cabin.FOCAL
+	base_fov = rad_to_deg(2.0 * atan(minf(half_v, half_h / aspect) * 0.97))
 	if zoom_index >= 0:
 		zoom_to(zoom_index)
 	elif not zoomed:
@@ -479,8 +513,10 @@ func _process(delta: float) -> void:
 	var tt := Time.get_ticks_msec() / 1000.0
 	var jitter := func(k: float) -> float: return (randf() - 0.5) * k * rumble
 	head.basis = Basis.from_euler(Vector3(pitch, yaw, 0.0), EULER_ORDER_YXZ) * Basis.from_euler(Vector3(jitter.call(0.014), jitter.call(0.01), jitter.call(0.012)))
-	camera.position = Vector3(jitter.call(0.022) + sin(tt * 23.0) * 0.006 * rumble,
-		jitter.call(0.03) + (sin(tt * 31.0) * 0.4 + sin(tt * 47.0 + 1.0) * 0.3) * 0.012 * rumble, jitter.call(0.012))
+	# Vain kiertoa: siirtymä liikuttaisi näyttöjä ohjaamon kuvan päällä.
+	head.basis = head.basis * Basis.from_euler(Vector3((sin(tt * 31.0) * 0.4 + sin(tt * 47.0 + 1.0) * 0.3) * 0.012 * rumble, sin(tt * 23.0) * 0.006 * rumble, 0.0))
+	camera.position = Vector3.ZERO
+	_update_overlay()
 	_lighting(s)
 	_effects(s)
 	_screens(s)
@@ -564,7 +600,7 @@ func _lighting(s: Dictionary) -> void:
 		var sp := camera.unproject_position(space.sun_dir * 1e6)
 		sun_uv = sp / size
 		if sun_uv.x > -0.2 and sun_uv.x < 1.2 and sun_uv.y > -0.2 and sun_uv.y < 1.2:
-			vis = space.sunlit * dist_factor
+			vis = space.sunlit * dist_factor * (1.0 if through else 0.0) # ohjaamon kuva peittää Auringon ikkunan ulkopuolella
 	var look := maxf(0.0, -sun_view.z)
 	flare.visible = vis > 0.0
 	flare_mat.set_shader_parameter("sun_uv", sun_uv)
@@ -594,9 +630,9 @@ func _effects(s: Dictionary) -> void:
 	var f: Variant = Game.state.flight
 	cabin.set_light("vaikutuspiiri", 1.0 if f != null and float(s.t) >= float(f.soi) else 0.1)
 	cabin.set_light("suunta", 1.0 if s.get("aim") != null or s.get("nose") != null else 0.1)
-	var lever := cabin.throttle.get_node("Vipu") as Node3D
-	lever.rotation.x = lerpf(lever.rotation.x, -0.3 * thrust, 0.1)
-	cabin.stick.rotation = Vector3((randf() - 0.5) * 0.04, 0.0, (randf() - 0.5) * 0.04) * float(s.shake)
+	# Moottorin ja plasman hehku ohjaamon kuvassa.
+	var glow := Color(1.0, 0.54, 0.23) * (thrust * 0.12 * (0.85 + randf() * 0.3)) + Color(1.0, 0.45, 0.15) * (aero * 0.35 * (0.8 + randf() * 0.4))
+	overlay_mat.set_shader_parameter("glow", Vector3(glow.r, glow.g, glow.b))
 
 
 func _screens(s: Dictionary) -> void:

@@ -1,6 +1,7 @@
 class_name CockpitScreen
 extends Control
-## Ohjaamon näytön sisältö SubViewportissa (1024 × 576). Hologrammityyli: tummansininen pohja, ruudukko, syaanit
+## Ohjaamon näytön sisältö SubViewportissa. Sisältö piirretään 1024 × 576 -alueelle, joka skaalataan näytön
+## muotoon (view_size) keskelle; tausta ja kehykset täyttävät koko näytön. Hologrammityyli: tummansininen pohja, ruudukko, syaanit
 ## viivat ja kulmakehykset. Näyttö piirretään uudelleen enintään 20 kertaa sekunnissa (tick), ja SubViewport
 ## päivitetään vain silloin (UPDATE_ONCE). Tyypit:
 ##   "nav"      tutka: aurinkokunta ylhäältä pyyhkäisyineen, alus, kohde ja lähimmät planeetat
@@ -19,13 +20,16 @@ const FG := Color("#e8eefc")
 const GOOD := Color("#4ade80")
 const BAD := Color("#ff7b93")
 const WARM := Color("#ffb547")
-const BG_TOP := Color("#020c22")
-const BG_BOTTOM := Color("#052048")
+const BG_TOP := Color("#04163a")
+const BG_BOTTOM := Color("#0a2c5e")
 ## Planeettojen lyhenteet etäisyyspylväisiin.
 const SHORT := {"Merkurius": "ME", "Venus": "VE", "Maa": "MA", "Mars": "MR", "Jupiter": "JU", "Saturnus": "SA", "Uranus": "UR", "Neptunus": "NE"}
 const REDRAW_MS := 50
 
 var kind := "nav"
+var view_size := SIZE # SubViewportin koko
+var _k := 1.0 # sisällön mittakaava
+var _off := Vector2.ZERO # sisällön siirtymä
 var title := ""
 var rows: Array = []
 var bar: Variant = null
@@ -42,24 +46,26 @@ var _drawn_at := -100000
 func _ready() -> void:
 	font = load(UiKit.FONT_BOLD)
 	mono = load(UiKit.FONT)
-	size = SIZE
+	size = view_size
+	_k = minf(view_size.x / SIZE.x, view_size.y / SIZE.y)
+	_off = (view_size - SIZE * _k) / 2.0
 	if kind == "camera" or kind == "systems":
 		globe = ColorRect.new()
 		globe_mat = ShaderMaterial.new()
 		globe_mat.shader = load("res://shaders/globe.gdshader")
 		globe.material = globe_mat
 		if kind == "camera":
-			globe.position = Vector2(330, 60)
-			globe.size = Vector2(780, 780)
+			globe.position = _off + Vector2(330, 60) * _k
+			globe.size = Vector2(780, 780) * _k
 			globe_mat.set_shader_parameter("spin", 0.004)
 		else:
-			globe.position = Vector2(640, 92)
-			globe.size = Vector2(300, 300)
+			globe.position = _off + Vector2(640, 92) * _k
+			globe.size = Vector2(300, 300) * _k
 			globe_mat.set_shader_parameter("holo", 1.0)
 			globe_mat.set_shader_parameter("spin", 0.03)
 		add_child(globe)
 	over = Control.new()
-	over.size = SIZE
+	over.size = view_size
 	over.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	over.draw.connect(_draw_over)
 	add_child(over)
@@ -104,6 +110,7 @@ func tick(force: bool = false) -> bool:
 
 func _draw() -> void:
 	_background(self)
+	draw_set_transform(_off, 0.0, Vector2(_k, _k))
 	match kind:
 		"nav": _draw_nav(self)
 		"ship": _draw_ship(self)
@@ -113,17 +120,19 @@ func _draw() -> void:
 
 
 func _draw_over() -> void:
+	over.draw_set_transform(_off, 0.0, Vector2(_k, _k))
 	match kind:
 		"camera": _draw_camera(over)
 		"systems": _draw_systems_over(over)
+	over.draw_set_transform(Vector2.ZERO)
 	_frame(over)
 
 
 # --- Yhteiset osat ---
 
 func _background(c: CanvasItem) -> void:
-	var w := SIZE.x
-	var h := SIZE.y
+	var w := view_size.x
+	var h := view_size.y
 	c.draw_polygon(PackedVector2Array([Vector2(0, 0), Vector2(w, 0), Vector2(w, h), Vector2(0, h)]),
 		PackedColorArray([BG_TOP, BG_TOP, BG_BOTTOM, BG_BOTTOM]))
 	var grid := Color(ACCENT, 0.05)
@@ -135,8 +144,8 @@ func _background(c: CanvasItem) -> void:
 
 ## Kulmakehykset ja reunaviiva.
 func _frame(c: CanvasItem) -> void:
-	var w := SIZE.x
-	var h := SIZE.y
+	var w := view_size.x
+	var h := view_size.y
 	var m := 10.0
 	var k := 46.0
 	c.draw_rect(Rect2(m, m, w - 2 * m, h - 2 * m), Color(ACCENT, 0.18), false, 2.0)

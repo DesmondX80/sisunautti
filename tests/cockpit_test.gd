@@ -62,14 +62,18 @@ func _ready() -> void:
 	check("tarkkuuden yläraja", BodyTextures.best_width("Maa", 4096) == 4096 and BodyTextures.best_width("Uranus", 8192) == 2048)
 	# Ohjaamonäkymä ja laatutasot
 	var cv: CockpitView = get_parent().ui.cockpit_view
-	check("ohjaamo luotu", cv != null and cv.cabin.screens.size() == 3 and cv.cabin.monitors.size() == 6 and cv.space.bodies.size() == 16)
-	var facing := true
+	check("ohjaamo luotu", cv != null and cv.cabin.screens.size() == 3 and cv.cabin.monitors.size() == 6 and cv.cabin.mini_screen != null and cv.space.bodies.size() == 16)
+	var inside := true
 	for m: Dictionary in cv.cabin.monitors:
-		var n: Node3D = m.node
-		facing = facing and n.basis.z.dot(-n.position.normalized()) > 0.99
-	check("näytöt katsovat silmään", facing)
-	check("ikkunasta näkyy eteen ja sivulle, ei alas eikä taakse", Cabin.through_window(Vector3(0, 0.2, -1).normalized())
-		and Cabin.through_window(Vector3(-1, 0.2, -0.5).normalized()) and not Cabin.through_window(Vector3(0, -0.5, -1).normalized())
+		for c: Vector3 in m.corners:
+			var p := Cabin.image_point(c)
+			inside = inside and p.x > 0.0 and p.x < Cabin.IMAGE_SIZE.x and p.y > 0.0 and p.y < Cabin.IMAGE_SIZE.y and -c.z < 1.0
+	check("näytöt ohjaamon kuvan päällä ja sen edessä", inside)
+	var q: PackedVector3Array = Cabin.parallelogram(Cabin.MONITORS[0][1])
+	var back := Cabin.image_point(q[2])
+	check("näytön kulmat osuvat kuvan kulmiin", back.distance_to(Cabin.MONITORS[0][1][2]) < 0.01 and (q[0] + q[2] - q[1] - q[3]).length() < 1e-5)
+	check("ikkunasta näkyy eteen, ei alas eikä taakse", Cabin.through_window(Vector3(0, 0.2, -1).normalized())
+		and Cabin.through_window(Vector3(-0.5, 0.3, -1).normalized()) and not Cabin.through_window(Vector3(0, -0.5, -1).normalized())
 		and not Cabin.through_window(Vector3(0, 0.1, 1).normalized()))
 	cv.reset_view()
 	cv.zoom_to(2)
