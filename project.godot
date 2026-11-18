@@ -26,8 +26,13 @@ Game="*res://scripts/game.gd"
 
 window/size/viewport_width=1600
 window/size/viewport_height=900
-window/stretch/mode="canvas_items"
-window/stretch/aspect="expand"
+window/size/min_width=360
+window/size/min_height=560
+
+[gui]
+
+theme/custom="res://ui/theme.tres"
+theme/custom_font="res://assets/fonts/DejaVuSans.ttf"
 
 [rendering]
 

@@ -29,7 +29,9 @@ vanha selainversio (JS + three.js) on hakemistossa `web/`, kunnes Godot-versio k
   `user://save.json`), muotoilu `format.gd` (`Fmt`), pääscenen `main.gd`; `scripts/orbit/` ratamekaniikka
   (`planets.gd`, `flight.gd`, ikkunahaku ruutu kerrallaan `window_search.gd`)
 - `scenes/` – scenet, pääscene `scenes/main.tscn`
-- `ui/` – käyttöliittymän scenet ja teema
+- `scripts/ui/` – käyttöliittymä koodissa (`voyage_ui.gd`, `flight_map.gd`, `ui_kit.gd`); `ui/theme.tres` luodaan
+  `tools/make_theme.gd`:llä aina, kun `UiKit.make_theme()` muuttuu
+- `assets/data/planet_info.json` – tietokortit
 - `assets/` – tekstuurit, mallit ja muut resurssit
 - `tests/` – ikkunattomat testit `<nimi>_test.gd` (pohja `test_case.gd`)
 - `tools/` – apuskriptit, `run_tests.sh`
@@ -39,6 +41,8 @@ vanha selainversio (JS + three.js) on hakemistossa `web/`, kunnes Godot-versio k
 
 - Jokaiselle logiikkaskriptille testi. Testi `tests/<nimi>_test.gd` (nimessä ei alaviivoja) perii `TestCase`-luokan ja
   ajetaan lipulla `--<nimi>test`: `godot --headless -- --<nimi>test`.
+- Ikkunaa vaativat testit (`uishotstest`) eivät ole `run_tests.sh`:ssa: kuvakaappaukset otetaan käyttöliittymän
+  muutoksista 1600×900- ja 390×844-ikkunassa ja katsotaan ennen valmista.
 - Kaikki testit: `tools/run_tests.sh` (tai `tools/run_tests.sh settingstest` yksittäin).
 - Pelin tila (`Game.state`) on samassa JSON-muodossa kuin selainversion tallennus (avain `avaruuslento`, camelCase-avaimet).
   Esimerkki selainversiosta: `tests/data/web_save.json` (`tools/make_web_save.mjs`). Testit asettavat kellon

@@ -4,8 +4,19 @@ extends Node3D
 const TEST_DIR := "res://tests/"
 
 
+var ui: VoyageUI
+
+
 func _ready() -> void:
 	DisplayServer.window_set_title("Sisunautti")
+	# Käyttöliittymä on oikeissa pikseleissä (ei venytystä); tarkoilla näytöillä (selain, puhelin) skaalataan.
+	get_window().content_scale_factor = maxf(1.0, DisplayServer.screen_get_scale())
+	var layer := CanvasLayer.new()
+	layer.name = "UI"
+	add_child(layer)
+	ui = VoyageUI.new()
+	ui.name = "VoyageUI"
+	layer.add_child(ui)
 	var test := TestFlags.find(OS.get_cmdline_user_args())
 	if test != "":
 		var path := TEST_DIR + test + "_test.gd"

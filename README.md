@@ -35,6 +35,12 @@ tools/run_tests.sh          # ikkunattomat testit, esim. tools/run_tests.sh sett
 - Pelin tila, kello ja tapahtumat ovat autoloadissa `Game` (`scripts/game.gd`), ja tila tallentuu tiedostoon
   `user://save.json` 5 s välein ja suljettaessa samassa JSON-muodossa kuin selainversion tallennus. Käyttöliittymä ja
   ohjaamo kuuntelevat sen signaaleja (laukaisu, kiertorata, lähtöpoltto, ohilento, vaikutuspiiri, saapuminen, kartoitus).
+- Käyttöliittymä (`scripts/ui/`): näkymä (lentokartta, myöhemmin 3D-ohjaamo) täyttää ikkunan, ja ohjaimet ovat oikean
+  reunan 420 px:n paneelissa, jonka voi piilottaa. Alle 1000 px:n levyisessä ikkunassa paneeli on näkymän alla.
+  Teema on selainversion väreissä (`ui/theme.tres`, luodaan komennolla `godot --headless -s tools/make_theme.gd`).
+  Näppäimet: 1–8 aikakiihdytys, + ja − zoomaus, P sivupaneeli, F11 koko näyttö. Kartan zoomaus myös hiiren rullalla ja
+  nipistämällä.
+- Kuvakaappaukset käyttöliittymän tiloista (vaatii ikkunan): `godot -- --uishotstest=/polku/kuviin --size=390x844`.
 - Ratamekaniikka on hakemistossa `scripts/orbit/` (`planets.gd`, `flight.gd`, `window_search.gd`). Laskut tehdään
   64-bittisillä `float`-luvuilla (`PackedFloat64Array`), ja laukaisuikkunoiden haku jaetaan ruutujen kesken.
   `orbitcomparetest` vertaa tuloksia selainversioon (`tests/data/orbit_reference.json`, luodaan komennolla
@@ -83,6 +89,8 @@ peli, jossa lähdetään raketilla Maan pinnalta kiertoradalle ja sieltä muille
 project.godot, export_presets.cfg   # Godot-projekti (Forward+, web: Compatibility)
 scripts/, scenes/, ui/, assets/     # Godot: logiikka, scenet, käyttöliittymä, resurssit
 scripts/game.gd, scripts/format.gd   # Godot: pelin tila, kello ja tallennus; suomenkielinen muotoilu
+scripts/ui/, ui/                    # Godot: käyttöliittymä, lentokartta ja teema
+assets/data/, assets/fonts/         # Godot: tietokortit (planet_info.json) ja DejaVu Sans -kirjasin
 scripts/orbit/                      # Godot: ratamekaniikka (Kepler, Lambert, ikkunahaku, linkoukset, kuut)
 tests/, tools/                      # Godot: ikkunattomat testit, vertailuarvot ja run_tests.sh
 web/               # selainversio:
@@ -118,6 +126,7 @@ Ohjaamon pintakartat ovat hakemistossa `web/textures/` (tasavälinen lieriöproj
 | Europa | Seek9750: Moon Europa color map ([Wikimedia Commons](https://commons.wikimedia.org/wiki/File:Moon_Europa_color_map.jpg)), NASAn kuvista | CC0 |
 | Ganymedes | Björn Jónsson: Map of Ganymede, NASAn kuvista ([Wikimedia Commons](https://commons.wikimedia.org/wiki/File:Map_of_Ganymede_by_Bj%C3%B6rn_J%C3%B3nsson.jpg)). Tarkoissa kartoissa värit ovat tästä kartasta ja hienot yksityiskohdat USGS:n Voyager- ja Galileo-mosaiikin kirkkaudesta ([USGS Astrogeology](https://astrogeology.usgs.gov/search/map/ganymede_voyager_galileo_ssi_global_color_mosaic_1435m)) | vapaa käyttö, tekijä mainittava; USGS public domain |
 | Enceladus | Cassini-luotaimen värikartta PIA18435, NASA/JPL-Caltech/SSI/LPI ([Wikimedia Commons](https://commons.wikimedia.org/wiki/File:Enceladus_Color_Map.jpg)) | public domain |
+| Kirjasin (Godot-versio) | [DejaVu Sans](https://dejavu-fonts.github.io/) (`assets/fonts/`) | Bitstream Vera -lisenssi, ks. `assets/fonts/LICENSE-DejaVu.txt` |
 | Triton | Voyager 2:n värikartta PIA18668, NASA/JPL-Caltech/LPI ([Wikimedia Commons](https://commons.wikimedia.org/wiki/File:Triton_Map.jpg)). Voyager kuvasi vain osan pinnasta: kuvaamaton pohjoinen alue on täytetty ympäristön sumennetulla värillä, ja tehostettuja värejä on haalistettu. | public domain |
 
 ## Julkaisu

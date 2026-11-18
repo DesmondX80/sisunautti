@@ -13,12 +13,18 @@ if [[ $# -gt 0 && ( -x "$1" || "$1" == */* ) ]]; then godot="$1"; shift; fi
 if [[ -z "$godot" ]]; then godot="$(command -v godot-4.7.2 || command -v godot)"; fi
 [[ -n "$godot" ]] || { echo "Godotia ei löytynyt" >&2; exit 2; }
 timeout_s="${TEST_TIMEOUT:-600}"
+window_tests="uishotstest"
 
 if [[ $# -gt 0 ]]; then
 	names=("$@")
 else
 	names=()
-	for f in tests/*_test.gd; do n="$(basename "$f" _test.gd)"; names+=("${n}test"); done
+	for f in tests/*_test.gd; do
+		n="$(basename "$f" _test.gd)"
+		# Ikkunaa vaativat testit (kuvakaappaukset) ajetaan erikseen.
+		[[ " $window_tests " == *" ${n}test "* ]] && continue
+		names+=("${n}test")
+	done
 fi
 
 fails=0
@@ -28,7 +34,8 @@ for name in "${names[@]}"; do
 	out="$(timeout "$timeout_s" "$godot" --headless -- "--$name" 2>&1)"
 	code=$?
 	secs=$(( $(date +%s) - start ))
-	errs="$(grep -E '^VIRHE|SCRIPT ERROR|Parse Error|ERROR:' <<<"$out")"
+	# Lopetuksen yhteydessä Godot ilmoittaa vapauttamatta jääneistä resursseista (teema, kirjasimet); ne eivät ole virheitä.
+	errs="$(grep -E '^VIRHE|SCRIPT ERROR|Parse Error|ERROR:' <<<"$out" | grep -vE 'resources still in use at exit|were leaked at exit')"
 	result="$(grep -E '^TULOS' <<<"$out" | tail -1)"
 	if [[ $code -ne 0 || -n "$errs" || -z "$result" ]]; then
 		fails=$((fails + 1))
