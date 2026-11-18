@@ -24,9 +24,38 @@ uniform float ring_outer = 2.27;
 uniform float cloud_shadow = 0.0;
 uniform sampler2D cloud_tex : hint_default_black, filter_linear_mipmap, repeat_enable;
 uniform float cloud_offset = 0.0;
+uniform float detail_strength = 0.0; // kaasujättiläisten pilvipyörteet lähikuvassa
+uniform float saturation = 1.0;
+uniform vec3 detail_tint = vec3(1.0); // lähikuvan sävy (karttapiste suurempi kuin kuvapiste)
 
 varying vec3 local_pos;
 varying vec3 cam_local;
+
+// Arvokohina pallon pinnalla (3D), ei toistu eikä pikselöidy suurennettaessa.
+float hash3(vec3 p) {
+	p = fract(p * 0.3183099 + 0.1);
+	p *= 17.0;
+	return fract(p.x * p.y * p.z * (p.x + p.y + p.z));
+}
+
+float vnoise(vec3 x) {
+	vec3 i = floor(x);
+	vec3 f = fract(x);
+	f = f * f * (3.0 - 2.0 * f);
+	return mix(mix(mix(hash3(i), hash3(i + vec3(1, 0, 0)), f.x), mix(hash3(i + vec3(0, 1, 0)), hash3(i + vec3(1, 1, 0)), f.x), f.y),
+		mix(mix(hash3(i + vec3(0, 0, 1)), hash3(i + vec3(1, 0, 1)), f.x), mix(hash3(i + vec3(0, 1, 1)), hash3(i + vec3(1, 1, 1)), f.x), f.y), f.z);
+}
+
+float fbm(vec3 p, int octaves) {
+	float sum = 0.0;
+	float amp = 0.5;
+	for (int i = 0; i < octaves; i++) {
+		sum += amp * vnoise(p);
+		p = p * 2.03 + vec3(1.7, 9.2, 3.1);
+		amp *= 0.5;
+	}
+	return sum;
+}
 
 void vertex() {
 	local_pos = VERTEX;
@@ -42,6 +71,29 @@ void fragment() {
 	vec3 l = normalize(sun_local);
 	vec3 v = normalize(cam_local - local_pos);
 	vec3 albedo = texture(albedo_tex, UV).rgb;
+	// Kaasujättiläisten lähikuva: pintakartta on suurennettuna tasainen, joten siihen lisätään sävy, kontrasti ja
+	// pilvipyörteet. Kauempaa (karttapiste kuvapisteen kokoinen tai pienempi) kartta näkyy sellaisenaan.
+	if (detail_strength > 0.0) {
+		// Lähikuva: montako karttapistettä kuvapisteelle osuu; alle yhden kartta on suurennettu ja näyttäisi tasaiselta.
+		float texels = fwidth(UV.y) * float(textureSize(albedo_tex, 0).y);
+		float close = 1.0 - smoothstep(0.25, 1.0, texels);
+		float lum = dot(albedo, vec3(0.299, 0.587, 0.114));
+		albedo = mix(albedo, max(mix(vec3(lum), albedo, 1.6) * detail_tint, 0.0), close);
+		// Kaksinkertainen vääristys (domain warping) tekee kohinasta kiemurtelevia pyörteitä; leveyssuunnassa
+		// tiheämpi kohina venyttää pyörteet vyöhykkeiden suuntaisiksi. Lasketaan vain lähikuvassa.
+		float swirl = 0.0;
+		if (close > 0.0) {
+			vec3 p = normalize(local_pos) * vec3(28.0, 70.0, 28.0);
+			vec3 q = vec3(fbm(p, 3), fbm(p + vec3(5.2, 1.3, 2.8), 3), fbm(p + vec3(1.7, 9.2, 4.1), 3));
+			swirl = clamp((fbm(p + q * 3.0, 5) - 0.5) * 2.2 * close, -0.5, 0.5);
+		}
+		float d = detail_strength;
+		albedo *= 1.0 + swirl * 2.4 * d;
+		// Tummat kohdat ruskeiksi, vaaleat pilvet valkoisemmiksi.
+		albedo = mix(albedo, albedo * vec3(0.8, 0.6, 0.42), clamp(-swirl * 3.0, 0.0, 1.0) * d);
+		albedo = mix(albedo, vec3(0.97, 0.95, 0.9) * max(lum, 0.6), clamp(swirl * 3.0, 0.0, 1.0) * d * 0.7);
+	}
+	albedo = max(mix(vec3(dot(albedo, vec3(0.299, 0.587, 0.114))), albedo, saturation), 0.0);
 	float ndl = dot(n, l);
 	// Pehmeä terminaattori: valo hiipuu hieman yöpuolen puolelle (ilmakehä taittaa ja sirottaa).
 	float day = smoothstep(-0.06, 0.12, ndl) * max(ndl + 0.06, 0.0) / 1.06;

@@ -28,6 +28,11 @@ const ATMOS := {
 	"Jupiter": [Color(0.75, 0.78, 0.9), 1.008, 0.6, 0.5], "Saturnus": [Color(0.92, 0.85, 0.7), 1.01, 0.6, 0.5],
 	"Uranus": [Color(0.6, 0.88, 0.95), 1.012, 0.8, 0.6], "Neptunus": [Color(0.42, 0.58, 1.0), 1.012, 0.8, 0.6]}
 const GIANTS := ["Jupiter", "Saturnus", "Uranus", "Neptunus"]
+## Kaasujättiläisten pilvien pyörteily lähikuvassa (voimakkuus) ja värikylläisyys: pintakartta on lähellä vain
+## muutama sata kuvapistettä ikkunan leveydellä ja näyttäisi muuten tasaisen harmaanvalkoiselta.
+## Kolmas arvo on lähikuvan sävy (Jupiterin vaalea päiväntasaajavyöhyke on kartassa lähes valkoinen).
+const CLOUD_DETAIL := {"Jupiter": [0.45, 1.3, Color(0.98, 0.87, 0.74)], "Saturnus": [0.25, 1.15, Color(1.0, 0.9, 0.72)],
+	"Uranus": [0.06, 1.05, Color(1, 1, 1)], "Neptunus": [0.14, 1.1, Color(1, 1, 1)]}
 # Kiekon säde pikseleinä, jolla kuva haetaan, jolla vaihdetaan tarkkaan karttaan ja jolla palataan takaisin.
 const PHOTO_MIN_PX := 2.0
 const HIRES_PX := 200.0
@@ -210,6 +215,10 @@ func _build_body(name: String, radius_km: float, color: Color, moon: bool) -> vo
 	var fallback: Texture2D = BodyTextures.drawn(name, color)
 	mat.set_shader_parameter("albedo_tex", fallback)
 	mat.set_shader_parameter("limb_darkening", 0.5 if GIANTS.has(name) else 0.0)
+	if CLOUD_DETAIL.has(name):
+		mat.set_shader_parameter("detail_strength", CLOUD_DETAIL[name][0])
+		mat.set_shader_parameter("saturation", CLOUD_DETAIL[name][1])
+		mat.set_shader_parameter("detail_tint", CLOUD_DETAIL[name][2])
 	mesh.material_override = mat
 	spin.add_child(mesh)
 	var b := {"name": name, "radius_m": radius_km * KM, "color": color, "moon": moon, "root": root, "tilt": tilt, "spin": spin,

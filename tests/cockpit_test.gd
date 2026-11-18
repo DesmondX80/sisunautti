@@ -76,6 +76,12 @@ func _ready() -> void:
 		var code := FileAccess.get_file_as_string("res://shaders/%s.gdshader" % shader)
 		opaque_ok = opaque_ok and code.contains("DEPTH = space_depth") and code.contains("\tVERTEX = ")
 	check("planeetta ja Aurinko syvyysesikierroksessa omalla varjostimella", opaque_ok)
+	var detail := {}
+	for b in cv.space.bodies:
+		var ds: Variant = (b.mat as ShaderMaterial).get_shader_parameter("detail_strength")
+		detail[b.name] = float(ds) if ds != null else 0.0
+	check("kaasujättiläisillä lähikuvan pilvipyörteet, kiviplaneetoilla ei", detail.Jupiter > 0.0 and detail.Saturnus > 0.0
+		and detail.Mars == 0.0 and detail.Maa == 0.0 and detail.Kuu == 0.0)
 	check("aikakiihdytyksen tekstit", CockpitScreen.warp_label(1.0) == "1×" and CockpitScreen.warp_label(86400.0) == "1 vrk/s"
 		and CockpitScreen.warp_label(31557600.0) == "1 v/s" and CockpitScreen.warp_label(50.0) == "50×")
 	G.fake_real_ms = -1.0
