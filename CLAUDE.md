@@ -25,7 +25,8 @@ vanha selainversio (JS + three.js) on hakemistossa `web/`, kunnes Godot-versio k
 
 ## Rakenne
 
-- `scripts/` – logiikka (autoload `settings.gd`, pääscenen `main.gd`)
+- `scripts/` – logiikka (autoload `settings.gd`, pääscenen `main.gd`); `scripts/orbit/` ratamekaniikka
+  (`planets.gd`, `flight.gd`, ikkunahaku ruutu kerrallaan `window_search.gd`)
 - `scenes/` – scenet, pääscene `scenes/main.tscn`
 - `ui/` – käyttöliittymän scenet ja teema
 - `assets/` – tekstuurit, mallit ja muut resurssit
@@ -35,9 +36,12 @@ vanha selainversio (JS + three.js) on hakemistossa `web/`, kunnes Godot-versio k
 
 ## Testit
 
-- Jokaiselle logiikkaskriptille testi. Testi `tests/<nimi>_test.gd` perii `TestCase`-luokan ja
+- Jokaiselle logiikkaskriptille testi. Testi `tests/<nimi>_test.gd` (nimessä ei alaviivoja) perii `TestCase`-luokan ja
   ajetaan lipulla `--<nimi>test`: `godot --headless -- --<nimi>test`.
 - Kaikki testit: `tools/run_tests.sh` (tai `tools/run_tests.sh settingstest` yksittäin).
+- Ratamekaniikan muutokset tehdään samoin kuin selainversiossa, kunnes `web/` poistuu: vertailuarvot
+  `tests/data/orbit_reference.json` luodaan JS-puolelta (`node tools/make_orbit_reference.mjs`, vaatii `cd web && npm ci`),
+  ja `orbitcomparetest` vaatii samat tulokset (radat 1e-9, haut 1e-6).
 - Uudessa työkopiossa aja ensin `godot --headless --import`.
 - CI (`.github/workflows/ci.yml`) ajaa Godot-testit (Godot 4.7.2 välimuistista) ja selainversion testit.
 

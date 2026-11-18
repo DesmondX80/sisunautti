@@ -8,9 +8,14 @@ func _ready() -> void:
 	DisplayServer.window_set_title("Sisunautti")
 	var test := TestFlags.find(OS.get_cmdline_user_args())
 	if test != "":
-		var script: GDScript = load(TEST_DIR + test + "_test.gd")
-		if script == null:
+		var path := TEST_DIR + test + "_test.gd"
+		if not ResourceLoader.exists(path):
 			push_error("Testiä ei löytynyt: " + test)
+			get_tree().quit(2)
+			return
+		var script := load(path) as GDScript
+		if script == null or not script.can_instantiate():
+			push_error("Testiä ei voitu ladata: " + path)
 			get_tree().quit(2)
 			return
 		var node: Node = script.new()

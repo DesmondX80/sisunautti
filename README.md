@@ -32,6 +32,10 @@ tools/run_tests.sh          # ikkunattomat testit, esim. tools/run_tests.sh sett
 - Laatutasot Matala, Keski, Korkea ja Ultra (`Settings`-autoload, `user://settings.cfg`). Työpöydän oletus on Korkea,
   selaimen Keski.
 - Testi on tiedosto `tests/<nimi>_test.gd`, ja se ajetaan lipulla `--<nimi>test`, esim. `godot --headless -- --boottest`.
+- Ratamekaniikka on hakemistossa `scripts/orbit/` (`planets.gd`, `flight.gd`, `window_search.gd`). Laskut tehdään
+  64-bittisillä `float`-luvuilla (`PackedFloat64Array`), ja laukaisuikkunoiden haku jaetaan ruutujen kesken.
+  `orbitcomparetest` vertaa tuloksia selainversioon (`tests/data/orbit_reference.json`, luodaan komennolla
+  `node tools/make_orbit_reference.mjs` sen jälkeen, kun `web/`-hakemistossa on ajettu `npm ci`).
 
 ### Vienti
 
@@ -75,7 +79,8 @@ peli, jossa lähdetään raketilla Maan pinnalta kiertoradalle ja sieltä muille
 ```
 project.godot, export_presets.cfg   # Godot-projekti (Forward+, web: Compatibility)
 scripts/, scenes/, ui/, assets/     # Godot: logiikka, scenet, käyttöliittymä, resurssit
-tests/, tools/                      # Godot: ikkunattomat testit ja run_tests.sh
+scripts/orbit/                      # Godot: ratamekaniikka (Kepler, Lambert, ikkunahaku, linkoukset, kuut)
+tests/, tools/                      # Godot: ikkunattomat testit, vertailuarvot ja run_tests.sh
 web/               # selainversio:
   index.html, styles.css
   manifest.webmanifest, icons/   # PWA-manifesti ja kuvakkeet (icon.svg on lähde, PNG:t siitä piirrettyjä)
