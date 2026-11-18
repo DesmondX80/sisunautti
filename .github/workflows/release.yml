@@ -1,0 +1,62 @@
+# Työpöytäversiot GitHub-julkaisun liitteiksi: Windows (Sisunautti-windows.zip) ja Linux (Sisunautti-linux.zip).
+name: Julkaisu
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Julkaisun tagi, jolle liitteet lisätään (esim. v1.0.0)
+        required: true
+
+permissions:
+  contents: write
+
+env:
+  GODOT_VERSION: 4.7.2
+
+jobs:
+  desktop:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Godot ja työpöytäpohjat välimuistista
+        id: cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/godot
+            ~/.local/share/godot/export_templates
+          key: godot-${{ env.GODOT_VERSION }}-desktop
+
+      - name: Lataa Godot ja työpöytäpohjat
+        if: steps.cache.outputs.cache-hit != 'true'
+        run: |
+          base=https://github.com/godotengine/godot/releases/download/${GODOT_VERSION}-stable
+          mkdir -p ~/godot ~/.local/share/godot/export_templates/${GODOT_VERSION}.stable
+          curl -sL -o godot.zip $base/Godot_v${GODOT_VERSION}-stable_linux.x86_64.zip
+          unzip -q godot.zip -d ~/godot
+          mv ~/godot/Godot_v${GODOT_VERSION}-stable_linux.x86_64 ~/godot/godot
+          curl -sL -o templates.tpz $base/Godot_v${GODOT_VERSION}-stable_export_templates.tpz
+          unzip -q -j templates.tpz templates/windows_release_x86_64.exe templates/linux_release.x86_64 templates/version.txt \
+            -d ~/.local/share/godot/export_templates/${GODOT_VERSION}.stable
+          rm godot.zip templates.tpz
+
+      - name: Vie Windows- ja Linux-versiot
+        run: |
+          mkdir -p export/windows export/linux
+          ~/godot/godot --headless --import || true
+          ~/godot/godot --headless --export-release "Windows Desktop" export/windows/Sisunautti.exe
+          ~/godot/godot --headless --export-release "Linux" export/linux/Sisunautti.x86_64
+          chmod +x export/linux/Sisunautti.x86_64
+          (cd export/windows && zip -q ../Sisunautti-windows.zip Sisunautti.exe)
+          (cd export/linux && zip -q ../Sisunautti-linux.zip Sisunautti.x86_64)
+          ls -la export
+
+      - name: Liitä julkaisuun
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.event.release.tag_name || inputs.tag }}
+        run: gh release upload "$TAG" export/Sisunautti-windows.zip export/Sisunautti-linux.zip --clobber

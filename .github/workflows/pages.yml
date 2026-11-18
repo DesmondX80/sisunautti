@@ -1,8 +1,10 @@
+# Selainversio GitHub Pagesiin: Godotin web-vienti (Compatibility, web_nothreads) jokaisesta julkaisusta tai käsin
+# Actions-välilehdeltä. Peli: https://desmondx80.github.io/sisunautti/
 name: Pages
+
 on:
-  push:
-    branches: [main]
-    paths: ["web/**", "!web/test/**", "!web/package*.json", ".github/workflows/pages.yml"]
+  release:
+    types: [published]
   workflow_dispatch:
 
 permissions:
@@ -14,29 +16,56 @@ concurrency:
   group: pages
   cancel-in-progress: true
 
+env:
+  GODOT_VERSION: 4.7.2
+
 jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Godot ja web-vientipohja välimuistista
+        id: cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/godot
+            ~/.local/share/godot/export_templates
+          key: godot-${{ env.GODOT_VERSION }}-web
+
+      - name: Lataa Godot ja web-vientipohja
+        if: steps.cache.outputs.cache-hit != 'true'
+        run: |
+          base=https://github.com/godotengine/godot/releases/download/${GODOT_VERSION}-stable
+          mkdir -p ~/godot ~/.local/share/godot/export_templates/${GODOT_VERSION}.stable
+          curl -sL -o godot.zip $base/Godot_v${GODOT_VERSION}-stable_linux.x86_64.zip
+          unzip -q godot.zip -d ~/godot
+          mv ~/godot/Godot_v${GODOT_VERSION}-stable_linux.x86_64 ~/godot/godot
+          curl -sL -o templates.tpz $base/Godot_v${GODOT_VERSION}-stable_export_templates.tpz
+          unzip -q -j templates.tpz templates/web_nothreads_release.zip templates/version.txt \
+            -d ~/.local/share/godot/export_templates/${GODOT_VERSION}.stable
+          rm godot.zip templates.tpz
+
+      - name: Vie selainversio
+        run: |
+          mkdir -p export/web
+          ~/godot/godot --headless --import || true
+          ~/godot/godot --headless --export-release "Web" export/web/index.html
+          # Vanhan selainversion service worker korvataan workerilla, joka poistaa itsensä ja välimuistit.
+          cp tools/web/sw.js export/web/sw.js
+          ls -la export/web
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: export/web
+
   deploy:
+    needs: build
     runs-on: ubuntu-latest
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
     steps:
-      - uses: actions/checkout@v4
-      - name: Kokoa sivusto
-        run: |
-          mkdir _site
-          # Selainversio on hakemistossa web/, kunnes Godot-versio korvaa sen (#12)
-          (cd web && cp -r index.html styles.css manifest.webmanifest sw.js js icons textures ../_site/)
-          # Versio tiedostojen osoitteisiin, jotta selain ei yhdistä uutta HTML:ää vanhaan JS:ään/CSS:ään
-          v="${GITHUB_SHA::7}"
-          sed -i -E "s/(src|href)=\"(js\/main\.js|styles\.css)\"/\1=\"\2?v=$v\"/g" _site/index.html
-          grep -c "?v=$v" _site/index.html | grep -qx 2 || { echo "::error::Versioparametrien lisäys index.html:ään epäonnistui"; exit 1; }
-          # Service workerin versio: muuttunut tiedosto saa selaimen asentamaan uuden workerin
-          sed -i "s/^const VERSION = \"dev\";/const VERSION = \"$v\";/" _site/sw.js
-          grep -q "^const VERSION = \"$v\";" _site/sw.js || { echo "::error::Service workerin version asetus epäonnistui"; exit 1; }
-      - uses: actions/configure-pages@v5
-      - uses: actions/upload-pages-artifact@v3
-        with:
-          path: _site
       - id: deployment
         uses: actions/deploy-pages@v4

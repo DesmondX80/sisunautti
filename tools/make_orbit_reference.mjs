@@ -1,3 +1,5 @@
+// Vanha selainversio (web/) poistettiin versiossa 1.0.0. Sen saa takaisin työkopioksi esim.
+// git worktree add ../sisunautti-web 5a2375b, ja skriptiä ajetaan siellä (cd web && npm ci).
 // Tuottaa vertailuarvot Godot-version ratamekaniikan testeille (tests/orbit_test.gd) selainversion
 // ratamekaniikasta (web/js/flight.js, web/js/planets.js) ja astronomy-enginestä.
 // Käyttö: (cd web && npm ci) && node tools/make_orbit_reference.mjs  → tests/data/orbit_reference.json

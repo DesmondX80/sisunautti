@@ -1,8 +1,8 @@
 # Sisunautti – ohjeet Claudelle
 
 Avaruuslentopeli: Maan pinnalta kiertoradalle ja planeetoille oikeilla taivaanmekaniikan
-kaavoilla. Peli siirtyy Godot 4.7:ään (issuet #7–#12). Godot-projekti on repon juuressa;
-vanha selainversio (JS + three.js) on hakemistossa `web/`, kunnes Godot-versio korvaa sen (#12).
+kaavoilla, Godot 4.7. Julkaistaan selaimeen (GitHub Pages, Compatibility) ja työpöydälle (Windows, Linux).
+Vanha JS-selainversio poistettiin versiossa 1.0.0; sen tallennukset tuodaan selaimessa localStoragesta.
 
 ## Kieli
 
@@ -39,7 +39,7 @@ vanha selainversio (JS + three.js) on hakemistossa `web/`, kunnes Godot-versio k
 - `assets/` – tekstuurit, mallit ja muut resurssit
 - `tests/` – ikkunattomat testit `<nimi>_test.gd` (pohja `test_case.gd`)
 - `tools/` – apuskriptit, `run_tests.sh`
-- `web/` – vanha selainversio (vitest-testit: `cd web && npm test`); `web/.gdignore` pitää sen Godotin ulkopuolella
+- `tools/web/sw.js` – Pagesiin kopioitava worker, joka poistaa vanhan selainversion service workerin
 
 ## Testit
 
@@ -51,11 +51,11 @@ vanha selainversio (JS + three.js) on hakemistossa `web/`, kunnes Godot-versio k
 - Pelin tila (`Game.state`) on samassa JSON-muodossa kuin selainversion tallennus (avain `avaruuslento`, camelCase-avaimet).
   Esimerkki selainversiosta: `tests/data/web_save.json` (`tools/make_web_save.mjs`). Testit asettavat kellon
   käsin (`Game.fake_real_ms`) ja käyttävät tallennusta `user://test_save.json`.
-- Ratamekaniikan muutokset tehdään samoin kuin selainversiossa, kunnes `web/` poistuu: vertailuarvot
-  `tests/data/orbit_reference.json` luodaan JS-puolelta (`node tools/make_orbit_reference.mjs`, vaatii `cd web && npm ci`),
-  ja `orbitcomparetest` vaatii samat tulokset (radat 1e-9, haut 1e-6).
+- `orbitcomparetest` vertaa ratamekaniikkaa vanhan JS-version tuloksiin (`tests/data/orbit_reference.json`).
+  Jos ratamekaniikkaa muutetaan tarkoituksella, vertailuarvot päivitetään (ks. `tools/make_orbit_reference.mjs`).
 - Uudessa työkopiossa aja ensin `godot --headless --import`.
-- CI (`.github/workflows/ci.yml`) ajaa Godot-testit (Godot 4.7.2 välimuistista) ja selainversion testit.
+- CI (`.github/workflows/ci.yml`) ajaa Godot-testit (Godot 4.7.2 välimuistista). Julkaisu käynnistää `release.yml`
+  (Windows- ja Linux-liitteet) ja `pages.yml` (selainversio).
 
 ## Työtapa
 

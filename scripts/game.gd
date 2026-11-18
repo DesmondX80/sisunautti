@@ -39,6 +39,8 @@ signal survey_finished(body: String, first: bool)
 
 ## Tallennusavaimet ovat peräisin OmaAvaruuden Avaruuslennosta; niitä ei nimetä uudelleen (selaintallennusten tuonti).
 const KEY := "avaruuslento"
+const VIEW_KEY := "avaruuslento.view"
+const PANEL_KEY := "avaruuslento.panel"
 const SAVE_PATH := "user://save.json"
 const TEST_SAVE_PATH := "user://test_save.json"
 const DAY := 86400000.0
@@ -272,9 +274,32 @@ func _finite(v: Variant) -> Variant:
 
 func load_game() -> void:
 	var text := FileAccess.get_file_as_string(save_path) if FileAccess.file_exists(save_path) else ""
+	if text == "" and save_path == SAVE_PATH and _import_browser_save():
+		return
 	if not load_json(text):
 		state = fresh()
 	load_game_from_state()
+
+
+## Selaimessa: jos omaa tallennusta ei vielä ole, tuodaan vanhan selainversion peli localStoragesta (sama
+## alkuperä desmondx80.github.io) sekä näkymän ja sivupaneelin valinnat. Palauttaa true, jos peli tuotiin.
+func _import_browser_save() -> bool:
+	if not OS.has_feature("web"):
+		return false
+	var read := func(key: String) -> String:
+		var v: Variant = JavaScriptBridge.eval("(function(){try{return localStorage.getItem('%s')||''}catch(e){return ''}})()" % key, true)
+		return v if v is String else ""
+	var parse := func(key: String) -> Variant:
+		var text: String = read.call(key)
+		return JSON.parse_string(text) if text != "" else null
+	var view: Variant = parse.call(VIEW_KEY)
+	if view is String and (view == "cockpit" or view == "map"):
+		Settings.set_view(view)
+	var panel: Variant = parse.call(PANEL_KEY)
+	if panel is String:
+		Settings.set_panel_hidden(panel == "hidden")
+	var game: String = read.call(KEY)
+	return game != "" and import_web_save(game)
 
 
 ## Ottaa käyttöön load_json():lla asetetun tilan.

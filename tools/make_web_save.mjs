@@ -1,3 +1,5 @@
+// Vanha selainversio (web/) poistettiin versiossa 1.0.0. Sen saa takaisin työkopioksi esim.
+// git worktree add ../sisunautti-web 5a2375b, ja skriptiä ajetaan siellä (cd web && npm ci).
 // Luo tests/data/web_save.json: pelaa selainversiota (web/) headless-Chromiumissa ja tallentaa localStorage-avaimen
 // avaruuslento sisällön. Vaatii playwright-coren ja Chromiumin: npm i playwright-core && npx playwright install chromium-headless-shell
 // Käyttö: node tools/make_web_save.mjs web > tests/data/web_save.json  (CHROME=polku valinnainen)
