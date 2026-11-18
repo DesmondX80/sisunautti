@@ -69,6 +69,15 @@ func _ready() -> void:
 		cv.apply_quality(Settings.Quality.ULTRA)
 		check("Ultra: 8k, SSAO ja SSR", cv.space.max_texture == 8192 and cv.env.ssao_enabled and cv.env.ssr_enabled)
 	cv.apply_quality(Settings.quality)
+	# Läpinäkymättömät avaruusvarjostimet kirjoittavat VERTEXin, jotta syvyysesikierros käyttää niiden DEPTHiä
+	# (muuten pinta piirtyy mustana laatutasoilla ilman SSAO:ta).
+	var opaque_ok := true
+	for shader in ["planet", "sun"]:
+		var code := FileAccess.get_file_as_string("res://shaders/%s.gdshader" % shader)
+		opaque_ok = opaque_ok and code.contains("DEPTH = space_depth") and code.contains("\tVERTEX = ")
+	check("planeetta ja Aurinko syvyysesikierroksessa omalla varjostimella", opaque_ok)
+	check("aikakiihdytyksen tekstit", CockpitScreen.warp_label(1.0) == "1×" and CockpitScreen.warp_label(86400.0) == "1 vrk/s"
+		and CockpitScreen.warp_label(31557600.0) == "1 v/s" and CockpitScreen.warp_label(50.0) == "50×")
 	G.fake_real_ms = -1.0
 	DirAccess.remove_absolute(G.TEST_SAVE_PATH)
 	finish()

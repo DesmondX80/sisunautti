@@ -1,6 +1,7 @@
 extends TestCase
 ## Kuvakaappaukset ohjaamosta (vaatii ikkunan, ei mukana tools/run_tests.sh:ssa):
-##   godot -- --cockpitshotstest=/polku/kuviin [--size=1600x900] [--quality=2] [--only=nimi]
+##   godot -- --cockpitshotstest=/polku/kuviin [--size=1600x900] [--quality=2] [--only=nimi] [--state=tallennus.json]
+## --state: kuva annetusta tallennuksesta (pelaajan näkymä sellaisenaan ja katse alas), muut näkymät ohitetaan.
 ## Näkymät: laukaisualusta päivällä, Max Q, kiertorata Maan päivä- ja yöpuolen yllä, Mars lähellä, Jupiterin
 ## ilmajarrutus, Saturnus renkaineen, Aurinko kohti katsottaessa ja planeetan varjo. Lopuksi mitataan ruutunopeus.
 
@@ -8,6 +9,7 @@ const START := 1794614400000.0 # 2026-11-14T00:00:00Z
 
 var dir := ""
 var only := ""
+var state_path := ""
 var G: Node
 var ui: VoyageUI
 var cv: CockpitView
@@ -31,6 +33,8 @@ func _ready() -> void:
 			q = int(arg.split("=")[1])
 		elif arg.begins_with("--only="):
 			only = arg.split("=")[1]
+		elif arg.begins_with("--state="):
+			state_path = arg.split("=")[1]
 	DirAccess.make_dir_recursive_absolute(dir)
 	get_window().content_scale_factor = 1.0
 	DisplayServer.window_set_size(win)
@@ -103,6 +107,18 @@ func sun_angle(body: String, t: float, behind: bool) -> float:
 
 
 func _run() -> void:
+	if state_path != "":
+		var saved: Variant = JSON.parse_string(FileAccess.get_file_as_string(state_path))
+		check("tallennus luettu", saved is Dictionary)
+		if saved is Dictionary:
+			G.state = saved
+			G.fake_real_ms = float(saved.realTime)
+			G.load_game_from_state()
+			cv.snap_attitude()
+			await shot("tallennus", 120)
+			cv.reset_view()
+			await shot("tallennus-alas", 120)
+		return
 	# Laukaisualusta päivällä: haetaan hetki, jolloin Aurinko on korkealla laukaisupaikan yllä.
 	var best := START
 	var best_day := -2.0

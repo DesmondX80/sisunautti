@@ -124,7 +124,7 @@ func _draw_systems(w: float, _h: float) -> void:
 		return
 	var fuel: float = systems.fuel
 	var warp: float = systems.warp
-	var warp_text := "1×" if warp <= 1.0 else ("%s×" % Fmt.num(warp) if warp < 1e4 else "%.0e×" % warp)
+	var warp_text := warp_label(warp)
 	var list := [["POLTTOAINE", "%d %%" % roundi(fuel * 100.0), fuel], ["AIKAKIIHDYTYS", warp_text, null],
 		["SUUNTA", String(systems.aim) if systems.aim != null else "vapaa", null], ["MOOTTORI", systems.engine, null], ["SÄTEILYSUOJA", "OK", null]]
 	for i in list.size():
@@ -141,3 +141,11 @@ func _draw_systems(w: float, _h: float) -> void:
 func _right(f: Font, text: String, x: float, y: float, fs: int, col: Color) -> void:
 	var tw := f.get_string_size(text, HORIZONTAL_ALIGNMENT_LEFT, -1, fs).x
 	draw_string(f, Vector2(x - tw, y), text, HORIZONTAL_ALIGNMENT_LEFT, -1, fs, col)
+
+
+## Aikakiihdytys tekstinä: pelin porrasnimi (esim. "1 vrk/s"), muuten kerroin.
+static func warp_label(warp: float) -> String:
+	for w: Array in Game.WARPS:
+		if is_equal_approx(float(w[0]), warp):
+			return w[1]
+	return "%s×" % Fmt.num(maxf(warp, 1.0))
