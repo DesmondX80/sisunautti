@@ -13,7 +13,7 @@ if [[ $# -gt 0 && ( -x "$1" || "$1" == */* ) ]]; then godot="$1"; shift; fi
 if [[ -z "$godot" ]]; then godot="$(command -v godot-4.7.2 || command -v godot)"; fi
 [[ -n "$godot" ]] || { echo "Godotia ei löytynyt" >&2; exit 2; }
 timeout_s="${TEST_TIMEOUT:-600}"
-window_tests="uishotstest"
+window_tests="uishotstest cockpitshotstest"
 
 if [[ $# -gt 0 ]]; then
 	names=("$@")

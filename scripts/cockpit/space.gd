@@ -1,0 +1,449 @@
+class_name Space
+extends Node3D
+## Avaruus ohjaamon ympärillä: tähdet, Aurinko, planeetat ja kuut (web/js/cockpit.js).
+##
+## Mittakaavat: kamera on aina origossa (aluksen paikka), ja kappaleiden paikat lasketaan aluksen suhteen
+## 64-bittisinä ennen kuin ne annetaan näytönohjaimelle 32-bittisinä. Lähellä (alle COMPRESS_M) kappaleet ovat
+## oikeassa koossa ja paikassa (metreinä); kauempana etäisyys puristetaan logaritmisesti ja kappale pienennetään
+## samassa suhteessa (skaalaus kameran ympäri), jolloin sen suunta ja näennäinen koko säilyvät ja kaikki mahtuu
+## kaukotason (120 km) sisään. Avaruuden varjostimet kirjoittavat syvyysarvon aina ohjaamon taakse
+## (shaders/space_depth.gdshaderinc), joten esimerkiksi laukaisualustan maanpinta ei näy ohjaamon sisällä.
+## Koordinaatit: ekliptikan (x, y, z) → scene (x, z, −y), eli ekliptikan pohjoisnapa on ylöspäin.
+
+const KM := 1000.0
+const COMPRESS_M := 2.0e4
+## Puristuksen jyrkkyys: Neptunus (4,5 mrd km) päätyy alle 100 km:n päähän.
+const COMPRESS_K := 4.0e3
+const OBLIQUITY := 23.4393 * PI / 180.0
+const AU_M := Planets.AU_KM * KM
+const STAR_DIST := 1.1e5
+# Pyörähdysajat tunteina (negatiivinen = takaperoinen) ja akselien pohjoisnavat (IAU, J2000: RA°, Dec°).
+const SPIN_HOURS := {"Merkurius": 1407.6, "Venus": -5832.5, "Maa": 23.934, "Mars": 24.623, "Jupiter": 9.925, "Saturnus": 10.656, "Uranus": -17.24, "Neptunus": 16.11}
+const POLES := {"Merkurius": [281.01, 61.41], "Venus": [272.76, 67.16], "Maa": [0.0, 90.0], "Mars": [317.68, 52.89], "Jupiter": [268.06, 64.5],
+	"Saturnus": [40.59, 83.54], "Uranus": [257.31, -15.18], "Neptunus": [299.36, 43.46]}
+## Ilmakehät: väri, kuoren säde (planeetan säteinä), tiheys ja pinnan reunahehku.
+const ATMOS := {
+	"Maa": [Color(0.32, 0.58, 1.0), 1.022, 1.2, 0.9], "Venus": [Color(0.95, 0.82, 0.55), 1.03, 1.3, 0.8],
+	"Mars": [Color(0.95, 0.6, 0.38), 1.012, 0.5, 0.45], "Titan": [Color(0.95, 0.62, 0.25), 1.12, 1.6, 1.0],
+	"Jupiter": [Color(0.75, 0.78, 0.9), 1.008, 0.6, 0.5], "Saturnus": [Color(0.92, 0.85, 0.7), 1.01, 0.6, 0.5],
+	"Uranus": [Color(0.6, 0.88, 0.95), 1.012, 0.8, 0.6], "Neptunus": [Color(0.42, 0.58, 1.0), 1.012, 0.8, 0.6]}
+const GIANTS := ["Jupiter", "Saturnus", "Uranus", "Neptunus"]
+# Kiekon säde pikseleinä, jolla kuva haetaan, jolla vaihdetaan tarkkaan karttaan ja jolla palataan takaisin.
+const PHOTO_MIN_PX := 2.0
+const HIRES_PX := 200.0
+const HIRES_BACK_PX := 120.0
+
+var textures := BodyTextures.new()
+var max_texture := 4096
+var atmo_samples := 8
+var bodies: Array[Dictionary] = []
+var sun_root: Node3D
+var sun_mesh: MeshInstance3D
+var sun_glow: MeshInstance3D
+var stars: MeshInstance3D
+var star_material: ShaderMaterial
+var noise_tex: NoiseTexture2D
+
+## Viimeisimmän päivityksen tulokset ohjaamolle: Auringon suunta (scene), näkyvä osuus Auringon kiekosta,
+## etäisyys Auringosta (m), lähin kappale ja sen näennäinen koko.
+## Kappaleiden kirkkauskerroin (ilmajarrutuksen plasma himmentää näkymää).
+var dim := 1.0
+var sun_dir := Vector3.FORWARD
+var sunlit := 1.0
+var sun_distance := AU_M
+var nearest: Dictionary = {}
+var nearest_size := 0.0
+
+
+static func to_scene(v: PackedFloat64Array) -> Vector3:
+	return Vector3(v[0], v[2], -v[1])
+
+
+static func equatorial(ra_hours: float, dec_deg: float) -> PackedFloat64Array:
+	var ra := ra_hours * 15.0 * PI / 180.0
+	var dec := dec_deg * PI / 180.0
+	var x := cos(dec) * cos(ra)
+	var y := cos(dec) * sin(ra)
+	var z := sin(dec)
+	return PackedFloat64Array([x, y * cos(OBLIQUITY) + z * sin(OBLIQUITY), -y * sin(OBLIQUITY) + z * cos(OBLIQUITY)])
+
+
+## Kierto scene-koordinaateista päiväntasaajan koordinaatteihin (taivaan panoraamaa varten).
+static func scene_to_equatorial() -> Basis:
+	# scene (x, y, z) = ekliptika (x, z, −y) → ekliptika (x, −z, y) → päiväntasaaja (kierto x-akselin ympäri).
+	var to_ecl := Basis(Vector3(1, 0, 0), Vector3(0, 0, 1), Vector3(0, -1, 0)) # sarakkeet: scene x, y, z ekliptikassa
+	var c := cos(OBLIQUITY)
+	var s := sin(OBLIQUITY)
+	var to_eq := Basis(Vector3(1, 0, 0), Vector3(0, c, s), Vector3(0, -s, c))
+	return to_eq * to_ecl
+
+
+## Puristettu etäisyys (m) ja skaala.
+static func compress(d: float) -> float:
+	return d if d <= COMPRESS_M else COMPRESS_M + COMPRESS_K * log(d / COMPRESS_M)
+
+
+func _ready() -> void:
+	noise_tex = NoiseTexture2D.new()
+	noise_tex.seamless = true
+	noise_tex.width = 512
+	noise_tex.height = 512
+	noise_tex.noise = FastNoiseLite.new()
+	_build_stars()
+	_build_sun()
+	for name in Planets.NAMES:
+		var info := Planets.info(name)
+		_build_body(name, info.radius_km, info.color, false)
+	for m: String in Flight.MOONS:
+		var md: Dictionary = Flight.MOONS[m]
+		_build_body(m, md.radiusKm, Color(md.color), true)
+
+
+func _exit_tree() -> void:
+	textures.wait_all()
+
+
+func _build_stars() -> void:
+	var list: Array = JSON.parse_string(FileAccess.get_file_as_string("res://assets/data/stars.json"))
+	var verts := PackedVector3Array()
+	var colors := PackedColorArray()
+	for s: Array in list:
+		var mag: float = s[3]
+		var b := clampf(1.15 - mag * 0.25, 0.35, 1.0)
+		verts.append(to_scene(equatorial(s[1], s[2])) * STAR_DIST)
+		# Väri ja kirkkaus; alfa = koko.
+		var e := pow(2.512, -mag) * 6.0 + 0.6
+		colors.append(Color(b * e, b * e, minf(1.0, b * 1.05) * e, clampf(1.0 - (mag + 1.5) / 4.5, 0.0, 1.0)))
+	# Himmeä tausta, joka tihenee Linnunradan tasoa kohti (satunnaiset tähdet, vain jakauma vastaa taivasta).
+	var pole := equatorial(12.857, 27.128)
+	var rng := RandomNumberGenerator.new()
+	rng.seed = 1234567
+	var faint := 0
+	while faint < 3200:
+		var z := rng.randf() * 2.0 - 1.0
+		var a := rng.randf() * TAU
+		var r := sqrt(1.0 - z * z)
+		var v := PackedFloat64Array([r * cos(a), r * sin(a), z])
+		var lat := asin(absf(v[0] * pole[0] + v[1] * pole[1] + v[2] * pole[2])) * 180.0 / PI
+		if rng.randf() > 0.3 + 0.7 * exp(-pow(lat / 14.0, 2.0)):
+			continue
+		var l := 0.25 + rng.randf() * 0.35
+		var tint := rng.randf()
+		verts.append(to_scene(v) * STAR_DIST)
+		colors.append(Color(l * (1.1 if tint > 0.8 else 0.95), l, l * (1.15 if tint < 0.2 else 1.0), 0.0))
+		faint += 1
+	var arrays := []
+	arrays.resize(Mesh.ARRAY_MAX)
+	arrays[Mesh.ARRAY_VERTEX] = verts
+	arrays[Mesh.ARRAY_COLOR] = colors
+	var mesh := ArrayMesh.new()
+	mesh.add_surface_from_arrays(Mesh.PRIMITIVE_POINTS, arrays)
+	mesh.custom_aabb = AABB(Vector3.ONE * -STAR_DIST, Vector3.ONE * STAR_DIST * 2.0)
+	star_material = ShaderMaterial.new()
+	star_material.shader = load("res://shaders/stars.gdshader")
+	stars = MeshInstance3D.new()
+	stars.mesh = mesh
+	stars.material_override = star_material
+	stars.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	stars.extra_cull_margin = 16384.0
+	add_child(stars)
+
+
+func _build_sun() -> void:
+	sun_root = Node3D.new()
+	add_child(sun_root)
+	sun_mesh = MeshInstance3D.new()
+	var sm := SphereMesh.new()
+	sm.radius = 1.0
+	sm.height = 2.0
+	sm.radial_segments = 48
+	sm.rings = 24
+	sun_mesh.mesh = sm
+	var mat := ShaderMaterial.new()
+	mat.shader = load("res://shaders/sun.gdshader")
+	sun_mesh.material_override = mat
+	sun_mesh.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	sun_root.add_child(sun_mesh)
+	sun_glow = MeshInstance3D.new()
+	var q := QuadMesh.new()
+	q.size = Vector2(2, 2)
+	sun_glow.mesh = q
+	var gm := ShaderMaterial.new()
+	gm.shader = load("res://shaders/billboard_glow.gdshader")
+	gm.set_shader_parameter("color", Color(1.0, 0.85, 0.6))
+	gm.set_shader_parameter("energy", 2.5)
+	gm.set_shader_parameter("min_pixels", 40.0)
+	gm.set_shader_parameter("falloff", 3.0)
+	gm.set_shader_parameter("core", 0.08)
+	sun_glow.material_override = gm
+	sun_glow.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	sun_glow.extra_cull_margin = 1e6
+	sun_root.add_child(sun_glow)
+
+
+func _sphere(segments: int) -> SphereMesh:
+	var m := SphereMesh.new()
+	m.radius = 1.0
+	m.height = 2.0
+	m.radial_segments = segments
+	m.rings = segments / 2
+	return m
+
+
+func _build_body(name: String, radius_km: float, color: Color, moon: bool) -> void:
+	var root := Node3D.new()
+	root.name = name
+	add_child(root)
+	var tilt := Node3D.new()
+	root.add_child(tilt)
+	if POLES.has(name):
+		var pole := to_scene(equatorial(POLES[name][0] / 15.0, POLES[name][1])).normalized()
+		tilt.quaternion = Quaternion(Vector3.UP, pole)
+	var spin := Node3D.new()
+	tilt.add_child(spin)
+	var mesh := MeshInstance3D.new()
+	mesh.mesh = _sphere(160 if not moon else 96)
+	mesh.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	var mat := ShaderMaterial.new()
+	mat.shader = load("res://shaders/planet.gdshader")
+	var base := BodyTextures.file_for(name, 2048)
+	var fallback: Texture2D = BodyTextures.drawn(name, color)
+	mat.set_shader_parameter("albedo_tex", fallback)
+	mat.set_shader_parameter("limb_darkening", 0.5 if GIANTS.has(name) else 0.0)
+	mesh.material_override = mat
+	spin.add_child(mesh)
+	var b := {"name": name, "radius_m": radius_km * KM, "color": color, "moon": moon, "root": root, "tilt": tilt, "spin": spin,
+		"mesh": mesh, "mat": mat, "level": 0, "base": base, "hires": "", "fallback": fallback, "atmo": null, "clouds": null, "rings": null, "dot": null}
+	if ATMOS.has(name):
+		var a: Array = ATMOS[name]
+		mat.set_shader_parameter("atmo_color", a[0])
+		mat.set_shader_parameter("atmo_strength", a[3])
+		var am := MeshInstance3D.new()
+		am.mesh = _sphere(96)
+		var amat := ShaderMaterial.new()
+		amat.shader = load("res://shaders/atmosphere.gdshader")
+		amat.set_shader_parameter("atmo_color", a[0])
+		amat.set_shader_parameter("atmo_radius", a[1])
+		amat.set_shader_parameter("density", a[2])
+		am.material_override = amat
+		am.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		tilt.add_child(am)
+		b.atmo = amat
+	if name == "Maa":
+		mat.set_shader_parameter("night_strength", 1.6)
+		mat.set_shader_parameter("spec_strength", 1.0)
+		b.night_path = BodyTextures.DIR + "maa-yo.webp"
+		b.spec_path = BodyTextures.DIR + "maa-meri.webp"
+		var cm := MeshInstance3D.new()
+		cm.mesh = _sphere(128)
+		cm.scale = Vector3.ONE * 1.004
+		var cmat := ShaderMaterial.new()
+		cmat.shader = load("res://shaders/clouds.gdshader")
+		cm.material_override = cmat
+		cm.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		var cspin := Node3D.new()
+		tilt.add_child(cspin)
+		cspin.add_child(cm)
+		b.clouds = cmat
+		b.cloud_spin = cspin
+		b.cloud_path = BodyTextures.DIR + "maa-pilvet.webp"
+	if name == "Saturnus":
+		var rm := MeshInstance3D.new()
+		rm.mesh = _ring_mesh(1.24, 2.27, 256)
+		var rmat := ShaderMaterial.new()
+		rmat.shader = load("res://shaders/rings.gdshader")
+		rm.material_override = rmat
+		rm.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		tilt.add_child(rm)
+		b.rings = rmat
+		mat.set_shader_parameter("has_rings", true)
+	# Kaukainen kappale näkyy kirkkaana pisteenä.
+	var dot := MeshInstance3D.new()
+	var q := QuadMesh.new()
+	q.size = Vector2(2, 2)
+	dot.mesh = q
+	var dm := ShaderMaterial.new()
+	dm.shader = load("res://shaders/billboard_glow.gdshader")
+	dm.set_shader_parameter("color", color)
+	dm.set_shader_parameter("energy", 1.6)
+	dm.set_shader_parameter("min_pixels", 3.0)
+	dm.set_shader_parameter("falloff", 1.5)
+	dm.set_shader_parameter("core", 0.4)
+	dot.material_override = dm
+	dot.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	dot.extra_cull_margin = 1e6
+	root.add_child(dot)
+	b.dot = dot
+	bodies.append(b)
+
+
+func _ring_mesh(inner: float, outer: float, segments: int) -> ArrayMesh:
+	var verts := PackedVector3Array()
+	var uvs := PackedVector2Array()
+	var idx := PackedInt32Array()
+	for i in segments + 1:
+		var a := TAU * i / segments
+		var d := Vector3(cos(a), 0.0, sin(a))
+		verts.append(d * inner)
+		verts.append(d * outer)
+		uvs.append(Vector2(0, 0.5))
+		uvs.append(Vector2(1, 0.5))
+		if i < segments:
+			var k := i * 2
+			idx.append_array([k, k + 1, k + 2, k + 1, k + 3, k + 2])
+	var arrays := []
+	arrays.resize(Mesh.ARRAY_MAX)
+	arrays[Mesh.ARRAY_VERTEX] = verts
+	arrays[Mesh.ARRAY_TEX_UV] = uvs
+	arrays[Mesh.ARRAY_INDEX] = idx
+	var m := ArrayMesh.new()
+	m.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arrays)
+	return m
+
+
+# Osuus Auringon kiekosta, jonka sen edessä oleva kappale peittää: kahden ympyrän leikkausala jaettuna Auringon
+# kiekon alalla (kulmasäteet ja keskipisteiden kulmaetäisyys).
+static func covered(sun_r: float, body_r: float, sep: float) -> float:
+	if sep >= sun_r + body_r:
+		return 0.0
+	if sep <= absf(body_r - sun_r):
+		return 1.0 if body_r >= sun_r else pow(body_r / sun_r, 2.0)
+	var a := sun_r * sun_r
+	var b := body_r * body_r
+	var lens := a * acos(clampf((sep * sep + a - b) / (2.0 * sep * sun_r), -1.0, 1.0)) + b * acos(clampf((sep * sep + b - a) / (2.0 * sep * body_r), -1.0, 1.0)) \
+		- 0.5 * sqrt(maxf(0.0, (-sep + sun_r + body_r) * (sep + sun_r - body_r) * (sep - sun_r + body_r) * (sep + sun_r + body_r)))
+	return lens / (PI * a)
+
+
+## Päivittää kappaleiden paikat ja valaistuksen. ship_km: aluksen paikka (km, Auringon suhteen), t: hetki (ms),
+## px_per_rad: pikseliä radiaania kohden (kiekon koko ruudulla).
+func update(ship_km: PackedFloat64Array, t: float, px_per_rad: float) -> void:
+	if textures.poll():
+		for b in bodies:
+			_apply_textures(b)
+	# Aurinko
+	var sun_rel := Flight.scale(ship_km, -KM) # m, Auringon paikka aluksesta
+	var sun_vec := to_scene(sun_rel)
+	sun_distance = Flight.norm(sun_rel)
+	sun_dir = sun_vec.normalized()
+	var sd := compress(sun_distance)
+	var sk := sd / sun_distance
+	sun_root.position = sun_dir * sd
+	sun_mesh.scale = Vector3.ONE * Planets.SUN_RADIUS_KM * KM * sk
+	sun_glow.scale = Vector3.ONE * Planets.SUN_RADIUS_KM * KM * sk * 5.0
+	var sun_ang := asin(minf(1.0, Planets.SUN_RADIUS_KM * KM / sun_distance))
+	sunlit = 1.0
+	nearest = {}
+	nearest_size = 0.0
+	for b in bodies:
+		var name: String = b.name
+		var body_km: PackedFloat64Array = Flight.body_state(name, t).r
+		var rel := Flight.scale(Flight.sub(body_km, ship_km), KM)
+		var d := Flight.norm(rel)
+		if d < 1.0: # alus kappaleen keskipisteessä (ei pelissä, mutta vältetään nollalla jako)
+			rel = PackedFloat64Array([0.0, 0.0, 1.0])
+			d = 1.0
+		var dir := to_scene(rel) / d
+		var cd := compress(d)
+		var k := cd / d
+		var radius: float = b.radius_m
+		var root: Node3D = b.root
+		root.position = dir * cd
+		var size := radius / d # kulmasäde (rad, pienillä kulmilla)
+		if size > nearest_size:
+			nearest_size = size
+			nearest = b
+		if d < sun_distance:
+			sunlit *= 1.0 - covered(sun_ang, asin(minf(1.0, radius / d)), dir.angle_to(sun_dir))
+		(b.tilt as Node3D).scale = Vector3.ONE * radius * k
+		# Pyöriminen: kuut kääntävät aina saman puolen planeettaansa kohti.
+		var spin_angle: float
+		if b.moon:
+			spin_angle = TAU * fposmod((t - Planets.J2000_MS) / (float(Flight.MOONS[name].periodDays) * 86400000.0), 1.0)
+		else:
+			spin_angle = TAU * fposmod(t / 3600000.0 / float(SPIN_HOURS[name]), 1.0)
+		(b.spin as Node3D).basis = Basis(Vector3.UP, spin_angle)
+		if b.has("cloud_spin"):
+			(b.cloud_spin as Node3D).basis = Basis(Vector3.UP, spin_angle * 1.03 + 0.4)
+		# Valaistus kappaleen koordinaatistossa: suunta kappaleesta Aurinkoon.
+		var to_sun := to_scene(Flight.scale(body_km, -1.0)).normalized()
+		var mesh: MeshInstance3D = b.mesh
+		var inv := mesh.global_transform.basis.orthonormalized().inverse()
+		var sun_local := inv * to_sun
+		var body_sun_d := Flight.norm(body_km) * KM
+		var intensity := 1.5 * clampf(pow(AU_M / body_sun_d, 0.5), 0.3, 1.5) * dim
+		var mat: ShaderMaterial = b.mat
+		mat.set_shader_parameter("sun_local", sun_local)
+		mat.set_shader_parameter("sun_intensity", intensity)
+		var tilt_inv := (b.tilt as Node3D).global_transform.basis.orthonormalized().inverse()
+		var sun_tilt := tilt_inv * to_sun
+		if b.atmo != null:
+			b.atmo.set_shader_parameter("sun_local", sun_tilt)
+			b.atmo.set_shader_parameter("sun_intensity", intensity)
+			b.atmo.set_shader_parameter("samples", atmo_samples)
+		if b.clouds != null:
+			var cinv := (b.cloud_spin as Node3D).global_transform.basis.orthonormalized().inverse()
+			b.clouds.set_shader_parameter("sun_local", cinv * to_sun)
+			b.clouds.set_shader_parameter("sun_intensity", intensity)
+		if b.rings != null:
+			b.rings.set_shader_parameter("sun_local", sun_tilt)
+			b.rings.set_shader_parameter("sun_intensity", intensity)
+		# Kaukainen kappale pisteenä; kuun piste vain alle 20 milj. km päästä.
+		var px := size * px_per_rad
+		(b.dot as Node3D).visible = px < 2.0 and (not b.moon or d < 2e10)
+		(b.dot as Node3D).scale = Vector3.ONE * radius * k
+		_texture_level(b, px)
+
+
+func _texture_level(b: Dictionary, px: float) -> void:
+	var name: String = b.name
+	if name == "Titan":
+		return
+	var level: int = b.level
+	var hires_w := BodyTextures.best_width(name, max_texture)
+	if level == 0 and px > PHOTO_MIN_PX:
+		b.level = 2 if hires_w > 2048 and px > HIRES_PX else 1
+	elif level == 1 and hires_w > 2048 and px > HIRES_PX:
+		b.level = 2
+	elif level == 2 and px < HIRES_BACK_PX:
+		b.level = 1
+	if b.level != level:
+		var old: String = b.hires
+		b.hires = BodyTextures.file_for(name, hires_w) if b.level == 2 else ""
+		if old != "" and old != b.hires:
+			textures.release(old)
+		_apply_textures(b)
+
+
+func _apply_textures(b: Dictionary) -> void:
+	if b.level == 0:
+		return
+	var mat: ShaderMaterial = b.mat
+	var tex: Texture2D = null
+	if b.hires != "":
+		tex = textures.get_texture(b.hires)
+	if tex == null:
+		tex = textures.get_texture(b.base)
+	if tex != null:
+		mat.set_shader_parameter("albedo_tex", tex)
+	if b.has("night_path"):
+		var n := textures.get_texture(b.night_path)
+		if n != null:
+			mat.set_shader_parameter("night_tex", n)
+		var s := textures.get_texture(b.spec_path)
+		if s != null:
+			mat.set_shader_parameter("spec_tex", s)
+	if b.clouds != null:
+		var path: String = BodyTextures.DIR + ("maa-pilvet-4k.webp" if b.level == 2 else "maa-pilvet.webp")
+		var c := textures.get_texture(path)
+		if c == null:
+			c = textures.get_texture(b.cloud_path)
+		if c != null:
+			b.clouds.set_shader_parameter("cloud_tex", c)
+			mat.set_shader_parameter("cloud_tex", c)
+			mat.set_shader_parameter("cloud_shadow", 0.35)
+	if b.rings != null:
+		var r := textures.get_texture(BodyTextures.DIR + "saturnus-renkaat.webp")
+		if r != null:
+			b.rings.set_shader_parameter("ring_tex", r)
+			mat.set_shader_parameter("ring_tex", r)

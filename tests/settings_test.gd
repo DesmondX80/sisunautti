@@ -12,7 +12,9 @@ func _ready() -> void:
 	s.load_settings()
 	check("oletustaso ilman tiedostoa", s.quality == s.default_quality())
 	check("neljä laatutasoa", s.QUALITY_NAMES.size() == 4 and s.QUALITY_NAMES[0] == "Matala" and s.QUALITY_NAMES[3] == "Ultra")
-	check("työpöydän oletus Korkea", OS.has_feature("web") or s.is_compatibility() or s.default_quality() == s.Quality.HIGH)
+	check("oletus näytönohjaimen mukaan", s.adapter_quality(RenderingDevice.DEVICE_TYPE_DISCRETE_GPU) == s.Quality.HIGH
+		and s.adapter_quality(RenderingDevice.DEVICE_TYPE_INTEGRATED_GPU) == s.Quality.MEDIUM and s.adapter_quality(RenderingDevice.DEVICE_TYPE_CPU) == s.Quality.LOW)
+	check("oletus enintään yläraja", s.default_quality() <= s.max_quality())
 	var got: Array[int] = []
 	s.quality_changed.connect(func(level: int) -> void: got.append(level))
 	s.set_quality(s.Quality.LOW)

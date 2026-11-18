@@ -11,10 +11,10 @@ const DAY := Fmt.DAY_MS
 const BURN_DIRS := [["prograde", "Eteen"], ["retrograde", "Taakse"], ["inward", "Sisään"], ["outward", "Ulos"]]
 const BURN_SIZES := [[0.01, "10 m/s"], [0.05, "50 m/s"], [0.1, "100 m/s"], [0.5, "500 m/s"], [1.0, "1 km/s"]]
 const ABOUT := "Peli, jossa lähdetään laukaisualustalta Maan pinnalta kiertoradalle ja sieltä muille planeetoille ja niiden kuille. Kantoraketti nostaa aluksen 200 km:n radalle noin 8,5 minuutissa. Kiertoradalla lähtöpoltto kytketään päälle, ja moottori syttyy, kun alus on radalla kohdassa, josta poltto linkoaa sen kohteeseen. Perillä jarrutetaan matalalle radalle. Radat, laukaisuikkunat ja polttoaineen kulutus (Δv) lasketaan oikeilla taivaanmekaniikan kaavoilla, ja pelin kello kulkee oikeassa ajassa, ellei aikaa kiihdytä."
-const SOURCES := "Kuvalähteet: Solar System Scope (planeetat, Kuu ja Saturnuksen renkaat; CC BY 4.0, solarsystemscope.com/textures), NASA/JPL/USGS (Phobos, Io), NASA/JPL-Caltech/SSI/LPI (Enceladus, Triton), Björn Jónsson NASAn kuvista (Ganymedes) ja Seek9750 Wikimedia Commonsissa (Europa). Kirjasin: DejaVu Sans (Bitstream Vera -lisenssi)."
+const SOURCES := "Kuvalähteet: Solar System Scope (planeetat, Maan pilvet ja yövalot, Kuu ja Saturnuksen renkaat; CC BY 4.0, solarsystemscope.com/textures), NASA/Goddard SVS Deep Star Maps 2020 (Linnunrata), NASA/JPL/USGS (Phobos, Io), NASA/JPL-Caltech/SSI/LPI (Enceladus, Triton), Björn Jónsson NASAn kuvista (Ganymedes) ja Seek9750 Wikimedia Commonsissa (Europa). Kirjasin: DejaVu Sans (Bitstream Vera -lisenssi)."
 
 var map: FlightMap
-var cockpit_view: Control = null # 3D-ohjaamo (#11); null = vain kartta
+var cockpit_view: CockpitView = null # 3D-ohjaamo
 
 var _root: VBoxContainer
 var _top: PanelContainer
@@ -34,6 +34,7 @@ var _panel_pad: MarginContainer
 var _body: VBoxContainer
 var _about: AcceptDialog
 var _about_box: VBoxContainer
+var _quality_seg: PanelContainer
 var _confirm: ConfirmationDialog
 var _wide := true
 var _live := {} # päivitettävät tekstit ja palkit: nimi → Control
@@ -163,6 +164,10 @@ func _build_view() -> void:
 	map = FlightMap.new()
 	map.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	_view_area.add_child(map)
+	cockpit_view = CockpitView.new()
+	cockpit_view.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	cockpit_view.ready.connect(_apply_view)
+	_view_area.add_child(cockpit_view)
 	# Näkymän vaihto (vasen yläkulma), kartan tilat (oikea yläkulma) ja zoomaus (oikea alakulma).
 	_overlay_view = _overlay(Control.PRESET_TOP_LEFT)
 	_overlay_modes = _overlay(Control.PRESET_TOP_RIGHT)
@@ -218,8 +223,10 @@ func _refresh_overlays() -> void:
 func _apply_view() -> void:
 	var cockpit := cockpit_view != null and Settings.view == "cockpit"
 	map.visible = not cockpit
-	if cockpit_view != null:
+	if cockpit_view != null and cockpit_view.viewport != null:
 		cockpit_view.visible = cockpit
+		# Piilossa olevaa ohjaamoa ei piirretä.
+		cockpit_view.viewport.render_target_update_mode = SubViewport.UPDATE_ALWAYS if cockpit else SubViewport.UPDATE_DISABLED
 
 
 func _build_panel() -> void:
@@ -250,6 +257,13 @@ func _build_dialogs() -> void:
 	_about_box = v
 	v.add_child(UiKit.label(ABOUT))
 	v.add_child(UiKit.label(SOURCES, "MutedLabel"))
+	v.add_child(UiKit.label("Grafiikan laatu", "TitleLabel"))
+	var levels := []
+	for i in Settings.max_quality() + 1:
+		levels.append([i, Settings.QUALITY_NAMES[i]])
+	_quality_seg = UiKit.seg(levels, Settings.quality, func(i: int) -> void: Settings.set_quality(i))
+	v.add_child(_quality_seg)
+	v.add_child(UiKit.label("Korkea ja Ultra: pehmeät varjot, varjojen peitto (SSAO) ja Ultralla heijastukset (SSR) sekä 8k-pintakartat. Selaimessa enintään Keski.", "MutedLabel"))
 	v.add_child(UiKit.label("Versio %s" % ProjectSettings.get_setting("application/config/version"), "MutedLabel"))
 	_about.add_child(v)
 	add_child(_about)

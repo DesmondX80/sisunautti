@@ -21,11 +21,19 @@ func _ready() -> void:
 	load_settings()
 
 
-## Oletustaso: selaimessa (Compatibility) Keski, työpöydällä Korkea.
+## Oletustaso näytönohjaimen mukaan: erillinen näytönohjain Korkea, integroitu Keski, ohjelmallinen (esim.
+## llvmpipe) Matala. Selaimessa (Compatibility) enintään Keski.
 static func default_quality() -> int:
-	if OS.has_feature("web") or is_compatibility():
-		return Quality.MEDIUM
-	return Quality.HIGH
+	var level: int = adapter_quality(RenderingServer.get_video_adapter_type())
+	return mini(level, max_quality())
+
+
+static func adapter_quality(device_type: int) -> int:
+	match device_type:
+		RenderingDevice.DEVICE_TYPE_DISCRETE_GPU: return Quality.HIGH
+		RenderingDevice.DEVICE_TYPE_INTEGRATED_GPU, RenderingDevice.DEVICE_TYPE_VIRTUAL_GPU: return Quality.MEDIUM
+		RenderingDevice.DEVICE_TYPE_CPU: return Quality.LOW
+	return Quality.MEDIUM
 
 
 static func is_compatibility() -> bool:

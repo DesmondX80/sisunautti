@@ -40,7 +40,26 @@ tools/run_tests.sh          # ikkunattomat testit, esim. tools/run_tests.sh sett
   Teema on selainversion väreissä (`ui/theme.tres`, luodaan komennolla `godot --headless -s tools/make_theme.gd`).
   Näppäimet: 1–8 aikakiihdytys, + ja − zoomaus, P sivupaneeli, F11 koko näyttö. Kartan zoomaus myös hiiren rullalla ja
   nipistämällä.
+- 3D-ohjaamo (`scripts/cockpit/`, varjostimet `shaders/`): sisätila on rakennettu koodissa (kuomun kaari ja tuet,
+  konsolit, näytöt, ohjainsauva, tehovipu, istuin, kaapelit) PBR-materiaalein: kulunut metalli on varjostin, jossa on
+  naarmut, levyjen saumat ja niitit normaali- ja karheuskarttoina. Näytöt ovat hehkuvia `SubViewport`-tekstuureja
+  juovituksineen, merkkivalot ja tehovipu seuraavat pelin tilaa, ja kuomun lasissa on likaa ja naarmuja, jotka
+  Aurinko sytyttää häikäisyksi. Avaruudessa ovat kirkkaat tähdet HDR-pisteinä ja Linnunrata taustana, Auringon
+  HDR-kiekko hehkuineen ja linssiheijastus (ohjaamon rakenteet peittävät sen syvyyspuskurin perusteella), planeettojen
+  ja kuiden pintakartat (2k, lähellä 4k tai 8k), ilmakehän sironta varjostimella, Maan erillinen pilvikerros,
+  kaupunkien valot ja merien heijastus sekä Saturnuksen läpikuultavat renkaat varjoineen. Kappaleet piirretään
+  kameran suhteen: 64-bittiset sijainnit muutetaan suunnaksi ja logaritmisesti puristetuksi etäisyydeksi, ja niiden
+  syvyysarvo kirjoitetaan aina ohjaamon taakse. Valaistus: auringonvalo ikkunoista pehmeine varjoineen, lähimmän
+  kappaleen heijastama valo sen värisenä, himmeneminen kaukana Auringosta ja pimennys, kun kappale peittää Auringon.
+  AgX-tonemapping, hehku ja automaattinen valotus. Laukaisussa päivätaivas, liekki ja pakokaasupilvi (GPU-partikkelit)
+  ja tärinä; poltoissa moottorin hehku; ilmajarrutuksessa virtaava plasma, oranssi valo ja kipinät.
+- Laatutasot (Tietoa-ikkunassa): Matala, Keski, Korkea ja Ultra muuttavat varjojen tarkkuutta, SSAO:ta (Korkea),
+  SSR:ää (Ultra), reunanpehmennystä, partikkelimääriä, pintakarttojen tarkkuutta (Matala 2k, Keski 4k, Korkea ja
+  Ultra 8k) ja ilmakehän näytteitä. Oletus valitaan näytönohjaimen mukaan. Selaimessa (Compatibility) enintään
+  Keski, ilman SSAO:ta, SSR:ää ja automaattista valotusta, ja 8k-karttoja ei viedä selainversioon.
 - Kuvakaappaukset käyttöliittymän tiloista (vaatii ikkunan): `godot -- --uishotstest=/polku/kuviin --size=390x844`.
+  Ohjaamosta: `godot -- --cockpitshotstest=/polku/kuviin [--quality=0–3]` (selaimen renderöijällä lisäksi
+  `--rendering-method gl_compatibility`); raporttiin kirjataan myös ruutunopeus.
 - Ratamekaniikka on hakemistossa `scripts/orbit/` (`planets.gd`, `flight.gd`, `window_search.gd`). Laskut tehdään
   64-bittisillä `float`-luvuilla (`PackedFloat64Array`), ja laukaisuikkunoiden haku jaetaan ruutujen kesken.
   `orbitcomparetest` vertaa tuloksia selainversioon (`tests/data/orbit_reference.json`, luodaan komennolla
@@ -90,6 +109,8 @@ project.godot, export_presets.cfg   # Godot-projekti (Forward+, web: Compatibili
 scripts/, scenes/, ui/, assets/     # Godot: logiikka, scenet, käyttöliittymä, resurssit
 scripts/game.gd, scripts/format.gd   # Godot: pelin tila, kello ja tallennus; suomenkielinen muotoilu
 scripts/ui/, ui/                    # Godot: käyttöliittymä, lentokartta ja teema
+scripts/cockpit/, shaders/          # Godot: 3D-ohjaamo, avaruus ja varjostimet
+assets/textures/                    # Godot: pintakartat ja Linnunrata (WebP, viedään sellaisinaan)
 assets/data/, assets/fonts/         # Godot: tietokortit (planet_info.json) ja DejaVu Sans -kirjasin
 scripts/orbit/                      # Godot: ratamekaniikka (Kepler, Lambert, ikkunahaku, linkoukset, kuut)
 tests/, tools/                      # Godot: ikkunattomat testit, vertailuarvot ja run_tests.sh
@@ -126,6 +147,8 @@ Ohjaamon pintakartat ovat hakemistossa `web/textures/` (tasavälinen lieriöproj
 | Europa | Seek9750: Moon Europa color map ([Wikimedia Commons](https://commons.wikimedia.org/wiki/File:Moon_Europa_color_map.jpg)), NASAn kuvista | CC0 |
 | Ganymedes | Björn Jónsson: Map of Ganymede, NASAn kuvista ([Wikimedia Commons](https://commons.wikimedia.org/wiki/File:Map_of_Ganymede_by_Bj%C3%B6rn_J%C3%B3nsson.jpg)). Tarkoissa kartoissa värit ovat tästä kartasta ja hienot yksityiskohdat USGS:n Voyager- ja Galileo-mosaiikin kirkkaudesta ([USGS Astrogeology](https://astrogeology.usgs.gov/search/map/ganymede_voyager_galileo_ssi_global_color_mosaic_1435m)) | vapaa käyttö, tekijä mainittava; USGS public domain |
 | Enceladus | Cassini-luotaimen värikartta PIA18435, NASA/JPL-Caltech/SSI/LPI ([Wikimedia Commons](https://commons.wikimedia.org/wiki/File:Enceladus_Color_Map.jpg)) | public domain |
+| Maan päiväkartta ilman pilviä, pilvikerros ja yövalot (Godot-versio, `assets/textures/maa-*`) | [Solar System Scope](https://www.solarsystemscope.com/textures/) Wikimedia Commonsin kautta: 8k earth daymap, clouds, nightmap ja 2k specular map; pienennetty ja muunnettu WebP:ksi (`tools/make_textures.gd`) | [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/) |
+| Linnunrata (Godot-versio, `assets/textures/linnunrata-4k.webp`) | NASA/Goddard Space Flight Center Scientific Visualization Studio: [Deep Star Maps 2020](https://svs.gsfc.nasa.gov/4851/), Milkyway 2020 (Wikimedia Commonsin 3840 px versio), muunnettu WebP:ksi | public domain (NASA) |
 | Kirjasin (Godot-versio) | [DejaVu Sans](https://dejavu-fonts.github.io/) (`assets/fonts/`) | Bitstream Vera -lisenssi, ks. `assets/fonts/LICENSE-DejaVu.txt` |
 | Triton | Voyager 2:n värikartta PIA18668, NASA/JPL-Caltech/LPI ([Wikimedia Commons](https://commons.wikimedia.org/wiki/File:Triton_Map.jpg)). Voyager kuvasi vain osan pinnasta: kuvaamaton pohjoinen alue on täytetty ympäristön sumennetulla värillä, ja tehostettuja värejä on haalistettu. | public domain |
 
