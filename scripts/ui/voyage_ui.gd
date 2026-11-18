@@ -251,7 +251,7 @@ func _build_panel() -> void:
 
 func _build_dialogs() -> void:
 	_about = AcceptDialog.new()
-	_about.title = "Sisunautti"
+	_about.title = "Sisunautti %s" % version()
 	_about.ok_button_text = "Sulje"
 	var v := UiKit.vbox(12)
 	_about_box = v
@@ -264,7 +264,7 @@ func _build_dialogs() -> void:
 	_quality_seg = UiKit.seg(levels, Settings.quality, func(i: int) -> void: Settings.set_quality(i))
 	v.add_child(_quality_seg)
 	v.add_child(UiKit.label("Korkea ja Ultra: pehmeät varjot, varjojen peitto (SSAO) ja Ultralla heijastukset (SSR) sekä 8k-pintakartat. Selaimessa enintään Keski.", "MutedLabel"))
-	v.add_child(UiKit.label("Versio %s" % ProjectSettings.get_setting("application/config/version"), "MutedLabel"))
+	v.add_child(UiKit.label("Versio %s · %s" % [version(), "selain (Compatibility)" if Settings.is_compatibility() else "työpöytä (Forward+)"], "MutedLabel"))
 	_about.add_child(v)
 	add_child(_about)
 	_confirm = ConfirmationDialog.new()
@@ -613,6 +613,11 @@ func _popup(d: AcceptDialog, content: Control, max_w: int) -> void:
 	d.size = Vector2i(w, 0)
 	d.reset_size()
 	d.move_to_center()
+
+
+## Pelin versio (project.godot), näytetään Tietoa-ikkunassa.
+static func version() -> String:
+	return str(ProjectSettings.get_setting("application/config/version"))
 
 
 func show_about() -> void:

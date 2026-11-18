@@ -26,7 +26,7 @@ func _ready() -> void:
 	check("taso tallentui", s.quality == s.max_quality())
 	check("tason nimi", s.quality_name() == s.QUALITY_NAMES[s.quality])
 	check("ikkunan otsikko", ProjectSettings.get_setting("application/config/name") == "Sisunautti")
-	check("versio", ProjectSettings.get_setting("application/config/version") == "1.0.1")
+	check("versio", ProjectSettings.get_setting("application/config/version") == "1.0.2")
 	DirAccess.remove_absolute(path)
 	s.path = original_path
 	s.load_settings()

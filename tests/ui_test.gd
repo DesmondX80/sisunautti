@@ -17,6 +17,7 @@ func _ready() -> void:
 	refresh()
 	_play()
 	_layout()
+	check("versio Tietoa-ikkunan otsikossa", ui._about.title == "Sisunautti " + VoyageUI.version())
 	G.fake_real_ms = -1.0
 	DirAccess.remove_absolute(G.TEST_SAVE_PATH)
 	finish()
