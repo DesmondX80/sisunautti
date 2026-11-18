@@ -48,8 +48,9 @@ tools/run_tests.sh          # ikkunattomat testit, esim. tools/run_tests.sh sett
   jokaiselle pikselille lasketaan katsesuunta ja siitä kohta kuvassa, joten kuvan värit säilyvät ilman sävykartoitusta.
   Kuvan ikkuna-alue on läpinäkyvä (alfakanava, ääriviiva `Cabin.WINDOW`), joten avaruus näkyy sen läpi, ja kuvan
   näyttöjen päälle piirretään pelin näytöt projektiivisella kuvauksella (kulmat kuvasta, `Cabin.MONITORS`). Kuvan
-  reunojen yli katsottaessa jatkuu koodissa rakennettu tumma sisätila (seinät, katto, lattia) PBR-materiaalein:
-  kulunut metalli on varjostin, jossa on naarmut, levyjen saumat ja niitit. Näytöt (tutka, aluskaavio, tähtäin,
+  ympärillä on ohjaamon 360°-panoraama (`assets/cockpit/panoraama-6k.webp` 5824 × 2880 työpöydällä,
+  `panoraama.webp` 4096 × 2048 selaimessa), joka lasketaan samasta katsesuunnasta; etukuva häivytetään reunoiltaan
+  panoraamaan. Näytöt (tutka, aluskaavio, tähtäin,
   järjestelmät, etukamera ja pikkunäyttö) ovat `SubViewport`-tekstuureja kuvan näyttöjen muodossa (leveys 1024),
   jotka piirretään uudelleen enintään 20 kertaa sekunnissa; etukamera ja järjestelmänäytön hologrammi näyttävät
   kohteen pinnan pyörivänä pallona (`shaders/globe.gdshader`). Näyttöä napsauttamalla katse kääntyy siihen ja
@@ -119,7 +120,7 @@ tests/, tools/                      # Godot: ikkunattomat testit, vertailuarvot 
 
 ## Tekstuurien lähteet
 
-Ohjaamon kuva `assets/cockpit/ohjaamo.png` (1382 × 777) on pelin tekijän antama kuva; sen ikkuna-alue on tehty läpinäkyväksi.
+Ohjaamon kuva `assets/cockpit/ohjaamo.png` (1382 × 777) on pelin tekijän antama kuva; sen ikkuna-alue on tehty läpinäkyväksi. Ohjaamon panoraama on pelin tekijän tekemä (Gemini, 1456 × 720), ja se on suurennettu nelinkertaiseksi Real-ESRGANilla (malli realesrgan-x4plus, reunat kierrettyinä, jotta sauma pysyy jatkuvana).
 
 Ohjaamon pintakartat ovat hakemistossa `assets/textures/` (tasavälinen lieriöprojektio, WebP, yhteensä noin 41 Mt). Jokaisesta kohteesta on peruskartta (enintään 2048 × 1024). Lisäksi on tarkat kartat, jotka haetaan vasta, kun kohde täyttää suuren osan ikkunasta: 8k (8192 × 4096) ja 4k Merkuriuksesta, Maasta, Marsista, Kuusta, Iosta, Europasta, Ganymedeestä ja Enceladuksesta sekä 4k Venuksesta, Jupiterista, Saturnuksesta, Phoboksesta ja Tritonista (näistä ei ole tarkempaa lähdettä tai lähteen tarkkuus ei riitä 8k:hon). 8k-karttaa käytetään vain tietokoneella; kosketusnäyttölaitteet ja heikommat näytönohjaimet saavat 4k-kartan.
 

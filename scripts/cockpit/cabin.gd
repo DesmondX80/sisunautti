@@ -3,8 +3,9 @@ extends Node3D
 ## Ohjaamo: etuseinänä ohjaamon kuva (assets/cockpit/ohjaamo.png) täsmälleen kuvan kuvakulmassa metrin päässä
 ## silmästä. Koska kamera vain kääntyy paikallaan, tasainen kuva näkyy oikein joka suuntaan katsottaessa. Kuva ja
 ## pelin näytöt sen päällä piirretään 2D-kerroksena (CockpitView, shaders/cockpit_overlay.gdshader), jotta kuvan
-## värit säilyvät; täällä ovat kuvan mitat, ikkunan ääriviiva, näyttöjen kulmat ja SubViewportit, lasi ikkunan
-## takana sekä kuvan reunojen ulkopuolella jatkuva tumma sisätila (seinät, katto, lattia).
+## värit säilyvät. Kuvan ympärillä näkyy ohjaamon 360°-panoraama (assets/cockpit/panoraama.webp), johon etukuva
+## häivytetään reunoiltaan. Täällä ovat kuvan mitat, ikkunan ääriviiva, näyttöjen kulmat ja SubViewportit sekä
+## lasi ikkunan takana.
 ## Yksikkö metri; silmä origossa, katse −z, ylös +y.
 
 ## Kuvan koko, polttoväli ja keskipiste pikseleinä (vaakakuvakulma noin 95°).
@@ -29,6 +30,14 @@ const MONITORS := [
 	["mini", [Vector2(660, 480), Vector2(727, 480), Vector2(727, 501), Vector2(660, 501)]],
 ]
 const SCREEN_WIDTH := 1024
+## Ympäröivä 360°-panoraama (tasavälinen lieriöprojektio): 5824 × 2880 työpöydällä (sama pikselitiheys kuin
+## etukuvassa), 4096 × 2048 selaimessa (muisti). Suurennettu käyttäjän kuvasta Real-ESRGANilla.
+const PANORAMA := "res://assets/cockpit/panoraama.webp"
+const PANORAMA_HIRES := "res://assets/cockpit/panoraama-6k.webp"
+
+
+static func panorama_path() -> String:
+	return PANORAMA_HIRES if not OS.has_feature("web") and ResourceLoader.exists(PANORAMA_HIRES) else PANORAMA
 
 ## Kolme päänäyttöä pelin tilan näyttörivien järjestyksessä (aika, nopeus, kohde).
 var screens: Array[CockpitScreen] = []
@@ -45,26 +54,12 @@ var lights := {} # merkkivalot ovat osa kuvaa
 var noise_tex: NoiseTexture2D
 var scratch_tex: NoiseTexture2D
 
-var plate: ShaderMaterial
-var dark: ShaderMaterial
-var hull: ShaderMaterial
-var led_blue: StandardMaterial3D
-
 
 func _ready() -> void:
 	noise_tex = _noise(512, 0.012, FastNoiseLite.TYPE_SIMPLEX_SMOOTH, 7)
 	scratch_tex = _noise(512, 0.05, FastNoiseLite.TYPE_VALUE_CUBIC, 11)
-	plate = _metal(Color(0.22, 0.23, 0.26), 0.7, 0.45, 0.5, 0.35)
-	dark = _metal(Color(0.09, 0.1, 0.11), 0.55, 0.5, 0.4, 0.25)
-	hull = _metal(Color(0.06, 0.065, 0.075), 0.35, 0.65, 0.3, 0.5)
-	led_blue = StandardMaterial3D.new()
-	led_blue.albedo_color = Color(0.08, 0.2, 0.3)
-	led_blue.emission_enabled = true
-	led_blue.emission = Color(0.25, 0.62, 1.0)
-	led_blue.emission_energy_multiplier = 1.2
 	_build_image()
 	_build_monitors()
-	_build_room()
 	_build_plasma()
 
 
@@ -85,19 +80,6 @@ func _noise(size: int, freq: float, type: int, seed: int) -> NoiseTexture2D:
 	return t
 
 
-func _metal(color: Color, metallic: float, roughness: float, panel: float, wear: float) -> ShaderMaterial:
-	var m := ShaderMaterial.new()
-	m.shader = load("res://shaders/worn_metal.gdshader")
-	m.set_shader_parameter("base_color", color)
-	m.set_shader_parameter("metallic", metallic)
-	m.set_shader_parameter("roughness", roughness)
-	m.set_shader_parameter("panel_size", panel)
-	m.set_shader_parameter("wear", wear)
-	m.set_shader_parameter("noise", noise_tex)
-	m.set_shader_parameter("scratch_noise", scratch_tex)
-	return m
-
-
 func _mesh(mesh: Mesh, mat: Material, pos: Vector3, rot: Vector3 = Vector3.ZERO) -> MeshInstance3D:
 	var mi := MeshInstance3D.new()
 	mi.mesh = mesh
@@ -106,12 +88,6 @@ func _mesh(mesh: Mesh, mat: Material, pos: Vector3, rot: Vector3 = Vector3.ZERO)
 	mi.rotation = rot
 	add_child(mi)
 	return mi
-
-
-func _box(size: Vector3, mat: Material, pos: Vector3, rot: Vector3 = Vector3.ZERO) -> MeshInstance3D:
-	var b := BoxMesh.new()
-	b.size = size
-	return _mesh(b, mat, pos, rot)
 
 
 ## Kuvan pikseli suunnaksi silmästä (z = −1 -tasolla).
@@ -142,7 +118,7 @@ static func parallelogram(q: Array) -> PackedVector3Array:
 	return out
 
 
-## Näkyykö suunta d (aluksen koordinaateissa, silmästä) ohjaamon ikkunasta.
+## Näkyykö suunta d (aluksen koordinaateissa, silmästä) ohjaamon ikkunasta (panoraamassa ei ole ikkunoita).
 static func through_window(d: Vector3) -> bool:
 	var p := image_point(d)
 	return p.x >= 0.0 and Geometry2D.is_point_in_polygon(p, PackedVector2Array(WINDOW))
@@ -202,35 +178,6 @@ func _build_monitors() -> void:
 			"systems": systems_screen = screen
 			"mini": mini_screen = screen
 			_: screens.append(screen)
-
-
-func _build_room() -> void:
-	# Kuvan reunojen ulkopuolinen sisätila: seinät, katto, lattia ja takaseinä kuvan näkökartion ulkopuolella
-	# (|x| > 1,09 |z| tai |y| > 0,61 |z|), jotta mikään ei peitä kuvaa.
-	var hw := IMAGE_SIZE.x / 2.0 / FOCAL
-	var hh := IMAGE_SIZE.y / 2.0 / FOCAL
-	var top := 0.72
-	var bottom := -0.76
-	var side := 1.22
-	# Etuseinän kehys kuvan ympärillä.
-	_box(Vector3(side * 2.0, top - hh, 0.04), hull, Vector3(0, (top + hh) / 2.0, -1.02))
-	_box(Vector3(side * 2.0, -hh - bottom, 0.04), hull, Vector3(0, (bottom - hh) / 2.0, -1.02))
-	for s: float in [-1.0, 1.0]:
-		_box(Vector3(side - hw, hh * 2.0, 0.04), hull, Vector3(s * (side + hw) / 2.0, 0, -1.02))
-	_box(Vector3(side * 2.0, 0.06, 2.4), hull, Vector3(0, top + 0.03, 0.18))
-	_box(Vector3(side * 2.0, 0.06, 2.4), plate, Vector3(0, bottom - 0.03, 0.18))
-	_box(Vector3(side * 2.0, top - bottom, 0.06), hull, Vector3(0, (top + bottom) / 2.0, 1.4))
-	for s: float in [-1.0, 1.0]:
-		_box(Vector3(0.06, top - bottom, 2.4), hull, Vector3(s * (side + 0.03), (top + bottom) / 2.0, 0.18))
-		# Sivukonsoli, paneelit ja valolistat seinällä.
-		_box(Vector3(0.16, 0.5, 2.2), dark, Vector3(s * (side - 0.08), bottom + 0.25, 0.1))
-		_box(Vector3(0.2, 0.03, 2.2), plate, Vector3(s * (side - 0.1), bottom + 0.5, 0.1), Vector3(0, 0, s * -0.3))
-		for i in 4:
-			var z := -0.75 + i * 0.5
-			_box(Vector3(0.03, 0.34, 0.4), dark, Vector3(s * (side - 0.01), 0.15, z))
-			_box(Vector3(0.012, 0.02, 0.3), led_blue, Vector3(s * (side - 0.03), 0.3, z))
-		_box(Vector3(0.012, 0.018, 2.2), led_blue, Vector3(s * (side - 0.17), bottom + 0.52, 0.1))
-	_box(Vector3(1.2, 0.012, 0.03), led_blue, Vector3(0, top - 0.01, 0.4))
 
 
 func _build_plasma() -> void:

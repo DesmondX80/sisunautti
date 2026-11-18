@@ -75,6 +75,7 @@ func _ready() -> void:
 	check("ikkunasta näkyy eteen, ei alas eikä taakse", Cabin.through_window(Vector3(0, 0.2, -1).normalized())
 		and Cabin.through_window(Vector3(-0.5, 0.3, -1).normalized()) and not Cabin.through_window(Vector3(0, -0.5, -1).normalized())
 		and not Cabin.through_window(Vector3(0, 0.1, 1).normalized()))
+	check("panoraamat löytyvät", ResourceLoader.exists(Cabin.PANORAMA) and Cabin.panorama_path() == Cabin.PANORAMA_HIRES)
 	cv.reset_view()
 	cv.zoom_to(2)
 	check("zoomaus keskinäyttöön kaventaa kuvakulmaa", cv.zoom_index == 2 and cv.fov_target < cv.base_fov * 0.5)

@@ -217,10 +217,11 @@ func _run() -> void:
 			cv.zoom_to(i)
 			await shot("zoom-%d" % i, 60)
 		cv.reset_view()
-		# Katse käännettynä vasemmalle ja ylös: kuvan reunan yli näkyy sisätila.
-		cv.yaw = 0.9
-		cv.pitch = 0.25
-		await shot("katse-sivulle", 30)
+		# Katse käännettynä: kuvan reunan yli jatkuva sisätila (sivut, katto, taakse).
+		for v: Array in [["vasen", 0.9, 0.1], ["oikea", -0.8, 0.2], ["katto", 0.0, 0.95], ["taakse", 2.5, -0.1]]:
+			cv.yaw = v[1]
+			cv.pitch = v[2]
+			await shot("katse-" + v[0], 20)
 		cv.reset_view()
 	# Ruutunopeus: kiertorata Maan yllä, katse Maahan, 5 s.
 	orbit_at("Maa", t0, sun_angle("Maa", t0, false) + 0.3)

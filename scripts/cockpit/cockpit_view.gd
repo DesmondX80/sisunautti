@@ -270,6 +270,7 @@ func _build_overlay() -> void:
 	overlay_mat.set_shader_parameter("image_size", Cabin.IMAGE_SIZE)
 	overlay_mat.set_shader_parameter("image_center", Cabin.CENTER)
 	overlay_mat.set_shader_parameter("focal", Cabin.FOCAL)
+	overlay_mat.set_shader_parameter("panorama", load(Cabin.panorama_path()))
 	for i in cabin.monitors.size():
 		overlay_mat.set_shader_parameter("screen%d" % i, cabin.monitors[i].texture)
 		overlay_mat.set_shader_parameter("homography%d" % i, cabin.monitors[i].homography)
