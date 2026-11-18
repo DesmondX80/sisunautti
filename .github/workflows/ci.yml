@@ -1,13 +1,51 @@
+# Testit jokaisesta pushista ja PR:stä: selainversio (web/, vitest) ja Godot-versio (ikkunattomat testit).
+# Samat testit paikallisesti: (cd web && npm test) ja tools/run_tests.sh
 name: CI
 on: [push, pull_request]
+
+env:
+  GODOT_VERSION: 4.7.2
+
 jobs:
-  test:
+  web:
     runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: web
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: 22
           cache: npm
+          cache-dependency-path: web/package-lock.json
       - run: npm ci
       - run: npm test
+
+  godot:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Godot välimuistista
+        id: cache
+        uses: actions/cache@v4
+        with:
+          path: ~/godot-bin
+          key: godot-${{ env.GODOT_VERSION }}-linux
+
+      - name: Lataa Godot
+        if: steps.cache.outputs.cache-hit != 'true'
+        run: |
+          mkdir -p ~/godot-bin
+          curl -sL -o godot.zip https://github.com/godotengine/godot/releases/download/${GODOT_VERSION}-stable/Godot_v${GODOT_VERSION}-stable_linux.x86_64.zip
+          unzip -q godot.zip -d ~/godot-bin
+          mv ~/godot-bin/Godot_v${GODOT_VERSION}-stable_linux.x86_64 ~/godot-bin/godot
+          rm godot.zip
+
+      - name: Tuo projekti
+        run: ~/godot-bin/godot --headless --import || true
+
+      - name: Aja testit
+        run: tools/run_tests.sh ~/godot-bin/godot

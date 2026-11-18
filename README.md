@@ -10,18 +10,51 @@ Peli syntyi OmaAvaruus-sovelluksen ([DesmondX80/omaavaruus](https://github.com/D
 ja eriytettiin omaksi pelikseen. Tallennetut pelit jatkuvat: molemmat sivut ovat samassa alkuperässä
 (`desmondx80.github.io`), ja tallennusavaimet (`avaruuslento*`) ovat ennallaan.
 
-## Pika-aloitus
+> **Siirto Godotiin käynnissä.** Peli siirretään Godot 4.7 -pelimoottorille (issuet #7–#12), ja Godot-versio
+> korvaa selainversion: sama peli julkaistaan työpöydälle (Windows, Linux) ja selaimeen samaan osoitteeseen.
+> Godot-projekti on repon juuressa, ja nykyinen selainversio on hakemistossa `web/`, kunnes Godot-versio on sen tasolla.
+
+## Kehitys: Godot-versio
+
+Tarvitaan [Godot 4.7.2](https://godotengine.org/download/) (vakioversio, ei .NET).
 
 ```bash
 cd ~/projektit
 git clone git@github.com:DesmondX80/sisunautti.git sisunautti
 cd sisunautti
+godot --headless --import   # tuo resurssit kerran uudessa työkopiossa
+godot -e                    # avaa editorissa (tai Godotin projektilistasta project.godot)
+godot                       # käynnistä peli
+tools/run_tests.sh          # ikkunattomat testit, esim. tools/run_tests.sh settingstest
+```
+
+- Renderöijä: työpöydällä **Forward+**, selaimessa **GL Compatibility** (`rendering/renderer/rendering_method.web`).
+- Laatutasot Matala, Keski, Korkea ja Ultra (`Settings`-autoload, `user://settings.cfg`). Työpöydän oletus on Korkea,
+  selaimen Keski.
+- Testi on tiedosto `tests/<nimi>_test.gd`, ja se ajetaan lipulla `--<nimi>test`, esim. `godot --headless -- --boottest`.
+
+### Vienti
+
+Vientipohjat (export templates) asennetaan editorista: *Editor → Manage Export Templates*.
+
+```bash
+godot --headless --export-release "Windows Desktop" export/windows/Sisunautti.exe
+godot --headless --export-release "Linux" export/linux/Sisunautti.x86_64
+godot --headless --export-release "Web" export/web/index.html   # web_nothreads-pohja, ei vaadi COOP/COEP-otsakkeita
+```
+
+`export/` ei ole versionhallinnassa.
+
+## Kehitys: selainversio (`web/`)
+
+```bash
+cd web
 npm install
 npm run dev      # http://localhost:8000
 npm test
 ```
 
-Peli on pelkkiä staattisia tiedostoja (ES-moduulit ilman käännösvaihetta), eikä se tarvitse palvelinta.
+Selainversio on pelkkiä staattisia tiedostoja (ES-moduulit ilman käännösvaihetta), eikä se tarvitse palvelinta.
 
 ## Pelin kulku
 
@@ -34,35 +67,39 @@ peli, jossa lähdetään raketilla Maan pinnalta kiertoradalle ja sieltä muille
 - - **Tutkiminen ja lokikirja**: perillä jarrutetaan kiertoradalle (jos polttoaine ei riitä, alus ohittaa planeetan ja jää Auringon kiertoradalle). Planeetan tietokortissa ovat koko, massa, painovoima, päivän ja vuoden pituus, lämpötila, kaasukehä ja kuut. Vuorokauden kartoituksen jälkeen planeetta on tutkittu, sen faktat paljastuvat ja polttoaine täydennetään. Lokikirjassa ovat lennot, tutkitut planeetat (x/8), kokonaislentoaika, kuljettu matka ja huippunopeus.
 - - **Kurssikorjaukset**: lennon aikana moottoria voi polttaa eteen, taakse, sisään tai ulos (10 m/s–1 km/s). Ennuste kertoo ennen polttoa, osuuko alus kohteen vaikutuspiiriin vai ohittaako se kohteen, ja uusi rata näkyy kartalla. Automaattinen korjaus laskee reitin takaisin kohteeseen.
 - - **Linkous, kuut ja alukset**: reittihaku ehdottaa myös yhden painovoimalinkouksen reittejä (esim. Maa → Venus → Merkurius), kun ne ovat suoraa lentoa halvempia tai nopeampia. Kohteina ovat myös Kuu, Phobos, Io, Europa, Ganymedes, Titan, Enceladus ja Triton, joihin lennetään emoplaneetan kiertoradalta, ja niillä on omat tietokorttinsa. Maan kiertoradalla voi vaihtaa alusta: kemiallinen raketti (14 km/s), ydinlämpöraketti (22 km/s, vetyä vain Maasta ja kaasujättiläisiltä) tai ionialus (45 km/s, mutta lähtö ja jarrutus ovat kuukausien spiraaleja).
-- - **3D-ohjaamo**: lentoa voi seurata aluksen ikkunasta (WebGL, [three.js](https://threejs.org/) 0.170.0, MIT-lisenssi, tallennettu hakemistoon `js/vendor/`; ladataan vasta, kun ohjaamo avataan). Tähdet ovat oikeissa suunnissa (kirkkaat tähdet OmaAvaruuden taivaankartan luettelosta, himmeä tausta tihenee Linnunradan tasoa kohti), ja Aurinko ja planeetat ovat oikeassa suunnassa ja näennäisessä koossa. Ohjaamossa on kaareva kuomun kehys vinotukineen ja ristikkotukineen kulunutta metallia, keskikonsoli kolmella päänäytöllä (lentoaika, nopeus, etäisyys ja polttoaine), sivuilla koneistosylinterit ja kaapeliniput, käsinojissa ohjainsauva ja tehovipu sekä yläkulmissa kaksi kattonäyttöä: navigointinäyttö piirtää planeetat, aluksen ja suunnan kohteeseen oikeista sijainneista, ja järjestelmänäyttö näyttää polttoaineen ja aikakiihdytyksen. Auringonvalo tulee ohjaamoon ikkunoista oikeasta suunnasta, ja kehys ja tuet heittävät varjonsa (varjokartta); lähellä oleva planeetta tai kuu valaisee ohjaamoa omalla värillään, ja valo himmenee kauempana Auringosta. Planeetan tai kuun varjossa auringonvalo sammuu sen mukaan, kuinka suuren osan Auringon kiekosta kappale peittää. Sisätila rakennetaan koodissa (`js/cabin.js`) perusmuodoista ja piirretyistä tekstuureista, joten mallitiedostoja ei ole. Katsetta käännetään raahaamalla tai asentoantureilla. Planeettojen ja kuiden pinnat ovat luotainkuvista koottuja karttoja (`textures/`, ks. [Tekstuurien lähteet](#tekstuurien-lähteet)), jotka haetaan vasta, kun kohde näkyy kiekkona, ja lähellä kohdetta tilalle vaihtuu tarkempi 4k- tai 8k-kartta. Siihen asti ja ilman verkkoa näkyy selaimessa piirretty tyylitelty pinta (Maan mantereet Natural Earth 110m, public domain). Titan on piirretty, koska sen pinta on utukerroksen peitossa. Jos WebGL ei toimi, näytetään kartta.
+- - **3D-ohjaamo**: lentoa voi seurata aluksen ikkunasta (WebGL, [three.js](https://threejs.org/) 0.170.0, MIT-lisenssi, tallennettu hakemistoon `web/js/vendor/`; ladataan vasta, kun ohjaamo avataan). Tähdet ovat oikeissa suunnissa (kirkkaat tähdet OmaAvaruuden taivaankartan luettelosta, himmeä tausta tihenee Linnunradan tasoa kohti), ja Aurinko ja planeetat ovat oikeassa suunnassa ja näennäisessä koossa. Ohjaamossa on kaareva kuomun kehys vinotukineen ja ristikkotukineen kulunutta metallia, keskikonsoli kolmella päänäytöllä (lentoaika, nopeus, etäisyys ja polttoaine), sivuilla koneistosylinterit ja kaapeliniput, käsinojissa ohjainsauva ja tehovipu sekä yläkulmissa kaksi kattonäyttöä: navigointinäyttö piirtää planeetat, aluksen ja suunnan kohteeseen oikeista sijainneista, ja järjestelmänäyttö näyttää polttoaineen ja aikakiihdytyksen. Auringonvalo tulee ohjaamoon ikkunoista oikeasta suunnasta, ja kehys ja tuet heittävät varjonsa (varjokartta); lähellä oleva planeetta tai kuu valaisee ohjaamoa omalla värillään, ja valo himmenee kauempana Auringosta. Planeetan tai kuun varjossa auringonvalo sammuu sen mukaan, kuinka suuren osan Auringon kiekosta kappale peittää. Sisätila rakennetaan koodissa (`web/js/cabin.js`) perusmuodoista ja piirretyistä tekstuureista, joten mallitiedostoja ei ole. Katsetta käännetään raahaamalla tai asentoantureilla. Planeettojen ja kuiden pinnat ovat luotainkuvista koottuja karttoja (`web/textures/`, ks. [Tekstuurien lähteet](#tekstuurien-lähteet)), jotka haetaan vasta, kun kohde näkyy kiekkona, ja lähellä kohdetta tilalle vaihtuu tarkempi 4k- tai 8k-kartta. Siihen asti ja ilman verkkoa näkyy selaimessa piirretty tyylitelty pinta (Maan mantereet Natural Earth 110m, public domain). Titan on piirretty, koska sen pinta on utukerroksen peitossa. Jos WebGL ei toimi, näytetään kartta.
 - - **Leveä näyttö**: vähintään 1000 pikselin levyisessä ikkunassa ohjaamo tai kartta täyttää koko ikkunan ja ohjaimet ovat oikean reunan paneelissa. Yläpalkin painike vie pelin selaimen koko näytön tilaan. Paneelin voi piilottaa yläpalkin painikkeesta, jolloin se liukuu oikealle ja näkymä levenee koko ikkunaan; valinta tallentuu selaimeen.
 
 ## Rakenne
 
 ```
-index.html, styles.css
-manifest.webmanifest, icons/   # PWA-manifesti ja kuvakkeet (icon.svg on lähde, PNG:t siitä piirrettyjä)
-sw.js              # service worker: verkko ensin, ilman verkkoa välimuisti
-textures/          # planeettojen ja kuiden pintakartat (WebP, lähteet alla)
-js/
-  main.js          # käynnistys ja Tietoa-ikkuna
-  voyage.js        # pelin tila, kello, käyttöliittymä ja lentokartta
-  flight.js        # ratamekaniikka: Kepler, Lambert, laukaisuikkunat, linkoukset, nousu ja kiertoradat
-  cockpit.js       # 3D-ohjaamo (three.js) ja taivaan kappaleet
-  cabin.js         # ohjaamon sisätila perusmuodoista
-  textures.js      # selaimessa piirretyt varapinnat (land.js: Maan mantereet)
-  planets.js       # planeettojen rata-alkiot ja sijainnit
-  solarsystem.js   # aurinkokunnan kartan pohja
-  planetinfo.js    # planeettojen ja kuiden tietokortit
-  stars.js         # kirkkaat tähdet
-  core.js          # apufunktiot ja tallennus
-  vendor/          # three.js 0.170.0 (MIT)
-test/              # vitest: ratamekaniikka ja tiedostolistojen tarkistus
+project.godot, export_presets.cfg   # Godot-projekti (Forward+, web: Compatibility)
+scripts/, scenes/, ui/, assets/     # Godot: logiikka, scenet, käyttöliittymä, resurssit
+tests/, tools/                      # Godot: ikkunattomat testit ja run_tests.sh
+web/               # selainversio:
+  index.html, styles.css
+  manifest.webmanifest, icons/   # PWA-manifesti ja kuvakkeet (icon.svg on lähde, PNG:t siitä piirrettyjä)
+  sw.js              # service worker: verkko ensin, ilman verkkoa välimuisti
+  textures/          # planeettojen ja kuiden pintakartat (WebP, lähteet alla)
+  js/
+    main.js          # käynnistys ja Tietoa-ikkuna
+    voyage.js        # pelin tila, kello, käyttöliittymä ja lentokartta
+    flight.js        # ratamekaniikka: Kepler, Lambert, laukaisuikkunat, linkoukset, nousu ja kiertoradat
+    cockpit.js       # 3D-ohjaamo (three.js) ja taivaan kappaleet
+    cabin.js         # ohjaamon sisätila perusmuodoista
+    textures.js      # selaimessa piirretyt varapinnat (land.js: Maan mantereet)
+    planets.js       # planeettojen rata-alkiot ja sijainnit
+    solarsystem.js   # aurinkokunnan kartan pohja
+    planetinfo.js    # planeettojen ja kuiden tietokortit
+    stars.js         # kirkkaat tähdet
+    core.js          # apufunktiot ja tallennus
+    vendor/          # three.js 0.170.0 (MIT)
+  test/              # vitest: ratamekaniikka ja tiedostolistojen tarkistus
 ```
 
 ## Tekstuurien lähteet
 
-Ohjaamon pintakartat ovat hakemistossa `textures/` (tasavälinen lieriöprojektio, WebP, yhteensä noin 41 Mt). Jokaisesta kohteesta on peruskartta (enintään 2048 × 1024). Lisäksi on tarkat kartat, jotka haetaan vasta, kun kohde täyttää suuren osan ikkunasta: 8k (8192 × 4096) ja 4k Merkuriuksesta, Maasta, Marsista, Kuusta, Iosta, Europasta, Ganymedeestä ja Enceladuksesta sekä 4k Venuksesta, Jupiterista, Saturnuksesta, Phoboksesta ja Tritonista (näistä ei ole tarkempaa lähdettä tai lähteen tarkkuus ei riitä 8k:hon). 8k-karttaa käytetään vain tietokoneella; kosketusnäyttölaitteet ja heikommat näytönohjaimet saavat 4k-kartan.
+Ohjaamon pintakartat ovat hakemistossa `web/textures/` (tasavälinen lieriöprojektio, WebP, yhteensä noin 41 Mt). Jokaisesta kohteesta on peruskartta (enintään 2048 × 1024). Lisäksi on tarkat kartat, jotka haetaan vasta, kun kohde täyttää suuren osan ikkunasta: 8k (8192 × 4096) ja 4k Merkuriuksesta, Maasta, Marsista, Kuusta, Iosta, Europasta, Ganymedeestä ja Enceladuksesta sekä 4k Venuksesta, Jupiterista, Saturnuksesta, Phoboksesta ja Tritonista (näistä ei ole tarkempaa lähdettä tai lähteen tarkkuus ei riitä 8k:hon). 8k-karttaa käytetään vain tietokoneella; kosketusnäyttölaitteet ja heikommat näytönohjaimet saavat 4k-kartan.
 
 | Kohde | Lähde | Lisenssi |
 | --- | --- | --- |
@@ -76,5 +113,6 @@ Ohjaamon pintakartat ovat hakemistossa `textures/` (tasavälinen lieriöprojekti
 
 ## Julkaisu
 
-Push `main`-haaraan julkaisee pelin automaattisesti: `pages.yml` kopioi sivuston tiedostot GitHub Pagesiin ja asettaa
-commitin tunnisteen service workerin versioksi (`sw.js`). `ci.yml` ajaa testit.
+Push `main`-haaraan julkaisee selainversion automaattisesti: `pages.yml` kopioi hakemiston `web/` sivuston tiedostot
+GitHub Pagesiin ja asettaa commitin tunnisteen service workerin versioksi (`sw.js`). `ci.yml` ajaa selainversion testit ja
+Godot-version ikkunattomat testit (Godot 4.7.2 välimuistista).
