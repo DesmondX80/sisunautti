@@ -32,6 +32,9 @@ tools/run_tests.sh          # ikkunattomat testit, esim. tools/run_tests.sh sett
 - Laatutasot Matala, Keski, Korkea ja Ultra (`Settings`-autoload, `user://settings.cfg`). Työpöydän oletus on Korkea,
   selaimen Keski.
 - Testi on tiedosto `tests/<nimi>_test.gd`, ja se ajetaan lipulla `--<nimi>test`, esim. `godot --headless -- --boottest`.
+- Pelin tila, kello ja tapahtumat ovat autoloadissa `Game` (`scripts/game.gd`), ja tila tallentuu tiedostoon
+  `user://save.json` 5 s välein ja suljettaessa samassa JSON-muodossa kuin selainversion tallennus. Käyttöliittymä ja
+  ohjaamo kuuntelevat sen signaaleja (laukaisu, kiertorata, lähtöpoltto, ohilento, vaikutuspiiri, saapuminen, kartoitus).
 - Ratamekaniikka on hakemistossa `scripts/orbit/` (`planets.gd`, `flight.gd`, `window_search.gd`). Laskut tehdään
   64-bittisillä `float`-luvuilla (`PackedFloat64Array`), ja laukaisuikkunoiden haku jaetaan ruutujen kesken.
   `orbitcomparetest` vertaa tuloksia selainversioon (`tests/data/orbit_reference.json`, luodaan komennolla
@@ -79,6 +82,7 @@ peli, jossa lähdetään raketilla Maan pinnalta kiertoradalle ja sieltä muille
 ```
 project.godot, export_presets.cfg   # Godot-projekti (Forward+, web: Compatibility)
 scripts/, scenes/, ui/, assets/     # Godot: logiikka, scenet, käyttöliittymä, resurssit
+scripts/game.gd, scripts/format.gd   # Godot: pelin tila, kello ja tallennus; suomenkielinen muotoilu
 scripts/orbit/                      # Godot: ratamekaniikka (Kepler, Lambert, ikkunahaku, linkoukset, kuut)
 tests/, tools/                      # Godot: ikkunattomat testit, vertailuarvot ja run_tests.sh
 web/               # selainversio:

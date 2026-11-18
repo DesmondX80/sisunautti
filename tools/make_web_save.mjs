@@ -1,0 +1,43 @@
+// Luo tests/data/web_save.json: pelaa selainversiota (web/) headless-Chromiumissa ja tallentaa localStorage-avaimen
+// avaruuslento sisällön. Vaatii playwright-coren ja Chromiumin: npm i playwright-core && npx playwright install chromium-headless-shell
+// Käyttö: node tools/make_web_save.mjs web > tests/data/web_save.json  (CHROME=polku valinnainen)
+import { chromium } from "playwright-core";
+import { createServer } from "node:http";
+import { readFileSync } from "node:fs";
+import { extname, join } from "node:path";
+const dir = process.argv[2];
+const types = { ".html": "text/html", ".js": "text/javascript", ".css": "text/css", ".svg": "image/svg+xml", ".webmanifest": "application/json", ".png": "image/png", ".webp": "image/webp" };
+const srv = createServer((q, r) => { try { const p = join(dir, decodeURIComponent(q.url.split("?")[0]).replace(/\/$/, "/index.html")); r.writeHead(200, { "Content-Type": types[extname(p)] || "application/octet-stream" }); r.end(readFileSync(p)); } catch { r.writeHead(404); r.end(); } }).listen(8766);
+const b = await chromium.launch({ executablePath: process.env.CHROME || undefined });
+const ctx = await b.newContext({ viewport: { width: 1600, height: 900 }, serviceWorkers: "block" });
+const p = await ctx.newPage();
+p.on("pageerror", (e) => console.error("pageerror", e.message));
+await p.clock.install({ time: new Date("2026-11-14T08:00:00Z") });
+await p.goto("http://localhost:8766/");
+await p.addInitScript(() => localStorage.setItem("avaruuslento.view", JSON.stringify("map")));
+await p.evaluate(() => localStorage.setItem("avaruuslento.view", JSON.stringify("map")));
+await p.reload();
+const run = (ms) => p.clock.runFor(ms);
+const click = async (text) => { await p.getByRole("button", { name: text, exact: true }).first().click(); await run(200); };
+await run(500);
+await click("Aloita lähtölaskenta");
+await run(11000);
+await click("10×");
+await run(52000);
+console.error("kiertoradalla:", await p.locator(".voyage-status b").first().textContent());
+await click("Mars");
+for (let i = 0; i < 400 && !(await p.locator(".voyage-option").count()); i++) await run(200);
+console.error("vaihtoehtoja:", await p.locator(".voyage-option").count());
+await p.locator(".voyage-option").first().click(); await run(200);
+if (await p.getByRole("button", { name: "Siirry ikkunan alkuun" }).count()) await click("Siirry ikkunan alkuun");
+await click("Lähtöpoltto päälle");
+await click("1 h/s");
+for (let i = 0; i < 200 && !(await p.getByText("Matkalla Marsiin").count()); i++) await run(500);
+console.error("tila:", await p.locator(".voyage-status b").first().textContent());
+await click("1 vrk/s");
+await run(30000);
+await click("1×");
+await run(1000);
+const save = await p.evaluate(() => localStorage.getItem("avaruuslento"));
+process.stdout.write(save);
+await b.close(); srv.close();

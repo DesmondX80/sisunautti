@@ -25,7 +25,8 @@ vanha selainversio (JS + three.js) on hakemistossa `web/`, kunnes Godot-versio k
 
 ## Rakenne
 
-- `scripts/` – logiikka (autoload `settings.gd`, pääscenen `main.gd`); `scripts/orbit/` ratamekaniikka
+- `scripts/` – logiikka: autoloadit `settings.gd` ja `game.gd` (pelin tila, kello, tapahtumasignaalit, tallennus
+  `user://save.json`), muotoilu `format.gd` (`Fmt`), pääscenen `main.gd`; `scripts/orbit/` ratamekaniikka
   (`planets.gd`, `flight.gd`, ikkunahaku ruutu kerrallaan `window_search.gd`)
 - `scenes/` – scenet, pääscene `scenes/main.tscn`
 - `ui/` – käyttöliittymän scenet ja teema
@@ -39,6 +40,9 @@ vanha selainversio (JS + three.js) on hakemistossa `web/`, kunnes Godot-versio k
 - Jokaiselle logiikkaskriptille testi. Testi `tests/<nimi>_test.gd` (nimessä ei alaviivoja) perii `TestCase`-luokan ja
   ajetaan lipulla `--<nimi>test`: `godot --headless -- --<nimi>test`.
 - Kaikki testit: `tools/run_tests.sh` (tai `tools/run_tests.sh settingstest` yksittäin).
+- Pelin tila (`Game.state`) on samassa JSON-muodossa kuin selainversion tallennus (avain `avaruuslento`, camelCase-avaimet).
+  Esimerkki selainversiosta: `tests/data/web_save.json` (`tools/make_web_save.mjs`). Testit asettavat kellon
+  käsin (`Game.fake_real_ms`) ja käyttävät tallennusta `user://test_save.json`.
 - Ratamekaniikan muutokset tehdään samoin kuin selainversiossa, kunnes `web/` poistuu: vertailuarvot
   `tests/data/orbit_reference.json` luodaan JS-puolelta (`node tools/make_orbit_reference.mjs`, vaatii `cd web && npm ci`),
   ja `orbitcomparetest` vaatii samat tulokset (radat 1e-9, haut 1e-6).
