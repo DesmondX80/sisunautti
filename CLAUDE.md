@@ -54,8 +54,8 @@ Vanha JS-selainversio poistettiin versiossa 1.0.0; sen tallennukset tuodaan sela
 - `orbitcomparetest` vertaa ratamekaniikkaa vanhan JS-version tuloksiin (`tests/data/orbit_reference.json`).
   Jos ratamekaniikkaa muutetaan tarkoituksella, vertailuarvot päivitetään (ks. `tools/make_orbit_reference.mjs`).
 - Uudessa työkopiossa aja ensin `godot --headless --import`.
-- CI (`.github/workflows/ci.yml`) ajaa Godot-testit (Godot 4.7.2 välimuistista). Julkaisu käynnistää `release.yml`
-  (Windows- ja Linux-liitteet) ja `pages.yml` (selainversio).
+- CI (`.github/workflows/ci.yml`) ajaa Godot-testit (Godot 4.7.2 välimuistista). Julkaisu käynnistää `release.yml`:n
+  (Windows- ja Linux-liitteet), joka käynnistää `pages.yml`:n main-haarasta (selainversio).
 
 ## Työtapa
 
