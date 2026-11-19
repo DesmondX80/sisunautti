@@ -8,7 +8,7 @@ extends Control
 ##   "ship"     aluskaavio polttoaineineen ja moottorin liekkeineen sekä päänäytön 1 rivit (aika, päivä, kiihdytys)
 ##   "target"   tähtäin ja työntö sekä päänäytön 2 rivit (nopeus)
 ##   "systems"  järjestelmät: etäisyydet planeetoille, mittarit, kohteen hologrammi ja tilarivit
-##   "camera"   etukamera: kohteen pinta ja päänäytön 3 rivit (kohde, polttoaine)
+##   "camera"   kohdekamera: kohteen pinta ja päänäytön 3 rivit (kohde, polttoaine)
 ##   "mini"     keskikonsolin pikkunäyttö: aikakiihdytys ja moottori
 
 const SIZE := Vector2(1024, 576)
@@ -432,7 +432,7 @@ func _draw_systems_over(c: CanvasItem) -> void:
 		_right(c, mono, list[i][1], 990, y, 18, FG)
 
 
-# --- Etukamera ---
+# --- Kohdekamera ---
 
 func _draw_camera(c: CanvasItem) -> void:
 	# Tekstipaneeli kamerakuvan päällä.
@@ -443,8 +443,10 @@ func _draw_camera(c: CanvasItem) -> void:
 	_rows(c, 30, 90, 390, 1.25)
 	_fuel_bar(c, Rect2(30, SIZE.y - 70, 380, 30))
 	var blink := fmod(_time_s(), 1.6) < 0.8
-	c.draw_circle(Vector2(SIZE.x - 210, 44), 8.0, BAD if blink else Color(BAD, 0.3))
-	_right(c, mono, "ETUKAMERA  %s" % _globe_name.to_upper(), SIZE.x - 30, 52, 20, BRIGHT)
+	var cam_label := "KOHDEKAMERA  %s" % _globe_name.to_upper()
+	var cam_w := mono.get_string_size(cam_label, HORIZONTAL_ALIGNMENT_LEFT, -1, 20).x
+	c.draw_circle(Vector2(SIZE.x - 50 - cam_w, 44), 8.0, BAD if blink else Color(BAD, 0.3))
+	_right(c, mono, cam_label, SIZE.x - 30, 52, 20, BRIGHT)
 	# Tähtäysrasti kuvan keskellä.
 	var p := Vector2(720, 300)
 	for d: Vector2 in [Vector2.LEFT, Vector2.RIGHT, Vector2.UP, Vector2.DOWN]:

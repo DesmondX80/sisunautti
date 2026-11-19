@@ -647,7 +647,7 @@ func _screens(s: Dictionary) -> void:
 	var aim: Variant = s.get("aim")
 	var data := {"t": s.t, "ship": s.ship.r, "aim": aim, "fuel": s.fuel, "thrust": float(s.thrust), "warp": s.warp,
 		"engine": "poltto" if float(s.thrust) > 0.05 else "valmius"}
-	# Etukamera ja hologrammi näyttävät kohteen (ilman kohdetta Auringon).
+	# Kohdekamera ja hologrammi näyttävät kohteen (ilman kohdetta Auringon).
 	var name: String = aim if aim != null else "Aurinko"
 	if _bodies.is_empty():
 		for b: Dictionary in space.bodies:

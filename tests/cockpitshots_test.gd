@@ -208,7 +208,7 @@ func _run() -> void:
 		await _frames(3)
 		cv.reset_view()
 		await shot("saturnus", 120)
-	# Zoomaus näyttöihin: keskinäyttö, tutka ja etukamera.
+	# Zoomaus näyttöihin: keskinäyttö, tutka ja kohdekamera.
 	if want("zoom"):
 		orbit_at("Maa", t0, sun_angle("Maa", t0, false) + 0.3)
 		await _frames(2)

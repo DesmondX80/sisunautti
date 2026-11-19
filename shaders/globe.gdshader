@@ -1,4 +1,4 @@
-// Ohjaamon näytön pyörivä pallo (etukamera ja järjestelmien hologrammi): pintakartta pallolle projisoituna,
+// Ohjaamon näytön pyörivä pallo (kohdekamera ja järjestelmien hologrammi): pintakartta pallolle projisoituna,
 // valaistus sivulta, ilmakehän reunahehku ja hologrammina sininen sävy juovineen. Aurinko hehkuu.
 // Suorakaiteen täytyy olla neliö.
 shader_type canvas_item;
