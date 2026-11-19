@@ -28,12 +28,13 @@ HEIGHT_RANGE = 4000.0
 HIGHPASS_KM = 120.0
 
 
-def surface_map(dem_km: np.ndarray, w: int) -> Image.Image:
+def surface_map(dem_km: np.ndarray, w: int, r_m: float = R_M, height_range: float = HEIGHT_RANGE) -> Image.Image:
+    """Kohokuviokartta (R, G = normaali, B = paikallinen korkeus ±height_range m) leveydellä w; dem kilometreinä."""
     h = w // 2
     dem = cv2.resize(dem_km, (w, h), interpolation=cv2.INTER_AREA).astype(np.float64) * 1000.0
     lat = (0.5 - (np.arange(h) + 0.5) / h) * np.pi
-    dx = np.maximum(np.cos(lat), 0.02)[:, None] * 2.0 * np.pi * R_M / w  # sarakkeen leveys metreinä
-    dy = np.pi * R_M / h
+    dx = np.maximum(np.cos(lat), 0.02)[:, None] * 2.0 * np.pi * r_m / w  # sarakkeen leveys metreinä
+    dy = np.pi * r_m / h
     # Kaltevuudet sarakkeiden (itä) ja rivien (etelä) suuntaan; pituuspiirin suunnassa kartta jatkuu ympäri.
     gx = (np.roll(dem, -1, axis=1) - np.roll(dem, 1, axis=1)) / (2.0 * dx)
     pad = np.pad(dem, ((1, 1), (0, 0)), mode="edge")
@@ -44,7 +45,7 @@ def surface_map(dem_km: np.ndarray, w: int) -> Image.Image:
     # Ylipäästö: korkeus suhteessa ympäristöön (Gaussin sumennus), jotta 8 bittiä riittää.
     sigma = HIGHPASS_KM * 1000.0 / dy
     base = cv2.GaussianBlur(dem, (0, 0), sigma, borderType=cv2.BORDER_REFLECT)
-    local = np.clip((dem - base) / HEIGHT_RANGE, -1.0, 1.0)
+    local = np.clip((dem - base) / height_range, -1.0, 1.0)
     rgb = np.stack([nx, ny, local], axis=-1) * 0.5 + 0.5
     return Image.fromarray((rgb * 255.0 + 0.5).clip(0, 255).astype(np.uint8))
 

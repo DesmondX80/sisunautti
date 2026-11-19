@@ -128,6 +128,11 @@ func _ready() -> void:
 	for suf in ["", "-4k"]:
 		relief_ok = relief_ok and BodyTextures.exists(BodyTextures.DIR + "kuu-pinta%s.webp" % suf)
 	check("Kuun kohokuviokartat 2k, 4k ja 8k (värillisinä)", relief_ok)
+	# Mars (#43): Viking-värimosaiikki 16k pakattuna ja MOLA-kohokuvio.
+	var mars_hi := BodyTextures.file_for("Mars", BodyTextures.best_width("Mars", 16384))
+	check("Marsin 16k-kartta ja kohokuvio", mars_hi.ends_with("mars-16k.jpg") and BodyTextures.exists(mars_hi)
+		and BodyTextures.exists(BodyTextures.DIR + "mars-pinta-8k.webp") and BodyTextures.exists(BodyTextures.DIR + "mars-pinta-4k.webp")
+		and BodyTextures.exists(BodyTextures.DIR + "mars-pinta.webp"))
 	if relief_ok:
 		# Tasainen pinta keskimäärin: normaalin vaakakomponentit ja paikallinen korkeus lähellä keskiarvoa 0,5.
 		var img := relief.get_image()
@@ -144,6 +149,14 @@ func _ready() -> void:
 		if b.name == "Kuu":
 			moon = b
 	var mm: ShaderMaterial = moon.mat
+	var mars: Dictionary = {}
+	for b: Dictionary in cv.space.bodies:
+		if b.name == "Mars":
+			mars = b
+	var marsm: ShaderMaterial = mars.mat
+	check("Marsilla kohokuvio (korostettu) ja pölyinen ilmakehä", mars.has("relief_path") and float(marsm.get_shader_parameter("relief")) > 1.0
+		and BodyTextures.exists(String(mars.relief_path)) and float((mars.atmo as ShaderMaterial).get_shader_parameter("mie")) > 0.5
+		and marsm.get_shader_parameter("earthshine") == null)
 	check("Kuulla kohokuvio, regoliitti ja kraatterit", moon.has("relief_path") and float(mm.get_shader_parameter("relief")) == 1.0
 		and float(mm.get_shader_parameter("regolith")) > 0.0 and float(mm.get_shader_parameter("craters")) > 0.0)
 	cv.space._earthshine(moon, Flight.body_state("Kuu", START).r, Basis.IDENTITY, START)

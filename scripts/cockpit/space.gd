@@ -24,15 +24,23 @@ const POLES := {"Merkurius": [281.01, 61.41], "Venus": [272.76, 67.16], "Maa": [
 ## Ilmakehät: väri, kuoren säde (planeetan säteinä), tiheys ja pinnan reunahehku.
 const ATMOS := {
 	"Maa": [Color(0.32, 0.58, 1.0), 1.022, 1.2, 0.9], "Venus": [Color(0.95, 0.82, 0.55), 1.03, 1.3, 0.8],
-	"Mars": [Color(0.95, 0.6, 0.38), 1.012, 0.5, 0.45], "Titan": [Color(0.95, 0.62, 0.25), 1.12, 1.6, 1.0],
+	"Mars": [Color(0.95, 0.6, 0.38), 1.02, 0.12, 0.25], "Titan": [Color(0.95, 0.62, 0.25), 1.12, 1.6, 1.0],
 	"Jupiter": [Color(0.75, 0.78, 0.9), 1.008, 0.6, 0.5], "Saturnus": [Color(0.92, 0.85, 0.7), 1.01, 0.6, 0.5],
 	"Uranus": [Color(0.6, 0.88, 0.95), 1.012, 0.8, 0.6], "Neptunus": [Color(0.42, 0.58, 1.0), 1.012, 0.8, 0.6]}
+## Pölyn osuus ilmakehän sironnasta (eteenpäin sirottava vaihefunktio, atmosphere.gdshader).
+const ATMO_DUST := {"Mars": 0.85}
 const GIANTS := ["Jupiter", "Saturnus", "Uranus", "Neptunus"]
 ## Kaasujättiläisten pilvien pyörteily lähikuvassa (voimakkuus) ja värikylläisyys: pintakartta on lähellä vain
 ## muutama sata kuvapistettä ikkunan leveydellä ja näyttäisi muuten tasaisen harmaanvalkoiselta.
 ## Kolmas arvo on lähikuvan sävy (Jupiterin vaalea päiväntasaajavyöhyke on kartassa lähes valkoinen).
 const CLOUD_DETAIL := {"Jupiter": [0.45, 1.3, Color(0.98, 0.87, 0.74)], "Saturnus": [0.25, 1.15, Color(1.0, 0.9, 0.72)],
 	"Uranus": [0.06, 1.05, Color(1, 1, 1)], "Neptunus": [0.14, 1.1, Color(1, 1, 1)]}
+## Kohokuviolliset kappaleet: korkeuskartan alue (m), rinteiden korostus (Marsin 1,3 km:n kartta pehmentää
+## rinteitä), Lommel–Seeliger-osuus (ilmaton pöly 0,5, Marsin pöly
+## ilmakehän alla lähes Lambert), pienten kraatterien voimakkuus, kirkkauden kontrasti ja värikylläisyys.
+const RELIEF := {
+	"Kuu": {"height": 4000.0, "normal": 1.0, "regolith": 0.5, "craters": 1.0, "contrast": 1.35, "saturation": 0.65},
+	"Mars": {"height": 7000.0, "normal": 1.7, "regolith": 0.15, "craters": 0.55, "contrast": 1.3, "saturation": 1.0}}
 # Kiekon säde pikseleinä, jolla kuva haetaan, jolla vaihdetaan tarkkaan karttaan ja jolla palataan takaisin.
 const PHOTO_MIN_PX := 2.0
 const HIRES_PX := 200.0
@@ -219,13 +227,16 @@ func _build_body(name: String, radius_km: float, color: Color, moon: bool) -> vo
 	var fallback: Texture2D = BodyTextures.drawn(name, color)
 	mat.set_shader_parameter("albedo_tex", fallback)
 	mat.set_shader_parameter("limb_darkening", 0.5 if GIANTS.has(name) else 0.0)
-	if name == "Kuu":
-		# Kohokuvio LOLA-korkeusmallista (tools/make_moon_textures.py), Kuun heijastusmalli ja lähikuvan kraatterit.
-		mat.set_shader_parameter("relief", 1.0)
-		mat.set_shader_parameter("regolith", 0.5)
-		mat.set_shader_parameter("craters", 1.0)
-		mat.set_shader_parameter("albedo_contrast", 1.35)
-		mat.set_shader_parameter("saturation", 0.65)
+	if RELIEF.has(name):
+		# Kohokuvio korkeusmallista (tools/make_moon_textures.py, tools/make_mars_textures.py), heijastusmalli ja
+		# lähikuvan kraatterit.
+		var r: Dictionary = RELIEF[name]
+		mat.set_shader_parameter("relief", r.normal)
+		mat.set_shader_parameter("relief_height", r.height)
+		mat.set_shader_parameter("regolith", r.regolith)
+		mat.set_shader_parameter("craters", r.craters)
+		mat.set_shader_parameter("albedo_contrast", r.contrast)
+		mat.set_shader_parameter("saturation", r.saturation)
 		mat.set_shader_parameter("radius_m", radius_km * KM)
 	if CLOUD_DETAIL.has(name):
 		mat.set_shader_parameter("detail_strength", CLOUD_DETAIL[name][0])
@@ -246,6 +257,7 @@ func _build_body(name: String, radius_km: float, color: Color, moon: bool) -> vo
 		amat.set_shader_parameter("atmo_color", a[0])
 		amat.set_shader_parameter("atmo_radius", a[1])
 		amat.set_shader_parameter("density", a[2])
+		amat.set_shader_parameter("mie", ATMO_DUST.get(name, 0.0))
 		amat.render_priority = 1 # pilvien jälkeen
 		am.material_override = amat
 		am.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
@@ -269,8 +281,9 @@ func _build_body(name: String, radius_km: float, color: Color, moon: bool) -> vo
 		b.clouds = cmat
 		b.cloud_spin = cspin
 		b.cloud_path = BodyTextures.DIR + "maa-pilvet.webp"
-	if name == "Kuu":
-		b.relief_path = BodyTextures.DIR + "kuu-pinta.webp"
+	if RELIEF.has(name):
+		b.relief_base = name.to_lower() + "-pinta"
+		b.relief_path = BodyTextures.DIR + b.relief_base + ".webp"
 	if name == "Saturnus":
 		var rm := MeshInstance3D.new()
 		rm.mesh = _ring_mesh(1.24, 2.27, 256)
@@ -411,7 +424,8 @@ func update(ship_km: PackedFloat64Array, t: float, px_per_rad: float) -> void:
 			(b.mat as ShaderMaterial).set_shader_parameter("surface_detail", surface_detail)
 		if b.has("relief_path"):
 			mat.set_shader_parameter("shadow_steps", shadow_steps)
-			_earthshine(b, body_km, inv, t)
+			if name == "Kuu":
+				_earthshine(b, body_km, inv, t)
 		if b.clouds != null:
 			var cinv := (b.cloud_spin as Node3D).global_transform.basis.orthonormalized().inverse()
 			b.clouds.set_shader_parameter("sun_local", cinv * to_sun)
@@ -491,7 +505,7 @@ func _apply_textures(b: Dictionary) -> void:
 		if s != null:
 			mat.set_shader_parameter("spec_tex", s)
 	if b.has("relief_path"):
-		var rt := textures.get_texture(_layer_map("kuu-pinta", b.level))
+		var rt := textures.get_texture(_layer_map(b.relief_base, b.level))
 		if rt == null:
 			rt = textures.get_texture(b.relief_path)
 		if rt != null:

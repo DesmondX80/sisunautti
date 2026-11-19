@@ -17,6 +17,10 @@ uniform vec3 atmo_color = vec3(0.35, 0.6, 1.0);
 uniform float atmo_radius = 1.025;
 uniform float density = 1.0;
 uniform int samples = 8;
+// Pölyn osuus sironnasta (Mars): Henyey–Greenstein-vaihefunktio, joka sirottaa enimmäkseen eteenpäin (mie_g),
+// joten Aurinko selän takana ei sumenna pintaa ja vastavalossa ilmakehä hehkuu. 0 = kaasun Rayleigh-sironta.
+uniform float mie = 0.0;
+uniform float mie_g = 0.65;
 
 // Tiheyden putoamisnopeus kuoren paksuuden suhteen (skaalakorkeus = paksuus / FALLOFF).
 const float FALLOFF = 6.0;
@@ -64,6 +68,11 @@ void fragment() {
 	vec3 beta = atmo_color / max(atmo_color.b, 1e-3) * vec3(0.3, 0.55, 1.0) * 0.16 * density / scale_h;
 	float mu = dot(d, l);
 	float phase = 0.75 * (1.0 + mu * mu) + 0.5 * pow(max(mu, 0.0), 8.0);
+	if (mie > 0.0) {
+		float g2 = mie_g * mie_g;
+		float hg = (1.0 - g2) / pow(max(1.0 + g2 - 2.0 * mie_g * mu, 1e-4), 1.5);
+		phase = mix(phase, hg, mie);
+	}
 	// Näytteiden paikka hieman satunnaistettu kuvapisteittäin: vähän näytteitä ei näy raitoina.
 	float jitter = fract(52.9829189 * fract(dot(FRAGCOORD.xy, vec2(0.06711056, 0.00583715))));
 	float step = (t1 - t0) / float(samples);
@@ -75,8 +84,10 @@ void fragment() {
 		float dens = rho(clamp((r - 1.0) / h, 0.0, 1.0));
 		vec3 up = x / r;
 		float cos_s = dot(up, l);
-		// Planeetan varjo pehmeänä (hämärä jatkuu hieman terminaattorin yli).
-		float lit = smoothstep(-0.18, 0.06, cos_s);
+		// Planeetan varjo: korkeudella z (planeetan säteinä) Aurinko näkyy vielä, kun cos_s > −√(2z), joten
+		// ylempi ilma valaistuu pidempään terminaattorin takana kuin pinnan lähellä oleva tiheä kerros.
+		float edge = -sqrt(2.0 * max(r - 1.0, 0.0));
+		float lit = smoothstep(edge - 0.06, edge + 0.05, cos_s);
 		// Auringonvalon vaimennus matkalla tähän pisteeseen: pystysuora pylväs yläpuolella × ilmamassa.
 		float column = dens * scale_h;
 		float airmass = 1.0 / (max(cos_s, 0.0) + 0.03);
