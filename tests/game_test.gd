@@ -95,6 +95,7 @@ func _fly_to_mars() -> void:
 		return
 	check("polttoainetta kului lähtöön", absf(float(G.state.fuel) - (fuel_before - float(f.dvDep))) < 1e-9)
 	check("lokikirjaan lähtöpoltto", String(G.state.log[-1].text).begins_with("Lähtöpoltto Maan kiertoradalta kohti Marsia"))
+	_manual_burn()
 	G.set_warp(G.WARPS.size() - 1)
 	var notices: Array[String] = []
 	G.notice_changed.connect(func(t: String) -> void: notices.append(t))
@@ -219,3 +220,24 @@ func _web_save() -> void:
 	check("tuotu lento jatkuu perille", run_until(func() -> bool: return G.sim_now() >= float(G.state.flight.arrive)))
 	G.capture()
 	check("perillä Marsin kiertoradalla", G.state.location == "Mars")
+
+
+## Manuaaliohjaus (#30): kaasu nokan suuntaan muuttaa rataa ja kuluttaa polttoainetta; polton loppu lokikirjaan.
+func _manual_burn() -> void:
+	G.set_warp(0)
+	advance(60000)
+	var f: Dictionary = G.state.flight
+	var fuel: float = G.state.fuel
+	var t: float = G.sim_now()
+	var v: PackedFloat64Array = Flight.ship_state(f, t).v
+	var dir := Flight.scale(v, 1.0 / Flight.norm(v))
+	check("manuaalipoltto lennolla", G.can_manual_burn() and G.manual_thrust(dir, 1.0, 0.3) and G.manual_thrust(dir, 1.0, 0.3))
+	G.manual_thrust(dir, 0.0, 0.0)
+	var used: float = fuel - float(G.state.fuel)
+	check("manuaalipoltto kuluttaa polttoainetta", absf(used - float(G.MANUAL_ACCEL) * 0.6) < 1e-6)
+	var after: PackedFloat64Array = Flight.ship_state(G.state.flight, G.sim_now() + 1000.0).v
+	check("manuaalipoltto kiihdyttää menosuuntaan", Flight.norm(after) > Flight.norm(v))
+	check("manuaalipoltto lokikirjaan", String(G.state.log[-1].text).begins_with("Manuaalipoltto"))
+	# Palautetaan alkuperäinen lento, jotta muu testi kulkee ennallaan.
+	G.state.flight = f
+	G.state.fuel = fuel

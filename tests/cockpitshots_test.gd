@@ -2,7 +2,7 @@ extends TestCase
 ## Kuvakaappaukset ohjaamosta (vaatii ikkunan, ei mukana tools/run_tests.sh:ssa):
 ##   godot -- --cockpitshotstest=/polku/kuviin [--size=1600x900] [--quality=2] [--only=nimi] [--state=tallennus.json]
 ## --state: kuva annetusta tallennuksesta (pelaajan näkymä sellaisenaan ja katse alas), muut näkymät ohitetaan.
-## Näkymät: aloitusvalikko (--only=valikko), radio (--only=radio), takakamera (--only=taka), laukaisualusta päivällä, laukaisutorni (nousu ja yö, --only=torni), Max Q, kiertorata Maan päivä- ja yöpuolen yllä, Mars lähellä, Jupiterin
+## Näkymät: manuaaliohjaus (--only=manuaali), aloitusvalikko (--only=valikko), radio (--only=radio), takakamera (--only=taka), laukaisualusta päivällä, laukaisutorni (nousu ja yö, --only=torni), Max Q, kiertorata Maan päivä- ja yöpuolen yllä, Mars lähellä, Jupiterin
 ## ilmajarrutus, Saturnus renkaineen, Aurinko kohti katsottaessa, planeetan varjo, zoomaus näyttöihin ja kaikki
 ## näytöt lähtölaskennassa, pitkällä lennolla ja kuun kiertoradalla (--only=naytot). Lopuksi mitataan ruutunopeus.
 
@@ -255,6 +255,24 @@ func _run() -> void:
 		await shot("valikko-asetukset", 30)
 		menu.toggle_settings()
 		menu.visible = false
+	# Manuaaliohjaus (#30): lento Marsiin, alus käännetty kohti Maata, kaasu päällä.
+	if want("manuaali"):
+		orbit_at("Maa", t0, 0.0)
+		G.begin_search("Mars")
+		G.finish_search()
+		G.choose(G.options[0])
+		G.jump_to_window()
+		G.arm()
+		G.launch()
+		G.burn_at = -INF
+		G.anchor(float(G.state.flight.depart) + 40.0 * 60000.0, 0)
+		cv.snap_attitude()
+		await _frames(3)
+		cv.toggle_manual()
+		cv.face(cv.direction_to("Maa").rotated(Vector3.UP, 0.35))
+		cv.manual_throttle = 0.8
+		await shot("manuaali", 40)
+		cv.toggle_manual()
 	# Radiopaneeli (#31).
 	if want("radio"):
 		var radio: Radio = get_parent().radio

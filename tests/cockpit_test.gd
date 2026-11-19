@@ -129,6 +129,11 @@ func _ready() -> void:
 	check("zoomaus keskinäyttöön kaventaa kuvakulmaa", cv.zoom_index == 2 and cv.fov_target < cv.base_fov * 0.5)
 	cv.zoom_out()
 	check("loitonnus palauttaa kuvakulman", cv.zoom_index == -1 and cv.fov_target == cv.base_fov)
+	# Manuaaliohjaus: tila päälle ja pois; poltto lennolla nokan suuntaan muuttaa rataa ja kuluttaa polttoainetta.
+	cv.toggle_manual()
+	check("manuaaliohjaus päälle", cv.manual and cv.manual_button.text == "Automaattiohjaus")
+	cv.toggle_manual()
+	check("manuaaliohjaus pois", not cv.manual and Game.manual_throttle == 0.0)
 	cv.cabin.set_light("moottori", 2.0)
 	cv.cabin.set_light("polttoaine", 0.0)
 	var ind := cv.cabin.indicator_values()

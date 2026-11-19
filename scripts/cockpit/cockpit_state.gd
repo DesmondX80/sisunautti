@@ -47,6 +47,10 @@ static func make() -> Dictionary:
 				["KIIHTYVYYS", [["%s g" % Fmt.num(L.g, 1), 44], ["polttoaine %s km/s" % Fmt.num(s.fuel, 2), 26, MUTED]], fuel_frac],
 			]}, true)
 		return base
+	# Manuaalikaasu näkyy työntönä (hehku, ääni, tehovipu) ja pienenä tärinänä.
+	if Game.manual_throttle > 0.0:
+		base.thrust = maxf(float(base.thrust), Game.manual_throttle)
+		base.shake = maxf(float(base.shake), Game.manual_throttle * 0.25)
 	var f: Variant = s.flight
 	var tr: Variant = f if f != null else s.plan
 	if tr == null:

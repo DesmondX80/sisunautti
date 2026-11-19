@@ -642,6 +642,59 @@ func burn(direction: String, dv_kms: float, label: String = "") -> bool:
 	return true
 
 
+## Manuaaliohjauksen kaasu 0–1 (ohjaamo asettaa; näkyy työntönä, äänenä ja tehovipuna).
+var manual_throttle := 0.0
+var _manual_dv := PackedFloat64Array([0.0, 0.0, 0.0]) # polttamatta jäänyt nopeuden muutos (km/s)
+var _manual_total := 0.0 # yhtäjaksoisen polton Δv lokikirjaan
+var _manual_at := 0.0
+## Manuaalikaasun kiihtyvyys (km/s²), kun aluksen moottori on impulssimainen (kemiallinen, ydin): 2 g.
+const MANUAL_ACCEL := 0.0196
+
+
+## Voiko manuaalisesti polttaa: lennolla (ei kuiden välisellä paikallislennolla eikä ennen lähtöä).
+func can_manual_burn() -> bool:
+	var f: Variant = state.get("flight")
+	return f != null and not f.get("local", false) and sim_now() > float(f.depart)
+
+
+## Manuaalinen poltto suuntaan dir (yksikkövektori, ekliptika) kaasulla throttle oikean ajan dt_s aikana. Kertynyt
+## nopeuden muutos poltetaan radalle puolen sekunnin välein (Flight.apply_burn_vector). Palauttaa false, jos
+## polttaa ei voi (ei lennolla tai polttoaine loppu).
+func manual_thrust(dir: PackedFloat64Array, throttle: float, dt_s: float) -> bool:
+	manual_throttle = clampf(throttle, 0.0, 1.0)
+	if manual_throttle <= 0.0 or not can_manual_burn() or float(state.fuel) <= 0.0:
+		manual_throttle = 0.0 if not can_manual_burn() or float(state.fuel) <= 0.0 else manual_throttle
+		_flush_manual(true)
+		return false
+	if warp_index() != 0:
+		set_warp(0)
+	# Ionialus kiihtyy hitaasti omalla työnnöllään, muut 2 g:n kaasulla.
+	var accel := Flight.ship_accel(state.ship) if Flight.ship_accel(state.ship) > 0.0 else MANUAL_ACCEL
+	var dv := minf(accel * manual_throttle * dt_s, float(state.fuel) - Flight.norm(_manual_dv))
+	_manual_dv = Flight.add(_manual_dv, Flight.scale(dir, maxf(dv, 0.0)))
+	_manual_at += dt_s
+	if _manual_at >= 0.5:
+		_flush_manual(false)
+	return true
+
+
+func _flush_manual(done: bool) -> void:
+	var dv := Flight.norm(_manual_dv)
+	if dv > 1e-9 and state.get("flight") != null:
+		var now := sim_now()
+		state.fuel = maxf(0.0, float(state.fuel) - dv)
+		state.flight = Flight.apply_burn_vector(state.flight, now, _manual_dv)
+		_manual_total += dv
+		changed.emit()
+	_manual_dv = PackedFloat64Array([0.0, 0.0, 0.0])
+	_manual_at = 0.0
+	if done and _manual_total > 0.0:
+		log_event(sim_now(), "Manuaalipoltto: Δv %s" % Fmt.dv(_manual_total))
+		course_burn.emit(_manual_total)
+		_manual_total = 0.0
+		save_game()
+
+
 ## Automaattisen kurssikorjauksen ehdotus {flight, dv} tai tyhjä, jos korjausta ei tarvita (rata osuu ja on
 ## alkuperäinen) tai sitä ei löydy.
 func auto_correction() -> Dictionary:

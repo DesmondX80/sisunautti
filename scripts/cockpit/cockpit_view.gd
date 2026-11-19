@@ -36,6 +36,14 @@ var rear_view: SubViewport
 var rear_cam: Camera3D
 var rear_button: Button
 var _throttle := 0.0 # tehovivun asento 0–1 (pehmennetty)
+## Manuaaliohjaus (#30): aluksen asento näppäimillä 360°, kaasu ja jarrutus lennolla.
+var manual := false
+var manual_throttle := 0.0
+var manual_button: Button
+var _manual_hud: PanelContainer
+var _manual_label: Label
+var _braking := false
+const MANUAL_RATE := 0.6 # rad/s
 var _steer := Vector2.ZERO # ohjainsauvan poikkeama (px) aluksen kääntymisen mukaan
 const REAR_TILT := 0.87 # 50°
 var overlay: ColorRect # ohjaamon kuva ja näytöt 3D-näkymän päällä
@@ -314,9 +322,80 @@ func _build_tools() -> void:
 	zoom_out_button.tooltip_text = "Palauta näkymä (Esc)"
 	zoom_out_button.visible = false
 	tools.add_child(zoom_out_button)
+	manual_button = UiKit.button("Manuaaliohjaus", toggle_manual)
+	manual_button.tooltip_text = "Ohjaa alusta itse (M): W/S nokka, A/D kääntö, Q/E kallistus, Shift/Ctrl kaasu, X nollaa, B jarruta"
+	tools.add_child(manual_button)
+	_build_manual_hud()
 	rear_button = UiKit.button("Takakamera", toggle_rear)
 	rear_button.tooltip_text = "Vaihda kohdekameranäyttö takakameraksi ja takaisin (T)"
 	tools.add_child(rear_button)
+
+
+func _build_manual_hud() -> void:
+	_manual_hud = PanelContainer.new()
+	_manual_hud.theme_type_variation = "Overlay"
+	_manual_hud.visible = false
+	_manual_hud.mouse_filter = Control.MOUSE_FILTER_PASS
+	_manual_hud.set_anchors_and_offsets_preset(Control.PRESET_CENTER_BOTTOM)
+	_manual_hud.grow_horizontal = Control.GROW_DIRECTION_BOTH
+	_manual_hud.grow_vertical = Control.GROW_DIRECTION_BEGIN
+	_manual_hud.position.y -= 56.0
+	add_child(_manual_hud)
+	var v := UiKit.vbox(6)
+	_manual_hud.add_child(v)
+	_manual_label = UiKit.label("", "", false)
+	v.add_child(_manual_label)
+	var row := UiKit.hbox(6)
+	row.add_child(UiKit.button("Kaasu −", func() -> void: manual_throttle = maxf(0.0, manual_throttle - 0.25)))
+	row.add_child(UiKit.button("Kaasu +", func() -> void: manual_throttle = minf(1.0, manual_throttle + 0.25)))
+	row.add_child(UiKit.button("Nollaa", func() -> void: manual_throttle = 0.0))
+	var brake := UiKit.button("Jarruta (pidä)", func() -> void: pass)
+	brake.button_down.connect(func() -> void: _braking = true)
+	brake.button_up.connect(func() -> void: _braking = false)
+	row.add_child(brake)
+	v.add_child(row)
+	v.add_child(UiKit.label("W/S nokka · A/D kääntö · Q/E kallistus · Shift/Ctrl kaasu · X nollaa · B jarruta · M lopeta", "MutedLabel", false))
+
+
+## Manuaaliohjaus päälle ja pois: pois kytkettäessä kaasu nollataan ja asento palaa automaattiseksi.
+func toggle_manual() -> void:
+	manual = not manual
+	manual_throttle = 0.0
+	_braking = false
+	Game.manual_thrust(PackedFloat64Array([1.0, 0.0, 0.0]), 0.0, 0.0)
+	manual_button.text = "Automaattiohjaus" if manual else "Manuaaliohjaus"
+	_manual_hud.visible = manual
+
+
+# Manuaaliohjaus: näppäimet kääntävät alusta sen omien akselien ympäri, kaasu polttaa nokan suuntaan ja jarrutus
+# menosuuntaa vastaan (Game.manual_thrust). Kaasu ja jarrutus vain lennolla.
+func _manual_step(s: Dictionary, delta: float) -> void:
+	var keys := is_visible_in_tree() and not (get_viewport().gui_get_focus_owner() is LineEdit)
+	var axis := func(neg: Key, pos: Key) -> float:
+		return (1.0 if keys and Input.is_key_pressed(pos) else 0.0) - (1.0 if keys and Input.is_key_pressed(neg) else 0.0)
+	var rate := Vector3(axis.call(KEY_S, KEY_W), axis.call(KEY_D, KEY_A), axis.call(KEY_E, KEY_Q)) * MANUAL_RATE
+	if rate != Vector3.ZERO:
+		ship.basis = (ship.basis * Basis.from_euler(rate * delta)).orthonormalized()
+	if keys and Input.is_key_pressed(KEY_SHIFT):
+		manual_throttle = minf(1.0, manual_throttle + delta * 0.6)
+	if keys and Input.is_key_pressed(KEY_CTRL):
+		manual_throttle = maxf(0.0, manual_throttle - delta * 0.6)
+	if keys and Input.is_key_pressed(KEY_X):
+		manual_throttle = 0.0
+	var braking := _braking or (keys and Input.is_key_pressed(KEY_B))
+	var dir: PackedFloat64Array
+	var power := manual_throttle
+	if braking and s.get("heading") != null:
+		var h: PackedFloat64Array = s.heading
+		dir = Flight.scale(h, -1.0 / maxf(Flight.norm(h), 1e-9))
+		power = 1.0
+	else:
+		var n := -ship.basis.z
+		dir = PackedFloat64Array([n.x, -n.z, n.y]) # scene → ekliptika (Space.to_scene käänteisenä)
+	var ok := Game.manual_thrust(dir, power, delta)
+	var state := "POLTTO" if ok else ("ei polttoa: vain lennolla" if power > 0.0 and not Game.can_manual_burn() else "valmius")
+	_manual_label.text = "MANUAALIOHJAUS   kaasu %d %%%s   %s   polttoaine %s" % [roundi(manual_throttle * 100.0),
+		"  · JARRUTUS" if braking else "", state, Fmt.dv(float(Game.state.fuel))]
 
 
 func _build_rear() -> void:
@@ -532,6 +611,10 @@ func _unhandled_key_input(event: InputEvent) -> void:
 			and (event as InputEventKey).keycode == KEY_T:
 		toggle_rear()
 		get_viewport().set_input_as_handled()
+	elif is_visible_in_tree() and event is InputEventKey and (event as InputEventKey).pressed and not (event as InputEventKey).echo \
+			and (event as InputEventKey).keycode == KEY_M and not Game.state.pad:
+		toggle_manual()
+		get_viewport().set_input_as_handled()
 
 
 # Pystykulma niin, että ohjaamon kuva täyttää näkymän (kapeassa ikkunassa katsetta käännetään sivuille).
@@ -628,6 +711,12 @@ func _zoom_step(delta: float) -> void:
 # Aluksen asento: laukaisussa annettu suunta (nose, up); muuten nokka kohteeseen (aim) niin, että kohde näkyy ikkunan
 # keskellä, ja kappaleen lähellä radan mukaan (CockpitState.body_frame). Käännös pehmeästi.
 func _attitude(s: Dictionary, delta: float) -> void:
+	if manual and not Game.state.pad:
+		var before_m := ship.basis
+		_manual_step(s, delta)
+		var rot_m := (before_m.inverse() * ship.basis).get_euler()
+		_steer = _steer.lerp((Vector2(-rot_m.y, -rot_m.x) / maxf(delta, 1e-3) * 40.0).limit_length(7.0), minf(1.0, delta * 5.0))
+		return
 	var want: Basis = ship.basis
 	if s.get("nose") != null:
 		var nose := _ecl_to_scene(s.nose).normalized()
@@ -728,6 +817,10 @@ func _lighting(s: Dictionary) -> void:
 
 
 func _effects(s: Dictionary) -> void:
+	# Laukaisualustalla ja nousussa ohjaa kantoraketti.
+	manual_button.disabled = Game.state.pad
+	if manual and Game.state.pad:
+		toggle_manual()
 	var thrust := float(s.thrust)
 	engine.light_energy = thrust * 6.0 * (0.85 + randf() * 0.3)
 	var aero := float(s.get("aero", 0.0))

@@ -937,10 +937,15 @@ static func _legs_before(tr: Dictionary, time: float) -> Array:
 
 ## Poltto hetkellä time annettuun suuntaan: lennolle lisätään uusi osuus ja ennuste lasketaan uudelleen.
 static func apply_burn(tr: Dictionary, time: float, direction: String, dv_kms: float) -> Dictionary:
+	return apply_burn_vector(tr, time, burn_vector(ship_state(tr, time), direction, dv_kms))
+
+
+## Poltto hetkellä time nopeuden muutoksella dv (km/s, ekliptikan koordinaatit; manuaaliohjaus).
+static func apply_burn_vector(tr: Dictionary, time: float, dv: PackedFloat64Array) -> Dictionary:
 	var s := ship_state(tr, time)
 	var next := tr.duplicate()
 	var legs := _legs_before(tr, time)
-	legs.append({"t": time, "r": s.r, "v": add(s.v, burn_vector(s, direction, dv_kms))})
+	legs.append({"t": time, "r": s.r, "v": add(s.v, dv)})
 	next.legs = legs
 	# Ennen linkousta tehty poltto vie aluksen pois ohilentoradalta.
 	if next.get("flyby") is Dictionary and float(next.flyby.t) > time:
