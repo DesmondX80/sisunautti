@@ -127,7 +127,13 @@ static func _readouts(t: float) -> Dictionary:
 	else:
 		near = {"name": tr.from, "speed": 0.0}
 	return {"met": "T+ %s" % Flight.fmt_duration(t - float(f.depart)) if f != null else "T− %s" % Flight.fmt_duration(float(tr.depart) - t),
-		"speed": speed, "near": near, "dist": Fmt.km(Flight.norm(Flight.sub(ship.r, Flight.body_state(tr.to, t).r)))}
+		"speed": speed, "near": near, "dist": Fmt.km(Flight.surface_distance(_view_r(f, ship, t), tr.to, t))}
+
+
+## Aluksen paikka näkymässä (lennolla saapumis- ja lähtöhyperbelit, #41): etäisyydet lasketaan tästä, jotta
+## lukema vastaa ikkunasta näkyvää ja on perillä pysäköintiradan korkeus.
+static func _view_r(f: Variant, ship: Dictionary, t: float) -> PackedFloat64Array:
+	return Flight.ship_view(f, t).r if f != null else ship.r
 
 
 ## Asento kappaleen lähellä kuten lentokoneella (follow_velocity: lennolla nokka seuraa nopeutta myös lähestyessä): nokka menosuuntaan ja katto poispäin kappaleesta, ja kappale näkyy

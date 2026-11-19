@@ -654,6 +654,11 @@ static func _near_body(s: Dictionary, name: String, time: float, t_peri: float, 
 		"v": add(b.v, add(scale(rel_v, 1.0 - fade), scale(h.v, fade)))}
 
 
+## Etäisyys kappaleen pinnasta (km, vähintään 0): 0 tarkoittaa, että alus on pinnalla.
+static func surface_distance(r: PackedFloat64Array, name: String, time: float) -> float:
+	return maxf(0.0, norm(sub(r, body_state(name, time).r)) - float(orbit_of(name).radiusKm))
+
+
 ## Aluksen paikka ja nopeus ohjaamonäkymää varten. Siirtorata kulkee lähtö- ja kohdekappaleen keskipisteen kautta,
 ## joten niiden vaikutuspiirissä se korvataan vähitellen hyperbelillä: lähtöpoltto ja jarrutuspoltto tehdään
 ## perikeskuksessa pysäköintiradan korkeudella, kuten oikeasti (esim. Apollo: Kuun kiertoradalle asettuminen
@@ -669,9 +674,12 @@ static func ship_view(tr: Dictionary, time: float) -> Dictionary:
 	var to: String = tr.to
 	var t := maxf(time, tr.depart)
 	var view := ship_state(tr, t)
-	# Korjattu rata ei kulje kohteen keskipisteen kautta, joten saapumishyperbeliä käytetään vain alkuperäisellä radalla.
+	# Saapumishyperbeli alkuperäisellä radalla (kulkee kohteen keskipisteen kautta) ja korjatulla radalla, joka osuu
+	# pysäköintiradan sisäpuolelle (#41: muuten näkymä pysähtyisi pysäköintiradan etäisyydelle, vaikka rata jatkuu).
+	# Kauempaa ohittava korjattu rata näytetään sellaisenaan.
 	var legs: Variant = tr.get("legs")
-	if not (legs is Array and legs.size() > 1):
+	var corrected: bool = legs is Array and legs.size() > 1
+	if not corrected or (not tr.get("miss", false) and float(tr.get("missKm", INF)) < float(body(to).periKm)):
 		var vinf_arr := sub(ship_state(tr, tr.arrive).v, planet_state(to, tr.arrive).v)
 		view = _near_body(view, to, t, tr.arrive, vinf_arr, false, body(to).soiKm)
 	var r := _clamp_outside(view.r, planet_state(to, t).r, body(to).periKm)

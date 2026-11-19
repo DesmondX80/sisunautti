@@ -967,13 +967,15 @@ func readouts(t: float) -> Dictionary:
 	else:
 		near = {"name": tr.from, "speed": 0.0}
 	var arrive: float = tr.arrive
+	# Etäisyydet näkymän paikasta kohteen pintaan (#41), kuten ohjaamossa.
+	var view_r: PackedFloat64Array = CockpitState._view_r(f, ship, t)
 	return {
 		"met": "T+ %s" % Flight.fmt_duration(t - float(f.depart)) if f != null else "T− %s" % Flight.fmt_duration(float(tr.depart) - t),
 		"speed": speed, "near": near,
-		"dist": Fmt.km(Flight.norm(Flight.sub(ship.r, Flight.body_state(tr.to, t).r))),
+		"dist": Fmt.km(Flight.surface_distance(view_r, tr.to, t)),
 		"eta": "perillä %s, T− %s" % [Fmt.date(arrive), Flight.fmt_duration(arrive - t)] if t < arrive else "perillä",
-		"sun": Fmt.km(Flight.norm(ship.r)),
-		"light": Fmt.light_time(Flight.norm(Flight.sub(ship.r, Flight.planet_state("Maa", t).r))),
+		"sun": Fmt.km(Flight.norm(view_r)),
+		"light": Fmt.light_time(Flight.norm(Flight.sub(view_r, Flight.planet_state("Maa", t).r))),
 	}
 
 

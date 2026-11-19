@@ -200,6 +200,35 @@ func _cockpit_view() -> void:
 	check("ennen laukaisua alus kulkee Maan mukana", absf(F.norm(sub(before.r, F.planet_state("Maa", tr.depart - 30 * DAY).r)) - dep) < 0.5)
 	var mid: float = (tr.depart + tr.arrive) / 2.0
 	check("keskellä lentoa näkymä on siirtorata", F.norm(sub(F.ship_view(tr, mid).r, F.ship_state(tr, mid).r)) == 0.0)
+	# #41: lukemat näkymän paikasta kohteen pintaan; perillä pysäköintiradan korkeus, ei nolla.
+	var alt: float = F.body("Mars").periKm - F.body("Mars").radiusKm
+	check("pintaetäisyys perillä on pysäköintiradan korkeus", absf(F.surface_distance(F.ship_view(tr, tr.arrive).r, "Mars", tr.arrive) - alt) < 1.0)
+	var mono := true
+	var prev_d := INF
+	for i in 200:
+		var ti: float = tr.arrive - 3.0 * DAY * pow(1.0 - i / 200.0, 2.0)
+		var di := F.surface_distance(F.ship_view(tr, ti).r, "Mars", ti)
+		mono = mono and di <= prev_d + 1e-6 and di >= alt - 1.0
+		prev_d = di
+	check("kohde lähestyy näkymässä koko ajan pysäköintiradalle asti", mono)
+	# Korjattu rata (useampi osa), joka osuu kohteeseen: saapumishyperbeli, näkymä ei pysähdy pysäköintiradan etäisyydelle.
+	var mid_t: float = (tr.depart + tr.arrive) / 2.0
+	var leg := F.ship_state(tr, mid_t)
+	var fixed := tr.duplicate()
+	fixed.legs = [{"t": tr.depart, "r": tr.r1, "v": tr.v1}, {"t": mid_t, "r": leg.r, "v": leg.v}]
+	fixed = F.predict(fixed, mid_t)
+	var fixed_mono := true
+	prev_d = INF
+	for i in 200:
+		var ti: float = fixed.arrive - 3.0 * DAY * pow(1.0 - i / 200.0, 2.0)
+		var di := F.surface_distance(F.ship_view(fixed, ti).r, "Mars", ti)
+		fixed_mono = fixed_mono and di <= prev_d + 1e-6
+		prev_d = di
+	var t10: float = fixed.arrive - 600000.0
+	check("korjatulla osuvalla radalla kohde lähestyy pysäköintiradalle", not fixed.miss and fixed_mono
+		and F.surface_distance(F.ship_view(fixed, t10).r, "Mars", t10) > alt + 500.0
+		and absf(F.surface_distance(F.ship_view(fixed, fixed.arrive).r, "Mars", fixed.arrive) - alt) < 1.0)
+	check("pintaetäisyys ei ole negatiivinen", F.surface_distance(F.planet_state("Mars", mid_t).r, "Mars", mid_t) == 0.0)
 	var days: float = (F.soi_exit(tr) - tr.depart) / DAY
 	check("vaikutuspiiristä poistutaan 1–10 vrk:ssa", days > 1.0 and days < 10.0)
 	check("vaikutuspiiriin saavutaan poistumisen jälkeen", F.soi_entry(tr) > F.soi_exit(tr))

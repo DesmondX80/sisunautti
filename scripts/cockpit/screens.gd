@@ -358,7 +358,7 @@ func _draw_nav(c: CanvasItem) -> void:
 		if rr < R * 1.05:
 			c.draw_arc(Vector2(cx, cy), rr, 0, TAU, 96, Color(ACCENT, 0.3), 1.5, true)
 			c.draw_circle(p, 8.0 if name == aim else 5.5, Planets.info(name).color)
-		dists.append([Flight.norm(Flight.sub(r, ship)), name])
+		dists.append([Flight.surface_distance(ship, name, t), name])
 	c.draw_circle(Vector2(cx, cy), 7.0, Color("#ffd27a"))
 	var sp: Vector2 = px.call(ship)
 	if not target.is_empty():
@@ -370,7 +370,7 @@ func _draw_nav(c: CanvasItem) -> void:
 	# Vasen sarake: kohde ja mittakaava.
 	var y := 120.0
 	for item: Array in [["KOHDE", String(aim).to_upper() if aim != null else "VAPAA", GOOD if aim != null else FG],
-			["ETÄISYYS", Fmt.km(Flight.norm(Flight.sub(target, ship))) if not target.is_empty() else "–", FG],
+			["ETÄISYYS", Fmt.km(Flight.surface_distance(ship, aim, t)) if not target.is_empty() else "–", FG],
 			["SÄDE", "%s AU" % (Fmt.num(reach, 1) if reach < 10.0 else Fmt.num(roundf(reach))), FG],
 			["AURINGOSTA", "%s AU" % Fmt.num(Flight.norm(ship) / au, 2), FG]]:
 		c.draw_string(mono, Vector2(30, y), item[0], HORIZONTAL_ALIGNMENT_LEFT, -1, 18, MUTED)
