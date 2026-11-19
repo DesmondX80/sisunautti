@@ -19,11 +19,20 @@ ja poistaa vanhan service workerin ja sen välimuistit.
 ## Aloitusvalikko
 
 Peli alkaa aloitusvalikosta (`scripts/ui/start_menu.gd`): Jatka peliä (kun peli on tallessa), Uusi peli (kysyy
-vahvistuksen, jos tallennus korvataan), Asetukset (grafiikan laatu, koko näyttö) ja Lopeta peli (vain työpöydällä).
+vahvistuksen, jos tallennus korvataan), Asetukset (grafiikan laatu, äänenvoimakkuus ja mykistys, koko näyttö) ja Lopeta peli (vain työpöydällä).
 Pelistä valikkoon pääsee yläpalkin ≡-painikkeella tai Esc-näppäimellä. Taustalla on James Webb -avaruusteleskoopin
 kuva Kosmiset kalliot Carinan sumussa (NASA, ESA, CSA, STScI, [CC BY 4.0](https://esawebb.org/copyright/),
 `assets/menu/taustakuva.webp`) hitaasti liukuen ja zoomaten, hiiren mukaan parallaksina ja tähdet tuikkien
 (`shaders/menu_bg.gdshader`).
+
+## Äänet
+
+Äänet syntetisoidaan käynnistyksessä (`scripts/sound_synth.gd`, noin 0,2 s; ei äänitiedostoja), ja `scripts/game_sound.gd`
+soittaa ne pelin tilan mukaan: laukaisun jyrinä tärinän ja työnnön mukaan, moottorin pauhu poltoissa, ilmajarrutuksen
+plasman suhina ja rätinä, ohjaamon hiljainen taustahumina, painikkeiden napsautus, lähtölaskennan viiden viimeisen
+sekunnin piippaukset sekä kellosoinnut ilmoituksista (kiertorata, lähtöpoltto, vaikutuspiiri, saapuminen, kartoitus).
+Voimakkuus ja mykistys ovat aloitusvalikon asetuksissa (`Settings.volume`, `Settings.muted`). Valikon ollessa auki
+pelin äänet hiljenevät.
 
 ## Kehitys
 

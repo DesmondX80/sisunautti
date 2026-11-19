@@ -1,8 +1,9 @@
 extends Node
-## Pelin asetukset: grafiikan laatutaso. Tallentuu tiedostoon user://settings.cfg.
+## Pelin asetukset: grafiikan laatutaso ja äänet (voimakkuus, mykistys). Tallentuu tiedostoon user://settings.cfg.
 ## Laatutaso ohjaa myöhemmin varjoja, SSAO:ta, SSR:ää, partikkeleita ja karttojen tarkkuutta (#11).
 
 signal quality_changed(level: int)
+signal audio_changed
 
 enum Quality { LOW, MEDIUM, HIGH, ULTRA }
 
@@ -14,6 +15,9 @@ var quality: int = Quality.HIGH
 var view := "cockpit"
 ## Sivupaneeli piilotettu; vastaa selainversion avainta avaruuslento.panel.
 var panel_hidden := false
+## Äänenvoimakkuus 0–1 ja mykistys (pääväylä).
+var volume := 0.8
+var muted := false
 var path := PATH # testit vaihtavat polun, jotta oikeat asetukset eivät muutu
 
 
@@ -68,16 +72,41 @@ func set_panel_hidden(hidden: bool) -> void:
 	save_settings()
 
 
+func set_volume(v: float) -> void:
+	volume = clampf(v, 0.0, 1.0)
+	apply_audio()
+	save_settings()
+
+
+func set_muted(m: bool) -> void:
+	muted = m
+	apply_audio()
+	save_settings()
+
+
+## Pääväylän voimakkuus ja mykistys.
+func apply_audio() -> void:
+	AudioServer.set_bus_volume_db(0, linear_to_db(maxf(volume, 0.0001)))
+	AudioServer.set_bus_mute(0, muted or volume <= 0.0)
+	audio_changed.emit()
+
+
 func load_settings() -> void:
 	var cfg := ConfigFile.new()
 	if cfg.load(path) != OK:
 		quality = default_quality()
 		view = "cockpit"
 		panel_hidden = false
+		volume = 0.8
+		muted = false
+		apply_audio()
 		return
 	quality = clampi(int(cfg.get_value("graphics", "quality", default_quality())), Quality.LOW, max_quality())
 	view = String(cfg.get_value("ui", "view", "cockpit"))
 	panel_hidden = bool(cfg.get_value("ui", "panel_hidden", false))
+	volume = clampf(float(cfg.get_value("audio", "volume", 0.8)), 0.0, 1.0)
+	muted = bool(cfg.get_value("audio", "muted", false))
+	apply_audio()
 
 
 func save_settings() -> void:
@@ -85,4 +114,6 @@ func save_settings() -> void:
 	cfg.set_value("graphics", "quality", quality)
 	cfg.set_value("ui", "view", view)
 	cfg.set_value("ui", "panel_hidden", panel_hidden)
+	cfg.set_value("audio", "volume", volume)
+	cfg.set_value("audio", "muted", muted)
 	cfg.save(path)

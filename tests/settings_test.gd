@@ -25,6 +25,15 @@ func _ready() -> void:
 	s.load_settings()
 	check("taso tallentui", s.quality == s.max_quality())
 	check("tason nimi", s.quality_name() == s.QUALITY_NAMES[s.quality])
+	s.set_volume(0.5)
+	s.set_muted(true)
+	s.volume = 1.0
+	s.muted = false
+	s.load_settings()
+	check("äänet tallentuivat", absf(s.volume - 0.5) < 1e-6 and s.muted and AudioServer.is_bus_mute(0))
+	s.set_volume(2.0)
+	s.set_muted(false)
+	check("voimakkuus rajataan", s.volume == 1.0 and not AudioServer.is_bus_mute(0))
 	check("ikkunan otsikko", ProjectSettings.get_setting("application/config/name") == "Sisunautti")
 	check("versio", ProjectSettings.get_setting("application/config/version") == "1.8.0")
 	DirAccess.remove_absolute(path)

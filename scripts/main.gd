@@ -6,6 +6,7 @@ const TEST_DIR := "res://tests/"
 
 var ui: VoyageUI
 var menu: StartMenu
+var sound: GameSound
 
 
 func _ready() -> void:
@@ -27,12 +28,18 @@ func _ready() -> void:
 	menu = StartMenu.new()
 	menu.name = "StartMenu"
 	menu_layer.add_child(menu)
-	menu.closed.connect(func() -> void: ui.visible = true)
+	sound = GameSound.new()
+	sound.name = "Sound"
+	add_child(sound)
+	menu.closed.connect(func() -> void:
+		ui.visible = true
+		sound.quiet = false)
 	ui.menu_requested.connect(show_menu)
 	if test != "":
 		menu.visible = false
 	else:
 		ui.visible = false
+		sound.quiet = true
 	if test != "":
 		var path := TEST_DIR + test + "_test.gd"
 		if not ResourceLoader.exists(path):
@@ -52,6 +59,7 @@ func _ready() -> void:
 ## Avaa aloitusvalikon pelin päälle (valikkopainike tai Esc).
 func show_menu() -> void:
 	menu.open()
+	sound.quiet = true
 	await get_tree().create_timer(0.3).timeout
 	if menu.visible:
 		ui.visible = false

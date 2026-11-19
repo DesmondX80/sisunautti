@@ -1,6 +1,6 @@
 class_name StartMenu
 extends Control
-## Aloitusvalikko: Jatka peliä, Uusi peli, Asetukset ja Lopeta peli (ei selaimessa). Taustalla James Webb
+## Aloitusvalikko: Jatka peliä, Uusi peli, Asetukset (laatu, äänet, koko näyttö) ja Lopeta peli (ei selaimessa). Taustalla James Webb
 ## -avaruusteleskoopin kuva Kosmiset kalliot (NASA, ESA, CSA, STScI, CC BY 4.0) hitaasti liikkuvana
 ## (shaders/menu_bg.gdshader). Valikko avautuu pelin alussa ja pelistä valikkopainikkeella tai Esc-näppäimellä.
 ## Signaali closed lähetetään, kun valikosta jatketaan peliin.
@@ -20,6 +20,8 @@ var _bg_mat: ShaderMaterial
 var _column: VBoxContainer
 var _quality_seg: PanelContainer
 var _full_button: Button
+var volume_slider: HSlider
+var mute_check: CheckBox
 
 
 func _ready() -> void:
@@ -155,6 +157,23 @@ func _build_settings() -> void:
 	_quality_seg = UiKit.seg(levels, Settings.quality, func(i: int) -> void: Settings.set_quality(i))
 	v.add_child(_quality_seg)
 	v.add_child(UiKit.label("Korkea ja Ultra: pehmeät varjot, varjojen peitto ja Ultralla heijastukset sekä 8k-pintakartat. Selaimessa enintään Keski.", "MutedLabel"))
+	v.add_child(UiKit.label("Äänet", "MutedLabel"))
+	var row := UiKit.hbox(10)
+	volume_slider = HSlider.new()
+	volume_slider.min_value = 0.0
+	volume_slider.max_value = 1.0
+	volume_slider.step = 0.05
+	volume_slider.value = Settings.volume
+	volume_slider.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	volume_slider.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	volume_slider.value_changed.connect(func(x: float) -> void: Settings.set_volume(x))
+	row.add_child(volume_slider)
+	mute_check = CheckBox.new()
+	mute_check.text = "Mykistä"
+	mute_check.button_pressed = Settings.muted
+	mute_check.toggled.connect(func(on: bool) -> void: Settings.set_muted(on))
+	row.add_child(mute_check)
+	v.add_child(row)
 	_full_button = UiKit.button("", _toggle_fullscreen)
 	v.add_child(_full_button)
 	_update_full_text()
