@@ -149,20 +149,14 @@ static func click() -> PackedFloat32Array:
 	return _normalize(x, 0.7)
 
 
-## Kellosointi: sävelet (Hz) peräkkäin 0,13 s välein, kellomaiset yläsävelet ja pitkä häivytys.
-static func chime(notes: Array) -> PackedFloat32Array:
-	var step := 0.13
-	var n := int((step * notes.size() + 1.3) * RATE)
-	var x := PackedFloat32Array()
-	x.resize(n)
-	for k in notes.size():
-		var f := float(notes[k])
-		var start := int(k * step * RATE)
-		for i in range(start, n):
-			var t := float(i - start) / RATE
-			var env := minf(1.0, t / 0.004) * exp(-t / 0.45)
-			x[i] += (sin(TAU * f * t) + 0.35 * sin(TAU * f * 2.0 * t) * exp(-t / 0.2) + 0.15 * sin(TAU * f * 2.76 * t) * exp(-t / 0.12)) * env
-	return _normalize(x, 0.6)
+## Quindar-piippaus kuten Apollo-lentojen radiossa: 2525 Hz:n aloitus ja 2475 Hz:n lopetus, 250 ms kumpikin.
+static func quindar() -> PackedFloat32Array:
+	var x := beep(2525.0, 0.25)
+	var gap := PackedFloat32Array()
+	gap.resize(int(0.09 * RATE))
+	x.append_array(gap)
+	x.append_array(beep(2475.0, 0.25))
+	return x
 
 
 ## Lähtölaskennan piippaus (lyhyt siniääni).

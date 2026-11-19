@@ -32,7 +32,11 @@ kuva Kosmiset kalliot Carinan sumussa (NASA, ESA, CSA, STScI, [CC BY 4.0](https:
 Pixabayn sisältölisenssi; leikattu saumattomaksi 51 sekunnin silmukaksi). `scripts/game_sound.gd`
 soittaa ne pelin tilan mukaan: laukaisun jyrinä tärinän ja työnnön mukaan, moottorin pauhu poltoissa, ilmajarrutuksen
 plasman suhina ja rätinä, ohjaamon hiljainen taustaääni, painikkeiden napsautus, lähtölaskennan viiden viimeisen
-sekunnin piippaukset sekä kellosoinnut ilmoituksista (kiertorata, lähtöpoltto, vaikutuspiiri, saapuminen, kartoitus).
+sekunnin piippaukset. Lennon vaiheen vaihtuessa (kiertorata, lähtöpoltto, vaikutuspiiri, saapuminen, jarrutus
+kiertoradalle) kuuluu NASAn radiokuulutus `assets/sound/vaihe_kuulutus.ogg`: Apollo-lentojen Quindar-piippaus
+(2525 Hz), lennonjohdon "Stage separation confirmed" ja loppupiippaus (2475 Hz). Kuulutus on leikattu NASAn
+IM-2-laukaisun lähetyksestä ([NASA Image and Video Library](https://images.nasa.gov/details/KSC-20250226-AU-ILW01-0004-SpaceX_CLPS_IM-2_Live_Launch_Coverage_Program-1_LOS-2), public domain).
+Kartoituksen valmistuminen kuittaa pelkällä Quindar-piippauksella.
 Voimakkuus ja mykistys ovat aloitusvalikon asetuksissa (`Settings.volume`, `Settings.muted`). Valikon ollessa auki
 pelin äänet hiljenevät.
 

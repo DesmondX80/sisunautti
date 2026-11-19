@@ -2,19 +2,28 @@ class_name GameSound
 extends Node
 ## Pelin äänet: silmukat (laukaisun jyrinä, moottorin poltto, ilmajarrutuksen plasma, ohjaamon taustaääni), joiden
 ## voimakkuus seuraa ohjaamon tilaa (CockpitState), sekä kertaäänet: painikkeiden napsautus, lähtölaskennan
-## piippaukset ja ilmoitukset (kiertorata, lähtöpoltto, vaikutuspiiri, saapuminen, kartoitus). Äänet syntetisoidaan
-## käynnistyksessä (SoundSynth), paitsi ohjaamon taustaääni, joka on äänite (AMBIENT). Voimakkuus ja mykistys ovat
-## Settingsissä (pääväylä). quiet: valikko auki.
+## piippaukset sekä lennon vaiheen vaihtuessa (kiertorata, lähtöpoltto, vaikutuspiiri, saapuminen, kiertoradalle
+## jarrutus) NASAn radiokuulutus: Quindar-piippaus, lennonjohdon "Stage separation confirmed" ja loppupiippaus
+## (CALLOUT). Kartoituksen valmistuminen kuittaa pelkällä Quindar-piippauksella. Äänet syntetisoidaan
+## käynnistyksessä (SoundSynth), paitsi äänitteet AMBIENT ja CALLOUT. Voimakkuus ja mykistys ovat Settingsissä
+## (pääväylä). quiet: valikko auki.
 
 const LOOPS := ["rumble", "burn", "plasma", "hum"]
 ## Ohjaamon taustaääni: freesound_community, Spaceship Ambient (Pixabay), saumattomaksi silmukaksi leikattuna.
 const AMBIENT := "res://assets/sound/ohjaamo_tausta.ogg"
+## Vaiheen vaihdon kuulutus: Quindar-piippaus (2525 Hz), lennonjohdon "Stage separation confirmed" NASAn IM-2-laukaisun
+## lähetyksestä (public domain) ja Quindar-loppupiippaus (2475 Hz).
+const CALLOUT := "res://assets/sound/vaihe_kuulutus.ogg"
+## Vaiheet, joista kuuluu kuulutus; muut ilmoitukset kuittaa pelkkä piippaus.
+const CALLOUTS := ["orbit", "depart", "soi", "arrive", "capture"]
 
 var quiet := false
 var _loops := {} # nimi → AudioStreamPlayer
 var _levels := {} # nimi → nykyinen taso 0–1 (pehmennetty)
 var _click: AudioStreamWAV
-var _chimes := {} # nimi → AudioStreamWAV
+var _callout: AudioStream
+var _quindar: AudioStreamWAV
+var _callout_at := -100000 # edellisen kuulutuksen alku (ms), päällekkäisten esto
 var _beep: AudioStreamWAV
 var _go: AudioStreamWAV
 var _state_at := -1000
@@ -35,15 +44,14 @@ func _ready() -> void:
 	_click = SoundSynth.to_wav(SoundSynth.click(), false)
 	_beep = SoundSynth.to_wav(SoundSynth.beep(880.0, 0.12), false)
 	_go = SoundSynth.to_wav(SoundSynth.beep(1320.0, 0.35), false)
-	for c: Array in [["orbit", [523.25, 659.25, 783.99, 1046.5]], ["depart", [392.0, 523.25, 659.25]],
-			["soi", [880.0, 659.25]], ["arrive", [659.25, 783.99, 987.77, 1318.5]], ["survey", [783.99, 1046.5]], ["notice", [987.77]]]:
-		_chimes[c[0]] = SoundSynth.to_wav(SoundSynth.chime(c[1]), false)
-	Game.orbit_reached.connect(func(_b: String) -> void: play_chime("orbit"))
-	Game.departure_burn.connect(func(_f: Dictionary) -> void: play_chime("depart"))
-	Game.soi_entered.connect(func(_b: String) -> void: play_chime("soi"))
-	Game.arrived.connect(func(_b: String) -> void: play_chime("notice"))
-	Game.capture_done.connect(func(_b: String, ok: bool, _a: bool) -> void: play_chime("arrive" if ok else "soi"))
-	Game.survey_finished.connect(func(_b: String, _f: bool) -> void: play_chime("survey"))
+	_callout = load(CALLOUT)
+	_quindar = SoundSynth.to_wav(SoundSynth.quindar(), false)
+	Game.orbit_reached.connect(func(_b: String) -> void: announce("orbit"))
+	Game.departure_burn.connect(func(_f: Dictionary) -> void: announce("depart"))
+	Game.soi_entered.connect(func(_b: String) -> void: announce("soi"))
+	Game.arrived.connect(func(_b: String) -> void: announce("arrive"))
+	Game.capture_done.connect(func(_b: String, ok: bool, _a: bool) -> void: announce("capture"))
+	Game.survey_finished.connect(func(_b: String, _f: bool) -> void: announce("survey"))
 	get_tree().node_added.connect(_on_node_added)
 	_hook_buttons.call_deferred(get_tree().root)
 
@@ -102,9 +110,18 @@ func _countdown(s: Dictionary) -> void:
 	_last_count = count
 
 
-func play_chime(name: String) -> void:
-	if not quiet and _chimes.has(name):
-		_play(_chimes[name], -4.0)
+## Lennon vaiheen ilmoitus: kuulutus tai pelkkä piippaus. Kuulutuksen aikana uusi ilmoitus ei ala päälle
+## (esim. saapuminen ja jarrutus kiertoradalle samalla hetkellä). Palauttaa, soiko jotain.
+func announce(name: String) -> bool:
+	var now := Time.get_ticks_msec()
+	if quiet or now - _callout_at < int(_callout.get_length() * 1000.0):
+		return false
+	_callout_at = now
+	if name in CALLOUTS:
+		_play(_callout, -3.0)
+	else:
+		_play(_quindar, -8.0)
+	return true
 
 
 func _play(stream: AudioStream, db: float) -> void:

@@ -19,8 +19,9 @@ func _ready() -> void:
 			mean_step += absf(x[i] - x[i - 1])
 		mean_step /= x.size() - 1
 		check("silmukka %s saumaton" % name, absf(x[x.size() - 1] - x[0]) < 5.0 * mean_step + 0.01)
-	var c := SoundSynth.chime([523.25, 659.25])
-	check("kellosointi häipyy", c.size() > R and absf(c[c.size() - 1]) < 0.05)
+	var q := SoundSynth.quindar()
+	check("Quindar-piippaus kaksiosainen ja hiljenee", q.size() > int(0.55 * R) and absf(q[q.size() - 1]) < 0.05 \
+		and absf(q[int(0.29 * R)]) < 0.001)
 	var w := SoundSynth.to_wav(SoundSynth.click(), false)
 	check("napsautus WAV:ksi", w.data.size() == SoundSynth.click().size() * 2 and w.loop_mode == AudioStreamWAV.LOOP_DISABLED)
 	var lw := SoundSynth.to_wav(loops.burn, true)
@@ -53,4 +54,8 @@ func _ready() -> void:
 	check("radiokohina", SoundSynth.radio_static().size() > SoundSynth.RATE / 3)
 	var sound: GameSound = get_parent().sound
 	check("äänisolmu pääscenessä", sound != null and not sound.quiet)
+	var callout: AudioStream = load(GameSound.CALLOUT)
+	check("vaiheen kuulutus 2–4 s", callout != null and callout.get_length() > 2.0 and callout.get_length() < 4.0)
+	check("kuulutus soi", sound.announce("orbit"))
+	check("ei päällekkäistä kuulutusta", not sound.announce("capture"))
 	finish()
