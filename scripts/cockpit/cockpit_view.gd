@@ -325,7 +325,8 @@ func _build_rear() -> void:
 	rear_view.world_3d = viewport.find_world_3d()
 	rear_view.audio_listener_enable_3d = false
 	rear_view.render_target_update_mode = SubViewport.UPDATE_DISABLED
-	add_child(rear_view)
+	# Ei tämän SubViewportContainerin lapseksi: säiliö piirtäisi kaikki SubViewport-lapsensa näkymän päälle.
+	viewport.add_child(rear_view)
 	rear_cam = Camera3D.new()
 	rear_cam.near = camera.near
 	rear_cam.far = camera.far
@@ -633,7 +634,11 @@ func _attitude(s: Dictionary, delta: float) -> void:
 		var up := _ecl_to_scene(s.up if s.get("up") != null else PackedFloat64Array([0, 0, 1])).normalized()
 		want = Basis.looking_at(nose, up)
 	else:
-		if s.get("aim") != null:
+		if s.get("heading") != null:
+			# Menosuunta (kartan nuoli) ikkunan keskelle.
+			var dir_h := Space.to_scene(s.heading).normalized()
+			want = Basis.looking_at(dir_h, Vector3.UP if absf(dir_h.y) < 0.99 else Vector3.BACK) * Basis(Vector3.RIGHT, -CockpitState.AIM_RAISE)
+		elif s.get("aim") != null:
 			var aim_km: PackedFloat64Array = Flight.body_state(s.aim, s.t).r
 			var dir := Space.to_scene(Flight.sub(aim_km, s.ship.r)).normalized()
 			want = Basis.looking_at(dir, Vector3.UP if absf(dir.y) < 0.99 else Vector3.BACK) * Basis(Vector3.RIGHT, -CockpitState.AIM_RAISE)
@@ -662,7 +667,8 @@ func _body_frame(s: Dictionary) -> Dictionary:
 		return {}
 	var name: String = space.nearest.name
 	var b := Flight.body_state(name, s.t)
-	return CockpitState.body_frame(Flight.sub(s.ship.r, b.r), Flight.sub(s.ship.v, b.v), float(space.nearest.radius_m) / 1000.0)
+	return CockpitState.body_frame(Flight.sub(s.ship.r, b.r), Flight.sub(s.ship.v, b.v), float(space.nearest.radius_m) / 1000.0,
+		s.get("heading") != null)
 
 
 func _lighting(s: Dictionary) -> void:

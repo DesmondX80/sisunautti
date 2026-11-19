@@ -163,7 +163,9 @@ func _draw() -> void:
 		_draw_transfer(f, t, to_px, w)
 	if not preview.is_empty() and s.flight != null:
 		_draw_preview(t, to_px)
-	_draw_ship(to_px.call(ship_au), ship.v)
+	# Nuoli: menosuunta kartan koordinaatistossa (kuiden luona emoplaneetan suhteen), sama kuin ohjaamon nokka.
+	var arrow: PackedFloat64Array = ship.v if parent == "" else Flight.sub(ship.v, Flight.planet_state(parent, t).v)
+	_draw_ship(to_px.call(ship_au), arrow)
 
 
 func _font() -> Font:

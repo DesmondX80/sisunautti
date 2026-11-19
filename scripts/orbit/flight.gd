@@ -607,6 +607,15 @@ static func _clamp_outside(r: PackedFloat64Array, c: PackedFloat64Array, min_km:
 	return add(c, scale(rel, min_km / dist) if dist > 1.0 else vec(min_km, 0.0, 0.0))
 
 
+## Aluksen menosuunta (nopeus, km/s) samassa koordinaatistossa kuin lentokartan nuoli: paikallisella lennolla
+## (kuuhun tai kuusta) emoplaneetan suhteen, muuten Auringon suhteen.
+static func heading_velocity(tr: Dictionary, time: float) -> PackedFloat64Array:
+	var s := ship_state(tr, maxf(time, float(tr.depart)))
+	if tr.get("local", false):
+		return sub(s.v, planet_state(tr.parent, time).v)
+	return s.v
+
+
 ## Hyperbolinen ohitusrata kappaleen ympäri ekliptikan tasossa samaan kiertosuuntaan kuin pysäköintiradat: perikeskus
 ## rp (km) hetkellä t_peri ja ylinopeus vinf (km/s). outgoing: vinf on lähtevän asymptootin suunta (lähtöpoltto
 ## perikeskuksessa), muuten saapuvan (jarrutuspoltto perikeskuksessa). Paikka ja nopeus kappaleen suhteen hetkellä time.

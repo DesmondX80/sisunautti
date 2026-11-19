@@ -41,6 +41,11 @@ func _ready() -> void:
 	G.burn_at = G.real_ms()
 	s = CockpitState.make()
 	check("polton hehku", float(s.thrust) > 0.9)
+	G.launch()
+	s = CockpitState.make()
+	var hv := Flight.heading_velocity(G.state.flight, s.t)
+	check("lennolla nokka menosuuntaan (kartan nuoli)", s.get("heading") != null and Flight.norm(Flight.sub(s.heading, hv)) < 1e-9
+		and s.aim == "Mars")
 	G.aero_at = G.real_ms()
 	s = CockpitState.make()
 	check("ilmajarrutuksen plasma ja taivaan väri", float(s.aero) > 0.9 and s.sky_color != null)
@@ -68,6 +73,10 @@ func _ready() -> void:
 	var elev := asin(Flight.dot(to_c, far.up))
 	check("kaukaa lähestyttäessä kappale ikkunan keskellä", far.weight < 0.05
 		and absf(elev - CockpitState.AIM_RAISE) < 0.01 and Flight.dot(far.nose, to_c) > 0.95)
+	var in_v := Flight.vec(-6.0, 1.0, 0)
+	var appr := CockpitState.body_frame(Flight.vec(R * 4.0, 0, 0), in_v, R, true)
+	var in_dir := Flight.scale(in_v, 1.0 / Flight.norm(in_v))
+	check("lennolla lähestyttäessä nokka nopeuden suuntaan", Flight.dot(appr.nose, in_dir) > 0.9)
 	var near_away := CockpitState.body_frame(Flight.vec(R * 1.3, -R * 0.2, 0), Flight.vec(8.0, 6.0, 0), R)
 	var top := asin(Flight.dot(Flight.vec(-1, 0, 0), near_away.up)) # suunnilleen keskipisteen korkeus
 	check("lähdön alussa horisontti näkyy ikkunassa", near_away.weight == 1.0 and top > -PI / 2.0 and top < 0.0)
@@ -125,6 +134,11 @@ func _ready() -> void:
 	var ind := cv.cabin.indicator_values()
 	check("merkkivalot kuvan valoina", ind.size() == 6 and ind[0] == 1.0 and ind[5] == 0.0
 		and ResourceLoader.exists("res://assets/cockpit/ohjaamo_valot.png"))
+	var containers := 0
+	for c in cv.get_children():
+		if c is SubViewport:
+			containers += 1
+	check("ohjaamon säiliössä vain päänäkymä (muut SubViewportit piirtyisivät päälle)", containers == 1)
 	cv.toggle_rear()
 	check("kohdekamera takakameraksi", cv.is_rear() and cv.rear_button.text == "Kohdekamera"
 		and cv.rear_view.world_3d == cv.viewport.find_world_3d())

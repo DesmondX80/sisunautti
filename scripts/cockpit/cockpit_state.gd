@@ -66,6 +66,9 @@ static func make() -> Dictionary:
 			status = "kartoitus käynnissä"
 		elif name != null:
 			status = "tutkittu" if s.explored.has(name) else "tutkimatta"
+		# Auringon kiertoradalla nokka menosuuntaan (kartan nuoli).
+		if name == null:
+			base.heading = ship.v
 		base.merge({"ship": ship, "aim": name, "screens": [
 			["KIERTORATA" if name != null else "AURINGON KIERTORATA", [[Fmt.clock(t), 36], date, warp]],
 			["NOPEUS", speed_rows],
@@ -82,8 +85,11 @@ static func make() -> Dictionary:
 	# Kun lähtöpoltto on päällä, alus on kiertoradalla nokka menosuuntaan ja katto poispäin planeetasta (body_frame).
 	if f == null and tr.get("armed", false):
 		base.burn_frame = true
-	# Lennolla nokka osoittaa linkousplaneettaan ohitukseen asti ja sitten kohteeseen. Lähtö- ja kohdeplaneetan
-	# lähellä asennon määrää rata (body_frame): lähtiessä planeetta jää hiljalleen alle ja taakse.
+	# Lennolla nokka osoittaa menosuuntaan kuten kartan nuoli (heading, #32). Kappaleiden lähellä asennon määrää rata
+	# (body_frame): lähtiessä planeetta jää hiljalleen alle ja taakse, ohittaessa ja saapuessa se on alla.
+	# aim on näyttöjen kohde (kohdekamera, tutka).
+	if f != null:
+		base.heading = Flight.heading_velocity(f, t)
 	var aim: String = tr.to
 	if f != null:
 		var fb: Variant = tr.get("flyby")
@@ -120,14 +126,14 @@ static func _readouts(t: float) -> Dictionary:
 		"speed": speed, "near": near, "dist": Fmt.km(Flight.norm(Flight.sub(ship.r, Flight.body_state(tr.to, t).r)))}
 
 
-## Asento kappaleen lähellä kuten lentokoneella: nokka menosuuntaan ja katto poispäin kappaleesta, ja kappale näkyy
+## Asento kappaleen lähellä kuten lentokoneella (follow_velocity: lennolla nokka seuraa nopeutta myös lähestyessä): nokka menosuuntaan ja katto poispäin kappaleesta, ja kappale näkyy
 ## kaarevana aluksen alla. rel_r ja rel_v: aluksen paikka (km) ja nopeus kappaleen suhteen, ekliptikan koordinaatit.
 ## Ratatasossa e1 osoittaa kappaleen keskipisteeseen ja e2 menosuuntaan (ratanopeuden suunta). Nokka on kulmassa φ
 ## e1:stä e2:een päin, katto kohtisuorassa poispäin kappaleesta, ja kappaleen keskipiste näkyy korkeudella c = −φ.
 ## Matalalla radalla (kulmasäde ρ suuri) horisontti on ikkunan alaosassa; kaukana kappaleen keskipiste on ikkunan
 ## keskellä. Etääntyessä (lähtö) nokka seuraa nopeutta, ja kappale jää hiljalleen alle ja taakse.
 ## Palauttaa {nose, up, weight}: weight 0–1 kertoo, kuinka paljon asento seuraa rataa kohteeseen osoittamisen sijaan.
-static func body_frame(rel_r: PackedFloat64Array, rel_v: PackedFloat64Array, radius_km: float) -> Dictionary:
+static func body_frame(rel_r: PackedFloat64Array, rel_v: PackedFloat64Array, radius_km: float, follow_velocity: bool = false) -> Dictionary:
 	var dist := Flight.norm(rel_r)
 	var rho := asin(clampf(radius_km / dist, 0.0, 1.0))
 	var r_hat := Flight.scale(rel_r, 1.0 / dist)
@@ -148,6 +154,10 @@ static func body_frame(rel_r: PackedFloat64Array, rel_v: PackedFloat64Array, rad
 	var pitch_down := clampf(PI / 2.0 + c, 0.0, 25.0 * DEG) * smoothstep(0.0, 20.0 * DEG, rho)
 	var leaving := minf(alpha - pitch_down, rho - HORIZON_RAISE + (1.0 - smoothstep(5.0 * DEG, 30.0 * DEG, rho)) * PI)
 	phi = lerpf(phi, maxf(phi, leaving), smoothstep(PI / 2.0, PI / 2.0 + 20.0 * DEG, alpha))
+	# Lennolla (follow_velocity) myös lähestyttäessä nokka seuraa nopeutta kappaleen suhteen: kappale on alla ja
+	# horisontti nousee ikkunaan vasta ohitettaessa (perikeskuksessa sama asento kuin kiertoradalla).
+	if follow_velocity and alpha < PI / 2.0:
+		phi = alpha - pitch_down
 	var nose := Flight.add(Flight.scale(e1, cos(phi)), Flight.scale(e2, sin(phi)))
 	var up := Flight.add(Flight.scale(e1, -sin(phi)), Flight.scale(e2, cos(phi)))
 	return {"nose": nose, "up": up, "weight": smoothstep(3.0 * DEG, 20.0 * DEG, rho), "rho": rho}
