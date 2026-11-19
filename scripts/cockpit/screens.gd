@@ -4,7 +4,7 @@ extends Control
 ## muotoon (view_size) keskelle; tausta ja kehykset täyttävät koko näytön. Hologrammityyli: tummansininen pohja, ruudukko, syaanit
 ## viivat ja kulmakehykset. Näyttö piirretään uudelleen enintään 20 kertaa sekunnissa (tick), ja SubViewport
 ## päivitetään vain silloin (UPDATE_ONCE). Tyypit:
-##   "nav"      tutka: aurinkokunta ylhäältä pyyhkäisyineen, alus, kohde ja lähimmät planeetat
+##   "nav"      tutka: aurinkokunta ylhäältä, alus, kohde ja lähimmät planeetat
 ##   "ship"     aluskaavio polttoaineineen ja moottorin liekkeineen sekä päänäytön 1 rivit (aika, päivä, kiihdytys)
 ##   "target"   tähtäin ja työntö sekä päänäytön 2 rivit (nopeus)
 ##   "systems"  järjestelmät: etäisyydet planeetoille, mittarit, kohteen hologrammi ja tilarivit
@@ -297,7 +297,7 @@ func _draw_nav(c: CanvasItem) -> void:
 	reach *= 1.15
 	var k := R / reach
 	var px := func(r: PackedFloat64Array) -> Vector2: return Vector2(cx + r[0] / au * k, cy - r[1] / au * k)
-	# Tutkan kehät, ristikko, asteikko ja pyyhkäisy.
+	# Tutkan kehät, ristikko ja asteikko.
 	for i in range(1, 5):
 		c.draw_arc(Vector2(cx, cy), R * i / 4.0, 0, TAU, 96, Color(ACCENT, 0.3 if i == 4 else 0.14), 2.0 if i == 4 else 1.0, true)
 	c.draw_line(Vector2(cx - R, cy), Vector2(cx + R, cy), Color(ACCENT, 0.18), 1.0)
@@ -306,15 +306,6 @@ func _draw_nav(c: CanvasItem) -> void:
 		var a := TAU * i / 72.0
 		var d := Vector2(cos(a), sin(a))
 		c.draw_line(Vector2(cx, cy) + d * R, Vector2(cx, cy) + d * (R + (12.0 if i % 6 == 0 else 6.0)), Color(ACCENT, 0.5), 1.5)
-	var sweep := fmod(_time_s() * 1.3, TAU)
-	var fan := PackedVector2Array([Vector2(cx, cy)])
-	var cols := PackedColorArray([Color(ACCENT, 0.25)])
-	for i in 13:
-		var a := sweep - 0.7 * i / 12.0
-		fan.append(Vector2(cx, cy) + Vector2(cos(a), sin(a)) * R)
-		cols.append(Color(ACCENT, 0.22 * (1.0 - i / 12.0)))
-	c.draw_polygon(fan, cols)
-	c.draw_line(Vector2(cx, cy), Vector2(cx, cy) + Vector2(cos(sweep), sin(sweep)) * R, Color(BRIGHT, 0.8), 2.0)
 	# Radat ja planeetat.
 	var dists := []
 	for name in Planets.NAMES:
