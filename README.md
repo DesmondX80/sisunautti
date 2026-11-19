@@ -97,7 +97,7 @@ tools/run_tests.sh          # ikkunattomat testit, esim. tools/run_tests.sh sett
   ja nipistämällä zoomataan vapaasti. Kuva elää pelin mukana: vasen käsi työntää tehovipua eteen moottorin työnnön mukaan, oikean käden ohjainsauva värähtelee tärinässä ja kallistuu aluksen kääntyessä (pehmeä siirto varjostimessa), ja paneelien pienet valot (valokartta `assets/cockpit/ohjaamo_valot.png`, tehty skriptillä `tools/make_cockpit_lights.py`) vilkkuvat kukin omassa tahdissaan; kuusi niistä on merkkivaloja (moottori, aikakiihdytys, suunta, vaikutuspiiri, ilmakehä ja polttoaineen varoitus). Moottorin ja plasman hehku sävyttää ohjaamon kuvaa, ja ikkunan lasissa on
   likaa ja naarmuja, jotka Aurinko sytyttää häikäisyksi. Avaruudessa ovat kirkkaat tähdet HDR-pisteinä ja Linnunrata taustana, Auringon
   HDR-kiekko hehkuineen ja linssiheijastus (ohjaamon rakenteet peittävät sen syvyyspuskurin perusteella), planeettojen
-  ja kuiden pintakartat (2k, lähellä 4k tai 8k, Maalla Ultra-tasolla 16k), ilmakehän sironta varjostimella, Maan
+  ja kuiden pintakartat (2k, lähellä 4k tai 8k, Maalla ja Kuulla Ultra-tasolla 16k), ilmakehän sironta varjostimella, Maan
   erillinen pilvikerros, kaupunkien valot ja merien heijastus sekä Saturnuksen läpikuultavat renkaat varjoineen.
   Ilmakehän sironta (`shaders/atmosphere.gdshader`) kerää näkösäteen matkalta sironneen valon ja vaimennuksen:
   tiheys laskee eksponentiaalisesti ja hiipuu kuoren ylärajalla nollaan, joten kiertoradalta horisontin yllä on ohut
@@ -106,7 +106,15 @@ tools/run_tests.sh          # ikkunattomat testit, esim. tools/run_tests.sh sett
   laaksot) rikotaan kohinalla, paikallista kontrastia terävöitetään ja maalle lisätään hienoa vaihtelua; pilvien
   reunat hajoavat ja niiden pintaan tulee Auringon valaisemia kumpuja, meren välke hajoaa aallokkoon ja yön
   kaupunkivalot jakautuvat pieniksi pisteiksi (`surface_detail`, Keski, Korkea ja Ultra). Maan 16k-päiväkartta on
-  JPEG, joka tuodaan näytönohjaimen pakkaamana (S3TC, 89 Mt; pakkaamattomana 700 Mt). Kappaleet piirretään
+  JPEG, joka tuodaan näytönohjaimen pakkaamana (S3TC, 89 Mt; pakkaamattomana 700 Mt), samoin Kuun 16k-kartta.
+  Kuun pinnassa on kohokuvio LRO-luotaimen laserkorkeusmallista (`kuu-pinta*.webp`: pinnan normaali ja paikallinen
+  korkeus): rinteet valaistaan oikein, ja varjot lasketaan kulkemalla korkeuskarttaa Aurinkoa kohti (Matala 6,
+  Keski 10, Korkea 16 ja Ultra 24 askelta, puolivarjo kasvaa etäisyyden mukana), joten terminaattorin lähellä
+  kraatterit täyttyvät pitkistä varjoista ja vuorenhuiput valaistuvat sen takana. Ilmaton pölypinta heijastaa
+  Lommel–Seeliger-mallin mukaan (täysikuu on reunoja myöten kirkas), yöpuolella on Maan vaiheen mukainen sinertävä
+  maanvalo, ja kiertoradalta näkyy korkeusmallin erottelukykyä pienempiä kraattereita (halkaisija 0,2–4 km:
+  malja, valli ja tuoreiden kraatterien vaalea heittelykehä), jotka häivytetään ennen kuin ne kutistuvat
+  kuvapistettä pienemmiksi. Kappaleet piirretään
   kameran suhteen: 64-bittiset sijainnit muutetaan suunnaksi ja logaritmisesti puristetuksi etäisyydeksi, ja niiden
   syvyysarvo kirjoitetaan aina ohjaamon taakse. Valaistus: auringonvalo ikkunoista pehmeine varjoineen, lähimmän
   kappaleen heijastama valo sen värisenä, himmeneminen kaukana Auringosta ja pimennys, kun kappale peittää Auringon.
@@ -114,7 +122,7 @@ tools/run_tests.sh          # ikkunattomat testit, esim. tools/run_tests.sh sett
   ja tärinä; poltoissa moottorin hehku; ilmajarrutuksessa virtaava plasma, oranssi valo ja kipinät.
 - Laatutasot (Tietoa-ikkunassa): Matala, Keski, Korkea ja Ultra muuttavat varjojen tarkkuutta, SSAO:ta (Korkea),
   SSR:ää (Ultra), reunanpehmennystä, partikkelimääriä, pintakarttojen tarkkuutta (Matala 2k, Keski 4k, Korkea 8k,
-  Ultra 8k ja Maa 16k), pinnan lähikuvan yksityiskohtia (ei Matalassa) ja ilmakehän näytteitä. Oletus valitaan näytönohjaimen mukaan. Selaimessa (Compatibility) enintään
+  Ultra 8k sekä Maa ja Kuu 16k), Kuun varjojen tarkkuutta, pinnan lähikuvan yksityiskohtia (ei Matalassa) ja ilmakehän näytteitä. Oletus valitaan näytönohjaimen mukaan. Selaimessa (Compatibility) enintään
   Keski, ilman SSAO:ta, SSR:ää ja automaattista valotusta, ja 8k- ja 16k-karttoja ei viedä selainversioon.
 - Kuvakaappaukset käyttöliittymän tiloista (vaatii ikkunan): `godot -- --uishotstest=/polku/kuviin --size=390x844`.
   Ohjaamosta: `godot -- --cockpitshotstest=/polku/kuviin [--quality=0–3]` (selaimen renderöijällä lisäksi
@@ -172,16 +180,18 @@ Aloitusvalikon taustakuva `assets/menu/taustakuva.webp` (3840 × 2224, pienennet
 
 Ohjaamon kuva `assets/cockpit/ohjaamo.png` (1382 × 777) on pelin tekijän antama kuva; sen ikkuna-alue on tehty läpinäkyväksi. Ohjaamon panoraama on pelin tekijän tekemä (Gemini, 1456 × 720), ja se on suurennettu nelinkertaiseksi Real-ESRGANilla (malli realesrgan-x4plus, reunat kierrettyinä, jotta sauma pysyy jatkuvana).
 
-Ohjaamon pintakartat ovat hakemistossa `assets/textures/` (tasavälinen lieriöprojektio, WebP, yhteensä noin 41 Mt). Jokaisesta kohteesta on peruskartta (enintään 2048 × 1024). Lisäksi on tarkat kartat, jotka haetaan vasta, kun kohde täyttää suuren osan ikkunasta: 8k (8192 × 4096) ja 4k Merkuriuksesta, Maasta, Marsista, Kuusta, Iosta, Europasta, Ganymedeestä ja Enceladuksesta sekä 4k Venuksesta, Jupiterista, Saturnuksesta, Phoboksesta ja Tritonista (näistä ei ole tarkempaa lähdettä tai lähteen tarkkuus ei riitä 8k:hon). 8k-karttaa käytetään vain tietokoneella; kosketusnäyttölaitteet ja heikommat näytönohjaimet saavat 4k-kartan.
+Ohjaamon pintakartat ovat hakemistossa `assets/textures/` (tasavälinen lieriöprojektio, WebP, yhteensä noin 41 Mt). Jokaisesta kohteesta on peruskartta (enintään 2048 × 1024). Lisäksi on tarkat kartat, jotka haetaan vasta, kun kohde täyttää suuren osan ikkunasta: 16k Maasta ja Kuusta (JPEG, tuodaan pakattuna), 8k (8192 × 4096) ja 4k Merkuriuksesta, Maasta, Marsista, Kuusta, Iosta, Europasta, Ganymedeestä ja Enceladuksesta sekä 4k Venuksesta, Jupiterista, Saturnuksesta, Phoboksesta ja Tritonista (näistä ei ole tarkempaa lähdettä tai lähteen tarkkuus ei riitä 8k:hon). 8k-karttaa käytetään vain tietokoneella; kosketusnäyttölaitteet ja heikommat näytönohjaimet saavat 4k-kartan.
 
 | Kohde | Lähde | Lisenssi |
 | --- | --- | --- |
-| Merkurius, Venus (pilvikerros), Maa, Mars, Jupiter, Saturnus ja renkaat, Uranus, Neptunus, Kuu | [Solar System Scope](https://www.solarsystemscope.com/textures/), NASAn aineistoon perustuvat kartat. Maan karttaan on yhdistetty saman lähteen pilvikartta. | [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/) |
+| Merkurius, Venus (pilvikerros), Maa, Mars, Jupiter, Saturnus ja renkaat, Uranus, Neptunus | [Solar System Scope](https://www.solarsystemscope.com/textures/), NASAn aineistoon perustuvat kartat. Maan karttaan on yhdistetty saman lähteen pilvikartta. | [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/) |
 | Phobos | Viking-luotainten mosaiikki, NASA/JPL/USGS ([Wikimedia Commons](https://commons.wikimedia.org/wiki/File:Phobos_Viking_Mosaic_DLRcontrol_7200.jpg)); sävytetty ruskeanharmaaksi | public domain |
 | Io | Galileo- ja Voyager-luotainten värimosaiikki (Io GalileoSSI-Voyager Global Mosaic ClrMerge 1km), [USGS Astrogeology](https://astrogeology.usgs.gov/search/map/io_galileo_ssi_voyager_color_merged_global_mosaic_1km) | public domain |
 | Europa | Seek9750: Moon Europa color map ([Wikimedia Commons](https://commons.wikimedia.org/wiki/File:Moon_Europa_color_map.jpg)), NASAn kuvista | CC0 |
 | Ganymedes | Björn Jónsson: Map of Ganymede, NASAn kuvista ([Wikimedia Commons](https://commons.wikimedia.org/wiki/File:Map_of_Ganymede_by_Bj%C3%B6rn_J%C3%B3nsson.jpg)). Tarkoissa kartoissa värit ovat tästä kartasta ja hienot yksityiskohdat USGS:n Voyager- ja Galileo-mosaiikin kirkkaudesta ([USGS Astrogeology](https://astrogeology.usgs.gov/search/map/ganymede_voyager_galileo_ssi_global_color_mosaic_1435m)) | vapaa käyttö, tekijä mainittava; USGS public domain |
 | Enceladus | Cassini-luotaimen värikartta PIA18435, NASA/JPL-Caltech/SSI/LPI ([Wikimedia Commons](https://commons.wikimedia.org/wiki/File:Enceladus_Color_Map.jpg)) | public domain |
+| Kuu (`assets/textures/kuu*`, värikartta) | NASA Scientific Visualization Studio: [CGI Moon Kit](https://svs.gsfc.nasa.gov/4720/), Lunar Reconnaissance Orbiterin laajakulmakameran (LROC WAC) värimosaiikki napoineen (16 384 × 8 192 px); 16k-JPEG ja 8k/4k/2k-WebP (`tools/make_moon_textures.py`) | public domain (NASA) |
+| Kuun kohokuvio (`assets/textures/kuu-pinta*`) | NASA SVS: [CGI Moon Kit](https://svs.gsfc.nasa.gov/4720/), LRO:n laserkorkeusmittarin (LOLA) korkeusmalli 64 px/aste; pinnan normaalit ja paikallinen korkeus (`tools/make_moon_textures.py`) | public domain (NASA) |
 | Maan päiväkartta ilman pilviä (`assets/textures/maa-paiva*`) ja merimaski (`maa-meri.webp`, päiväkartan väreistä) | NASA Earth Observatory: [Blue Marble Next Generation](https://science.nasa.gov/earth/earth-observatory/blue-marble-next-generation/), marraskuu 2004, maaston varjostuksella (21 600 × 10 800 px); pienennetty 16k-JPEG:ksi ja 8k/4k/2k-WebP:ksi (`tools/make_earth_textures.py`) | public domain (NASA) |
 | Maan yövalot (`assets/textures/maa-yo*`) | NASA Earth Observatory: [Black Marble 2016](https://science.nasa.gov/earth/earth-observatory/earth-at-night/maps/) (13 500 × 6 750 px); pelkät valot erotettu taustasta (`tools/make_earth_textures.py`) | public domain (NASA) |
 | Maan pilvikerros (`assets/textures/maa-pilvet*`) | [Solar System Scope](https://www.solarsystemscope.com/textures/) Wikimedia Commonsin kautta: 8k earth clouds; harmaasävyinen WebP (8k `tools/make_earth_textures.py`, 4k ja 2k `tools/make_textures.gd`) | [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/) |

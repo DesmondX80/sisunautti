@@ -119,8 +119,39 @@ func _ready() -> void:
 	var clouds := loader.get_texture(BodyTextures.DIR + "maa-pilvet-8k.webp")
 	check("pilvet ja yövalot 8k, yksikanavaisina", clouds != null and clouds.get_width() == 8192
 		and clouds.get_image().get_format() == Image.FORMAT_L8 and BodyTextures.exists(BodyTextures.DIR + "maa-yo-8k.webp"))
+	# Kuu (#36): LRO-värikartta 16k pakattuna ja LOLA-korkeusmallin kohokuvio (normaali + paikallinen korkeus).
+	var moon_hi := BodyTextures.file_for("Kuu", BodyTextures.best_width("Kuu", 16384))
+	check("Kuun 16k-kartta pakattuna", moon_hi.ends_with("kuu-16k.jpg") and BodyTextures.exists(moon_hi)
+		and BodyTextures.best_width("Kuu", 8192) == 8192)
+	var relief := loader.get_texture(BodyTextures.DIR + "kuu-pinta-8k.webp")
+	var relief_ok := relief != null and relief.get_width() == 8192 and relief.get_image().get_format() != Image.FORMAT_L8
+	for suf in ["", "-4k"]:
+		relief_ok = relief_ok and BodyTextures.exists(BodyTextures.DIR + "kuu-pinta%s.webp" % suf)
+	check("Kuun kohokuviokartat 2k, 4k ja 8k (värillisinä)", relief_ok)
+	if relief_ok:
+		# Tasainen pinta keskimäärin: normaalin vaakakomponentit ja paikallinen korkeus lähellä keskiarvoa 0,5.
+		var img := relief.get_image()
+		var sum := Vector3.ZERO
+		for i in 400:
+			var c := img.get_pixel((i * 7919) % 8192, 1024 + (i * 104729) % 2048)
+			sum += Vector3(c.r, c.g, c.b)
+		sum /= 400.0
+		check("kohokuvio keskimäärin vaakatasossa", absf(sum.x - 0.5) < 0.05 and absf(sum.y - 0.5) < 0.05 and absf(sum.z - 0.5) < 0.08)
 	# Ohjaamonäkymä ja laatutasot
 	var cv: CockpitView = get_parent().ui.cockpit_view
+	var moon: Dictionary = {}
+	for b: Dictionary in cv.space.bodies:
+		if b.name == "Kuu":
+			moon = b
+	var mm: ShaderMaterial = moon.mat
+	check("Kuulla kohokuvio, regoliitti ja kraatterit", moon.has("relief_path") and float(mm.get_shader_parameter("relief")) == 1.0
+		and float(mm.get_shader_parameter("regolith")) > 0.0 and float(mm.get_shader_parameter("craters")) > 0.0)
+	cv.space._earthshine(moon, Flight.body_state("Kuu", START).r, Basis.IDENTITY, START)
+	var moon_km: PackedFloat64Array = Flight.body_state("Kuu", START).r
+	cv.space.update(Flight.add(moon_km, PackedFloat64Array([2000.0, 0.0, 0.0])), START, 1000.0)
+	check("Kuun lähipuoli kohti Maata", (mm.get_shader_parameter("earth_local") as Vector3).z < -0.995)
+	var es := float(mm.get_shader_parameter("earthshine"))
+	check("maanvalo Maan vaiheen mukaan", es >= 0.0 and es <= 0.035 and (mm.get_shader_parameter("earth_local") as Vector3).is_normalized())
 	check("ohjaamo luotu", cv != null and cv.cabin.screens.size() == 3 and cv.cabin.monitors.size() == 6 and cv.cabin.mini_screen != null and cv.space.bodies.size() == 16)
 	var inside := true
 	for m: Dictionary in cv.cabin.monitors:
@@ -169,9 +200,11 @@ func _ready() -> void:
 	cv.reset_view()
 	cv.apply_quality(Settings.Quality.LOW)
 	check("Matala: 2k-kartat, ei yksityiskohtia eikä SSAO:ta", cv.space.max_texture == 2048 and cv.space.surface_detail == 0.0 and not cv.env.ssao_enabled)
+	check("Matala: Kuun varjoissa vähän askelia", cv.space.shadow_steps == 6)
 	if not Settings.is_compatibility():
 		cv.apply_quality(Settings.Quality.ULTRA)
 		check("Ultra: 16k, pinnan yksityiskohdat, SSAO ja SSR", cv.space.max_texture == 16384 and cv.space.surface_detail == 1.0 and cv.env.ssao_enabled and cv.env.ssr_enabled)
+		check("Ultra: Kuun varjot 24 askelta, 8k-kohokuvio", cv.space.shadow_steps == 24 and cv.space._layer_map("kuu-pinta", 2).ends_with("kuu-pinta-8k.webp"))
 	cv.apply_quality(Settings.quality)
 	# Läpinäkymättömät avaruusvarjostimet kirjoittavat VERTEXin, jotta syvyysesikierros käyttää niiden DEPTHiä
 	# (muuten pinta piirtyy mustana laatutasoilla ilman SSAO:ta).

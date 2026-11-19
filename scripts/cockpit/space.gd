@@ -43,6 +43,8 @@ var max_texture := 4096
 var atmo_samples := 8
 ## Pinnan ja pilvien lähikuvan yksityiskohdat (0–1, laatutaso).
 var surface_detail := 1.0
+## Kuun varjojen askelmäärä korkeuskartalla (0 = ei varjoja, laatutaso).
+var shadow_steps := 16
 var bodies: Array[Dictionary] = []
 var sun_root: Node3D
 var sun_mesh: MeshInstance3D
@@ -217,6 +219,14 @@ func _build_body(name: String, radius_km: float, color: Color, moon: bool) -> vo
 	var fallback: Texture2D = BodyTextures.drawn(name, color)
 	mat.set_shader_parameter("albedo_tex", fallback)
 	mat.set_shader_parameter("limb_darkening", 0.5 if GIANTS.has(name) else 0.0)
+	if name == "Kuu":
+		# Kohokuvio LOLA-korkeusmallista (tools/make_moon_textures.py), Kuun heijastusmalli ja lähikuvan kraatterit.
+		mat.set_shader_parameter("relief", 1.0)
+		mat.set_shader_parameter("regolith", 0.5)
+		mat.set_shader_parameter("craters", 1.0)
+		mat.set_shader_parameter("albedo_contrast", 1.35)
+		mat.set_shader_parameter("saturation", 0.65)
+		mat.set_shader_parameter("radius_m", radius_km * KM)
 	if CLOUD_DETAIL.has(name):
 		mat.set_shader_parameter("detail_strength", CLOUD_DETAIL[name][0])
 		mat.set_shader_parameter("saturation", CLOUD_DETAIL[name][1])
@@ -259,6 +269,8 @@ func _build_body(name: String, radius_km: float, color: Color, moon: bool) -> vo
 		b.clouds = cmat
 		b.cloud_spin = cspin
 		b.cloud_path = BodyTextures.DIR + "maa-pilvet.webp"
+	if name == "Kuu":
+		b.relief_path = BodyTextures.DIR + "kuu-pinta.webp"
 	if name == "Saturnus":
 		var rm := MeshInstance3D.new()
 		rm.mesh = _ring_mesh(1.24, 2.27, 256)
@@ -371,7 +383,9 @@ func update(ship_km: PackedFloat64Array, t: float, px_per_rad: float) -> void:
 		# Pyöriminen: kuut kääntävät aina saman puolen planeettaansa kohti.
 		var spin_angle: float
 		if b.moon:
-			spin_angle = TAU * fposmod((t - Planets.J2000_MS) / (float(Flight.MOONS[name].periodDays) * 86400000.0), 1.0)
+			# Lähipuoli (pituusaste 0, kartan keskikohta, pallon −z) kohti emoplaneettaa; libraatiota ei mallinneta.
+			var to_parent := to_scene(Flight.sub(Flight.body_state(Flight.MOONS[name].parent, t).r, body_km))
+			spin_angle = atan2(-to_parent.x, -to_parent.z)
 		else:
 			spin_angle = TAU * fposmod(t / 3600000.0 / float(SPIN_HOURS[name]), 1.0)
 		(b.spin as Node3D).basis = Basis(Vector3.UP, spin_angle)
@@ -395,6 +409,9 @@ func update(ship_km: PackedFloat64Array, t: float, px_per_rad: float) -> void:
 			b.atmo.set_shader_parameter("samples", atmo_samples)
 		if not GIANTS.has(b.name):
 			(b.mat as ShaderMaterial).set_shader_parameter("surface_detail", surface_detail)
+		if b.has("relief_path"):
+			mat.set_shader_parameter("shadow_steps", shadow_steps)
+			_earthshine(b, body_km, inv, t)
 		if b.clouds != null:
 			var cinv := (b.cloud_spin as Node3D).global_transform.basis.orthonormalized().inverse()
 			b.clouds.set_shader_parameter("sun_local", cinv * to_sun)
@@ -430,8 +447,21 @@ func _texture_level(b: Dictionary, px: float) -> void:
 		_apply_textures(b)
 
 
-## Maan yö- tai pilvikartta tasolle: lähellä tarkin (8k, jos laatutaso sallii ja tiedosto on mukana, muuten 4k).
-func _earth_map(base: String, level: int) -> String:
+## Maanvalo Kuun yöpuolella: Maan valaistu osuus Kuusta katsottuna (täysi maa, kun Kuu on uusi) ja suunta.
+## Täysimaan valo on Kuun pinnalla noin 50 kertaa täysikuun valoa kirkkaampi, mutta silti vain promilleja auringonvalosta.
+func _earthshine(b: Dictionary, moon_km: PackedFloat64Array, inv: Basis, t: float) -> void:
+	var earth_km: PackedFloat64Array = Flight.body_state("Maa", t).r
+	var to_earth := Flight.sub(earth_km, moon_km)
+	var de := Flight.norm(to_earth)
+	var cos_phase := -Flight.dot(earth_km, to_earth) / (Flight.norm(earth_km) * de) # Maa→Aurinko · Maa→Kuu
+	var lit := 0.5 * (1.0 + cos_phase)
+	var mat: ShaderMaterial = b.mat
+	mat.set_shader_parameter("earth_local", inv * to_scene(Flight.scale(to_earth, 1.0 / de)))
+	mat.set_shader_parameter("earthshine", 0.035 * lit * dim)
+
+
+## Maan yö- tai pilvikartta tai Kuun kohokuvio tasolle: lähellä tarkin (8k, jos laatutaso sallii ja tiedosto on mukana, muuten 4k).
+func _layer_map(base: String, level: int) -> String:
 	if level == 2:
 		var hi := BodyTextures.DIR + base + "-8k.webp"
 		if max_texture >= 8192 and BodyTextures.exists(hi):
@@ -452,7 +482,7 @@ func _apply_textures(b: Dictionary) -> void:
 	if tex != null:
 		mat.set_shader_parameter("albedo_tex", tex)
 	if b.has("night_path"):
-		var n := textures.get_texture(_earth_map("maa-yo", b.level))
+		var n := textures.get_texture(_layer_map("maa-yo", b.level))
 		if n == null:
 			n = textures.get_texture(b.night_path)
 		if n != null:
@@ -460,8 +490,14 @@ func _apply_textures(b: Dictionary) -> void:
 		var s := textures.get_texture(b.spec_path)
 		if s != null:
 			mat.set_shader_parameter("spec_tex", s)
+	if b.has("relief_path"):
+		var rt := textures.get_texture(_layer_map("kuu-pinta", b.level))
+		if rt == null:
+			rt = textures.get_texture(b.relief_path)
+		if rt != null:
+			mat.set_shader_parameter("relief_tex", rt)
 	if b.clouds != null:
-		var c := textures.get_texture(_earth_map("maa-pilvet", b.level))
+		var c := textures.get_texture(_layer_map("maa-pilvet", b.level))
 		if c == null:
 			c = textures.get_texture(b.cloud_path)
 		if c != null:

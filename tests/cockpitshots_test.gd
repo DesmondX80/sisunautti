@@ -2,7 +2,7 @@ extends TestCase
 ## Kuvakaappaukset ohjaamosta (vaatii ikkunan, ei mukana tools/run_tests.sh:ssa):
 ##   godot -- --cockpitshotstest=/polku/kuviin [--size=1600x900] [--quality=2] [--only=nimi] [--state=tallennus.json]
 ## --state: kuva annetusta tallennuksesta (pelaajan näkymä sellaisenaan ja katse alas), muut näkymät ohitetaan.
-## Näkymät: manuaaliohjaus (--only=manuaali), aloitusvalikko (--only=valikko), radio (--only=radio), takakamera (--only=taka), laukaisualusta päivällä, laukaisutorni (nousu ja yö, --only=torni), Max Q, kiertorata Maan päivä- ja yöpuolen yllä, Mars lähellä, Jupiterin
+## Näkymät: manuaaliohjaus (--only=manuaali), aloitusvalikko (--only=valikko), radio (--only=radio), takakamera (--only=taka), laukaisualusta päivällä, laukaisutorni (nousu ja yö, --only=torni), Max Q, kiertorata Maan päivä- ja yöpuolen yllä, Kuun pinta kiertoradalta (--only=kuupinta), Mars lähellä, Jupiterin
 ## ilmajarrutus, Saturnus renkaineen, Aurinko kohti katsottaessa, planeetan varjo, zoomaus näyttöihin ja kaikki
 ## näytöt lähtölaskennassa, pitkällä lennolla ja kuun kiertoradalla (--only=naytot). Lopuksi mitataan ruutunopeus.
 
@@ -199,6 +199,16 @@ func _run() -> void:
 		await _frames(2)
 		cv.reset_view()
 		await shot("mars", 120)
+	# Kuun pinta kiertoradalta (#36): Aurinko korkealla, terminaattorin lähellä (pitkät varjot) ja yöpuoli.
+	if want("kuupinta"):
+		for v: Array in [["paiva", 0.3], ["terminaattori", 1.35], ["yo", PI - 0.5]]:
+			orbit_at("Kuu", t0, sun_angle("Kuu", t0, false) + v[1])
+			await _frames(2)
+			cv.reset_view()
+			await shot("kuupinta-" + v[0], 150)
+			var down: Vector3 = (cv.space.nearest.root as Node3D).position.normalized()
+			var fwd := -cv.camera.global_transform.basis.z
+			report.append("  Auringon korkeus alla %.1f°, katseen suuntaan (Aurinko·eteen) %.2f" % [rad_to_deg(asin(-cv.space.sun_dir.dot(down))), cv.space.sun_dir.dot(fwd)])
 	# Jupiterin ilmajarrutus: matala rata ja plasma.
 	if want("jupiter"):
 		orbit_at("Jupiter", t0, sun_angle("Jupiter", t0, false) + 0.4, true)

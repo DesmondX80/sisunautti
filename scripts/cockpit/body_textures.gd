@@ -10,7 +10,7 @@ extends RefCounted
 
 const DIR := "res://assets/textures/"
 ## Tarkimman saatavilla olevan kartan leveys.
-const HIRES := {"Merkurius": 8192, "Venus": 4096, "Maa": 16384, "Mars": 8192, "Jupiter": 4096, "Saturnus": 4096, "Kuu": 8192,
+const HIRES := {"Merkurius": 8192, "Venus": 4096, "Maa": 16384, "Mars": 8192, "Jupiter": 4096, "Saturnus": 4096, "Kuu": 16384,
 	"Phobos": 4096, "Io": 8192, "Europa": 8192, "Ganymedes": 8192, "Enceladus": 8192, "Triton": 4096}
 ## Maan päiväkartta on pilvetön (pilvet erillisenä kerroksena).
 const FILE := {"Maa": "maa-paiva"}

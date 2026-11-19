@@ -131,7 +131,7 @@ func _build_environment() -> void:
 	env.glow_enabled = true
 	env.glow_normalized = false
 	env.glow_intensity = 0.6
-	env.glow_bloom = 0.04
+	env.glow_bloom = 0.015
 	env.glow_hdr_threshold = 1.5
 	env.glow_blend_mode = Environment.GLOW_BLEND_MODE_ADDITIVE
 	for i in 7:
@@ -683,6 +683,7 @@ func apply_quality(level: int) -> void:
 	space.max_texture = [2048, 4096, 8192, 16384][level]
 	space.atmo_samples = [4, 6, 10, 16][level]
 	space.surface_detail = [0.0, 0.7, 1.0, 1.0][level]
+	space.shadow_steps = [6, 10, 16, 24][level]
 
 
 func _ecl_to_scene(v: Variant) -> Vector3:
