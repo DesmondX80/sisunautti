@@ -40,7 +40,7 @@ tools/run_tests.sh          # ikkunattomat testit, esim. tools/run_tests.sh sett
 - Käyttöliittymä (`scripts/ui/`): näkymä (lentokartta, myöhemmin 3D-ohjaamo) täyttää ikkunan, ja ohjaimet ovat oikean
   reunan 420 px:n paneelissa, jonka voi piilottaa. Alle 1000 px:n levyisessä ikkunassa paneeli on näkymän alla.
   Teema on selainversion väreissä (`ui/theme.tres`, luodaan komennolla `godot --headless -s tools/make_theme.gd`).
-  Näppäimet: 1–8 aikakiihdytys, + ja − zoomaus, P sivupaneeli, F11 koko näyttö. Kartan zoomaus myös hiiren rullalla ja
+  Näppäimet: 1–8 aikakiihdytys, + ja − zoomaus, P sivupaneeli, T takakamera, F11 koko näyttö. Kartan zoomaus myös hiiren rullalla ja
   nipistämällä.
 - 3D-ohjaamo (`scripts/cockpit/`, varjostimet `shaders/`): etuseinä on ohjaamon kuva (`assets/cockpit/ohjaamo.png`)
   täsmälleen kuvan kuvakulmassa (vaakakulma noin 95°). Koska kamera vain kääntyy paikallaan, tasainen kuva näkyy oikein
@@ -55,7 +55,7 @@ tools/run_tests.sh          # ikkunattomat testit, esim. tools/run_tests.sh sett
   järjestelmät, kohdekamera ja pikkunäyttö) ovat `SubViewport`-tekstuureja kuvan näyttöjen muodossa (leveys 1024),
   jotka piirretään uudelleen enintään 20 kertaa sekunnissa (pitkät tekstit sovitetaan näytölle pienentämällä fonttia,
   viimeisenä keinona ellipsillä, `CockpitScreen.fit_text`); kohdekamera ja järjestelmänäytön hologrammi näyttävät
-  kohteen pinnan pyörivänä pallona (`shaders/globe.gdshader`). Näyttöä napsauttamalla katse kääntyy siihen ja
+  kohteen pinnan pyörivänä pallona (`shaders/globe.gdshader`). Kohdekameranäytön voi vaihtaa takakameraksi (painike Takakamera tai T): toinen kamera samassa 3D-maailmassa kuvaa aluksen taakse ja 50° alas (kiertoradalla planeetta näkyy), ja kamera kääntyy niin, että lähdön jälkeen poistuva planeetta pysyy kuvassa; kuvassa on kamerasyötteen juovat, linssivirhe ja kohina (`shaders/rear_camera.gdshader`), ja se päivittyy näytön tahdissa. Näyttöä napsauttamalla katse kääntyy siihen ja
   kuvakulma kapenee niin, että näyttö täyttää kuvan; uusi napsautus, Esc tai Loitonna palauttaa näkymän. Rullalla
   ja nipistämällä zoomataan vapaasti. Moottorin ja plasman hehku sävyttää ohjaamon kuvaa, ja ikkunan lasissa on
   likaa ja naarmuja, jotka Aurinko sytyttää häikäisyksi. Avaruudessa ovat kirkkaat tähdet HDR-pisteinä ja Linnunrata taustana, Auringon

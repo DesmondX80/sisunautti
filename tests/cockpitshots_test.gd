@@ -2,7 +2,7 @@ extends TestCase
 ## Kuvakaappaukset ohjaamosta (vaatii ikkunan, ei mukana tools/run_tests.sh:ssa):
 ##   godot -- --cockpitshotstest=/polku/kuviin [--size=1600x900] [--quality=2] [--only=nimi] [--state=tallennus.json]
 ## --state: kuva annetusta tallennuksesta (pelaajan näkymä sellaisenaan ja katse alas), muut näkymät ohitetaan.
-## Näkymät: laukaisualusta päivällä, laukaisutorni (nousu ja yö, --only=torni), Max Q, kiertorata Maan päivä- ja yöpuolen yllä, Mars lähellä, Jupiterin
+## Näkymät: takakamera (--only=taka), laukaisualusta päivällä, laukaisutorni (nousu ja yö, --only=torni), Max Q, kiertorata Maan päivä- ja yöpuolen yllä, Mars lähellä, Jupiterin
 ## ilmajarrutus, Saturnus renkaineen, Aurinko kohti katsottaessa, planeetan varjo, zoomaus näyttöihin ja kaikki
 ## näytöt lähtölaskennassa, pitkällä lennolla ja kuun kiertoradalla (--only=naytot). Lopuksi mitataan ruutunopeus.
 
@@ -246,6 +246,9 @@ func _run() -> void:
 	# Lähestyminen Kuuhun ja saapuminen kiertoradalle (#20).
 	if want("kuu"):
 		await _moon_approach()
+	# Takakamera kohdekameranäytöllä (#24): alustalla, kiertoradalla ja lähdön jälkeen poistuva Maa.
+	if want("taka"):
+		await _rear_shots()
 	# Ruutunopeus: kiertorata Maan yllä, katse Maahan, 5 s.
 	orbit_at("Maa", t0, sun_angle("Maa", t0, false) + 0.3)
 	cv.reset_view()
@@ -338,3 +341,32 @@ func _moon_approach() -> void:
 	G.burn_at = -INF
 	G.anchor(arrive + 600000.0, 0)
 	await shot("kuu-kiertorata", 60)
+
+
+func _rear_shots() -> void:
+	G.fake_real_ms = START
+	G.new_game()
+	cv.toggle_rear()
+	check("takakamera päällä", cv.is_rear())
+	cv.zoom_to(4)
+	await shot("taka-alusta", 60)
+	var t0 := START + 86400000.0
+	orbit_at("Maa", t0, sun_angle("Maa", t0, false) + 0.3)
+	cv.zoom_to(4)
+	await shot("taka-kiertorata", 60)
+	G.local_option("Kuu")
+	G.choose(G.options[0])
+	G.jump_to_window()
+	G.arm()
+	G.launch()
+	G.burn_at = -INF
+	var f: Dictionary = G.state.flight
+	for m: float in [20.0, 180.0]:
+		G.anchor(float(f.depart) + m * 60000.0, 0)
+		cv.snap_attitude()
+		cv.zoom_to(4)
+		await shot("taka-lahto-%dmin" % roundi(m), 60)
+	cv.reset_view()
+	await shot("taka-ohjaamo", 30)
+	cv.toggle_rear()
+	check("kohdekamera palaa", not cv.is_rear())

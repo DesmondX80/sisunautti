@@ -120,6 +120,11 @@ func _ready() -> void:
 	check("zoomaus keskinäyttöön kaventaa kuvakulmaa", cv.zoom_index == 2 and cv.fov_target < cv.base_fov * 0.5)
 	cv.zoom_out()
 	check("loitonnus palauttaa kuvakulman", cv.zoom_index == -1 and cv.fov_target == cv.base_fov)
+	cv.toggle_rear()
+	check("kohdekamera takakameraksi", cv.is_rear() and cv.rear_button.text == "Kohdekamera"
+		and cv.rear_view.world_3d == cv.viewport.find_world_3d())
+	cv.toggle_rear()
+	check("takakamera kohdekameraksi", not cv.is_rear() and cv.rear_view.render_target_update_mode == SubViewport.UPDATE_DISABLED)
 	cv.zoom_by(0.5)
 	cv.zoom_by(100.0)
 	check("vapaa zoomaus rajoissa", cv.fov_target == cv.base_fov)

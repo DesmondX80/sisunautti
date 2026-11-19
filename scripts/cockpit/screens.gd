@@ -8,7 +8,8 @@ extends Control
 ##   "ship"     aluskaavio polttoaineineen ja moottorin liekkeineen sekä päänäytön 1 rivit (aika, päivä, kiihdytys)
 ##   "target"   tähtäin ja työntö sekä päänäytön 2 rivit (nopeus)
 ##   "systems"  järjestelmät: etäisyydet planeetoille, mittarit, kohteen hologrammi ja tilarivit
-##   "camera"   kohdekamera: kohteen pinta ja päänäytön 3 rivit (kohde, polttoaine)
+##   "camera"   kohdekamera: kohteen pinta ja päänäytön 3 rivit (kohde, polttoaine); vaihdettavissa takakameraksi
+##              (set_rear), jolloin näytöllä on 3D-kuva aluksen takaa
 ##   "mini"     keskikonsolin pikkunäyttö: aikakiihdytys ja moottori
 
 const SIZE := Vector2(1024, 576)
@@ -39,6 +40,7 @@ var mono: Font
 var globe: ColorRect = null
 var globe_mat: ShaderMaterial = null
 var over: Control # päällyskerros pallon päällä
+var rear: TextureRect = null # takakameran kuva (kohdekameranäytöllä)
 var _globe_name := ""
 var _drawn_at := -100000
 
@@ -64,6 +66,17 @@ func _ready() -> void:
 			globe_mat.set_shader_parameter("holo", 1.0)
 			globe_mat.set_shader_parameter("spin", 0.03)
 		add_child(globe)
+	if kind == "camera":
+		rear = TextureRect.new()
+		rear.size = view_size
+		rear.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+		rear.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_COVERED
+		var mat := ShaderMaterial.new()
+		mat.shader = load("res://shaders/rear_camera.gdshader")
+		mat.set_shader_parameter("aspect", view_size.x / view_size.y)
+		rear.material = mat
+		rear.visible = false
+		add_child(rear)
 	over = Control.new()
 	over.size = view_size
 	over.mouse_filter = Control.MOUSE_FILTER_IGNORE
@@ -92,6 +105,20 @@ func set_globe(name: String, tex: Texture2D, color: Color) -> void:
 		globe_mat.set_shader_parameter("has_tex", tex != null)
 		globe_mat.set_shader_parameter("base_color", color)
 		globe_mat.set_shader_parameter("sun", name == "Aurinko")
+
+
+## Kohdekamera takakameraksi: tex on takakameran kuva (SubViewportin tekstuuri), null palauttaa kohdekameran.
+func set_rear(tex: Texture2D) -> void:
+	if rear == null:
+		return
+	rear.texture = tex
+	rear.visible = tex != null
+	globe.visible = tex == null
+	tick(true)
+
+
+func is_rear() -> bool:
+	return rear != null and rear.visible
 
 
 ## Piirtää näytön uudelleen, jos edellisestä on kulunut riittävästi aikaa (tai force). Palauttaa true, jos piirrettiin.
@@ -471,6 +498,9 @@ func _draw_systems_over(c: CanvasItem) -> void:
 # --- Kohdekamera ---
 
 func _draw_camera(c: CanvasItem) -> void:
+	if is_rear():
+		_draw_rear(c)
+		return
 	# Tekstipaneeli kamerakuvan päällä.
 	c.draw_rect(Rect2(10, 10, 420, SIZE.y - 20), Color(0.01, 0.04, 0.09, 0.78))
 	c.draw_line(Vector2(430, 10), Vector2(430, SIZE.y - 10), Color(ACCENT, 0.4), 2.0)
@@ -487,6 +517,24 @@ func _draw_camera(c: CanvasItem) -> void:
 	var p := Vector2(720, 300)
 	for d: Vector2 in [Vector2.LEFT, Vector2.RIGHT, Vector2.UP, Vector2.DOWN]:
 		c.draw_line(p + d * 14, p + d * 40, Color(BRIGHT, 0.7), 2.0)
+
+
+## Takakamera: kuva täyttää näytön; otsikko ja tallennusvalo ylhäällä, kohde ja polttoaine alareunan palkissa.
+func _draw_rear(c: CanvasItem) -> void:
+	var blink := fmod(_time_s(), 1.6) < 0.8
+	c.draw_rect(Rect2(10, 10, SIZE.x - 20, 64), Color(0.01, 0.04, 0.09, 0.55))
+	c.draw_circle(Vector2(40, 42), 9.0, BAD if blink else Color(BAD, 0.3))
+	c.draw_string(font, Vector2(60, 52), "TAKAKAMERA", HORIZONTAL_ALIGNMENT_LEFT, -1, 28, BRIGHT)
+	_right(c, mono, "180°  •  REC", SIZE.x - 30, 50, 20, MUTED)
+	# Tähtäysmerkit kuvan keskellä (kamera osoittaa suoraan taaksepäin).
+	var p := SIZE / 2.0 + Vector2(0, 20)
+	for d: Vector2 in [Vector2(-1, -1), Vector2(1, -1), Vector2(1, 1), Vector2(-1, 1)]:
+		c.draw_polyline(PackedVector2Array([p + d * Vector2(60, 26), p + d * Vector2(60, 40), p + d * Vector2(40, 40)]), Color(BRIGHT, 0.6), 2.0)
+	c.draw_rect(Rect2(10, SIZE.y - 96, SIZE.x - 20, 86), Color(0.01, 0.04, 0.09, 0.62))
+	_text(c, font, Vector2(30, SIZE.y - 56), title, 24, ACCENT, 420.0)
+	if not rows.is_empty():
+		_text(c, mono, Vector2(30, SIZE.y - 24), String(rows[0][0]), 22, FG, 420.0)
+	_fuel_bar(c, Rect2(500, SIZE.y - 50, SIZE.x - 530, 26))
 
 
 # --- Pikkunäyttö ---

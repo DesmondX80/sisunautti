@@ -31,6 +31,11 @@ var smoke: GPUParticles3D
 var sparks: GPUParticles3D
 var tools: HBoxContainer
 var tower: LaunchTower
+## Takakamera: toinen kamera samassa 3D-maailmassa, kuva kohdekameranäytölle (toggle_rear).
+var rear_view: SubViewport
+var rear_cam: Camera3D
+var rear_button: Button
+const REAR_TILT := 0.87 # 50°
 var overlay: ColorRect # ohjaamon kuva ja näytöt 3D-näkymän päällä
 var overlay_mat: ShaderMaterial
 var zoom_out_button: Button
@@ -86,6 +91,7 @@ func _ready() -> void:
 	_build_particles()
 	_build_flare()
 	_build_overlay()
+	_build_rear()
 	_build_tools()
 	Settings.quality_changed.connect(apply_quality)
 	apply_quality(Settings.quality)
@@ -305,6 +311,75 @@ func _build_tools() -> void:
 	zoom_out_button.tooltip_text = "Palauta näkymä (Esc)"
 	zoom_out_button.visible = false
 	tools.add_child(zoom_out_button)
+	rear_button = UiKit.button("Takakamera", toggle_rear)
+	rear_button.tooltip_text = "Vaihda kohdekameranäyttö takakameraksi ja takaisin (T)"
+	tools.add_child(rear_button)
+
+
+func _build_rear() -> void:
+	rear_view = SubViewport.new()
+	rear_view.size = Vector2i(768, 432)
+	rear_view.world_3d = viewport.find_world_3d()
+	rear_view.audio_listener_enable_3d = false
+	rear_view.render_target_update_mode = SubViewport.UPDATE_DISABLED
+	add_child(rear_view)
+	rear_cam = Camera3D.new()
+	rear_cam.near = camera.near
+	rear_cam.far = camera.far
+	rear_cam.fov = 62.0
+	# Kiinteä valotus: kuva päivitetään harvoin, joten automaattinen valotus ei ehtisi sopeutua.
+	var attr := CameraAttributesPractical.new()
+	attr.auto_exposure_enabled = false
+	attr.exposure_multiplier = 0.8
+	rear_cam.attributes = attr
+	rear_view.add_child(rear_cam)
+
+
+func _camera_screen() -> CockpitScreen:
+	for m: Dictionary in cabin.monitors:
+		if (m.screen as CockpitScreen).kind == "camera":
+			return m.screen
+	return null
+
+
+func is_rear() -> bool:
+	var cs := _camera_screen()
+	return cs != null and cs.is_rear()
+
+
+## Vaihtaa kohdekameranäytön takakameraksi ja takaisin (painike ja T-näppäin).
+func toggle_rear() -> void:
+	var cs := _camera_screen()
+	if cs == null:
+		return
+	var on := not cs.is_rear()
+	cs.set_rear(rear_view.get_texture() if on else null)
+	rear_view.render_target_update_mode = SubViewport.UPDATE_ONCE if on else SubViewport.UPDATE_DISABLED
+	if rear_button != null:
+		rear_button.text = "Kohdekamera" if on else "Takakamera"
+
+
+# Takakamera aluksen perässä katsoo taaksepäin ja 50° alas (lattian suuntaan), jotta kiertoradalla ja lähdössä
+# planeetta näkyy; kuva päivitetään samaan tahtiin kuin näyttö.
+func _update_rear(screen_drawn: bool) -> void:
+	if not is_rear():
+		return
+	var rear := ship.global_transform * Transform3D(Basis(Vector3.UP, PI) * Basis(Vector3.RIGHT, -REAR_TILT), Vector3(0.0, -0.3, 1.2))
+	# Kääntyvä kamera: jos lähin kappale on takana mutta kuvan ulkopuolella (esim. poistuva planeetta lähdön jälkeen),
+	# kamera kääntyy niin, että kappaleen lähin reuna tulee kuvaan.
+	if not space.nearest.is_empty():
+		var to_body := (space.nearest.root as Node3D).position.normalized()
+		var view := -rear.basis.z
+		var ang := view.angle_to(to_body)
+		var rho := asin(clampf(space.nearest_size, 0.0, 1.0))
+		var turn := ang - rho - deg_to_rad(12.0)
+		if turn > 0.0 and ang < deg_to_rad(110.0):
+			var axis := view.cross(to_body)
+			if axis.length() > 1e-6:
+				rear.basis = Basis(axis.normalized(), turn) * rear.basis
+	rear_cam.global_transform = rear
+	if screen_drawn:
+		rear_view.render_target_update_mode = SubViewport.UPDATE_ONCE
 
 
 ## Kääntää katseen scene-suuntaan dir (kuvakaappaukset ja testit).
@@ -448,6 +523,10 @@ func _gui_input(event: InputEvent) -> void:
 func _unhandled_key_input(event: InputEvent) -> void:
 	if is_visible_in_tree() and event.is_action_pressed("ui_cancel") and fov_target < base_fov - 0.5:
 		zoom_out()
+		get_viewport().set_input_as_handled()
+	elif is_visible_in_tree() and event is InputEventKey and (event as InputEventKey).pressed and not (event as InputEventKey).echo \
+			and (event as InputEventKey).keycode == KEY_T:
+		toggle_rear()
 		get_viewport().set_input_as_handled()
 
 
@@ -686,4 +765,6 @@ func _screens(s: Dictionary) -> void:
 		var screen: CockpitScreen = m.screen
 		screen.set_data(data)
 		screen.set_globe(name, tex, color)
-		screen.tick()
+		var drawn := screen.tick()
+		if screen.kind == "camera":
+			_update_rear(drawn)
