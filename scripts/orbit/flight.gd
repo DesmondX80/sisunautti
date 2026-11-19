@@ -598,18 +598,6 @@ static func nearest_planet(r: PackedFloat64Array, v: PackedFloat64Array, time: f
 	return best
 
 
-# Hyperbolisen ohitusradan asymptootti kulkee planeetan ohi etäisyydellä b = r_p·√(1 + 2μ/(r_p·v∞²)).
-static func _asymptote_offset(name: String, vinf: PackedFloat64Array) -> PackedFloat64Array:
-	var b := body(name)
-	var speed := norm(vinf)
-	var peri: float = b.periKm
-	var off := peri * sqrt(1.0 + 2.0 * b.mu / (peri * speed * speed))
-	var n := cross(vinf, vec(0.0, 0.0, 1.0))
-	if norm(n) < 1e-9:
-		n = vec(1.0, 0.0, 0.0)
-	return scale(n, off / norm(n))
-
-
 # Siirtää paikan r vähintään etäisyydelle min kappaleen keskipisteestä c, jotta alus ei näy kappaleen sisällä.
 static func _clamp_outside(r: PackedFloat64Array, c: PackedFloat64Array, min_km: float) -> PackedFloat64Array:
 	var rel := sub(r, c)
@@ -619,41 +607,82 @@ static func _clamp_outside(r: PackedFloat64Array, c: PackedFloat64Array, min_km:
 	return add(c, scale(rel, min_km / dist) if dist > 1.0 else vec(min_km, 0.0, 0.0))
 
 
-## Aluksen paikka ohjaamonäkymää varten. Lähellä lähtö- ja kohdeplaneettaa paikkaa siirretään hyperbelin
-## asymptootin etäisyydelle, ja siirto häivytetään vaikutuspiirin rajalla. Ennen laukaisua alus on lähtöplaneetan
-## pysäköintiradalla.
+## Hyperbolinen ohitusrata kappaleen ympäri ekliptikan tasossa samaan kiertosuuntaan kuin pysäköintiradat: perikeskus
+## rp (km) hetkellä t_peri ja ylinopeus vinf (km/s). outgoing: vinf on lähtevän asymptootin suunta (lähtöpoltto
+## perikeskuksessa), muuten saapuvan (jarrutuspoltto perikeskuksessa). Paikka ja nopeus kappaleen suhteen hetkellä time.
+## Asymptootti kääntyy perikeskuksen nopeudesta kulman β = acos(1/e), e = 1 + rp·v∞²/μ.
+static func hyperbola_rel(mu: float, rp: float, vinf: PackedFloat64Array, t_peri: float, time: float, outgoing: bool) -> Dictionary:
+	var speed := maxf(norm(vinf), 1e-3)
+	var e := 1.0 + rp * speed * speed / mu
+	var beta := acos(1.0 / e)
+	var u := atan2(vinf[1], vinf[0])
+	var arg := u - (PI - beta) if outgoing else u - beta
+	var vp := sqrt(speed * speed + 2.0 * mu / rp)
+	var c := cos(arg)
+	var s := sin(arg)
+	return propagate(vec(rp * c, rp * s, 0.0), vec(-vp * s, vp * c, 0.0), (time - t_peri) / 1000.0, mu)
+
+
+## Kuun vaikutuspiiri (km) emoplaneetan suhteen: a·(μ/μ_planeetta)^0,4.
+static func moon_soi(name: String) -> float:
+	var m: Dictionary = MOONS[name]
+	return float(m.aKm) * pow(float(m.mu) / float(body(m.parent).mu), 0.4)
+
+
+# Kappaleen vaikutuspiirissä siirtoradan paikka ja nopeus (s, Auringon suhteen) korvataan vähitellen oikealla
+# hyperbelillä, jonka perikeskus on pysäköintiradan korkeudella hetkellä t_peri; vaikutuspiirin rajalla siirtorata.
+static func _near_body(s: Dictionary, name: String, time: float, t_peri: float, vinf: PackedFloat64Array, outgoing: bool, soi: float) -> Dictionary:
+	var b := body_state(name, time)
+	var rel := sub(s.r, b.r)
+	var fade := clampf(1.0 - norm(rel) / soi, 0.0, 1.0)
+	if fade <= 0.0:
+		return s
+	fade = fade * fade * (3.0 - 2.0 * fade)
+	var o := orbit_of(name)
+	var h := hyperbola_rel(o.mu, o.periKm, vinf, t_peri, time, outgoing)
+	var rel_v := sub(s.v, b.v)
+	return {"r": add(b.r, add(scale(rel, 1.0 - fade), scale(h.r, fade))),
+		"v": add(b.v, add(scale(rel_v, 1.0 - fade), scale(h.v, fade)))}
+
+
+## Aluksen paikka ja nopeus ohjaamonäkymää varten. Siirtorata kulkee lähtö- ja kohdekappaleen keskipisteen kautta,
+## joten niiden vaikutuspiirissä se korvataan vähitellen hyperbelillä: lähtöpoltto ja jarrutuspoltto tehdään
+## perikeskuksessa pysäköintiradan korkeudella, kuten oikeasti (esim. Apollo: Kuun kiertoradalle asettuminen
+## lähimmässä kohdassa). Lähtöhetkellä paikka on pysäköintiradalla ja saapuessa pysäköintiradan perikeskuksessa.
 static func ship_view(tr: Dictionary, time: float) -> Dictionary:
 	if tr.get("local", false):
-		var ls := ship_state(tr, time)
-		var end: String = tr.to if tr.toMoon else tr.from
-		return {"r": _clamp_outside(ls.r, body_state(end, time).r, orbit_of(end).periKm), "v": ls.v}
+		var t_local := clampf(time, tr.depart, tr.arrive)
+		var moon: String = tr.to if tr.toMoon else tr.from
+		var t_peri: float = tr.arrive if tr.toMoon else tr.depart
+		var vinf_local := sub(ship_state(tr, t_peri).v, body_state(moon, t_peri).v)
+		var lv := _near_body(ship_state(tr, t_local), moon, t_local, t_peri, vinf_local, not tr.toMoon, moon_soi(moon))
+		return {"r": _clamp_outside(lv.r, body_state(moon, t_local).r, float(orbit_of(moon).radiusKm) + 1.0), "v": lv.v}
 	var to: String = tr.to
 	var t := maxf(time, tr.depart)
-	var s := ship_state(tr, t)
-	var arr := planet_state(to, t)
-	var fade := func(rel: PackedFloat64Array, name: String) -> float: return maxf(0.0, 1.0 - norm(rel) / float(body(name).soiKm))
-	# Korjattu rata ei kulje kohteen keskipisteen kautta, joten asymptootin siirtoa käytetään vain alkuperäisellä radalla.
+	var view := ship_state(tr, t)
+	# Korjattu rata ei kulje kohteen keskipisteen kautta, joten saapumishyperbeliä käytetään vain alkuperäisellä radalla.
 	var legs: Variant = tr.get("legs")
-	var arr_off := vec(0.0, 0.0, 0.0)
 	if not (legs is Array and legs.size() > 1):
-		arr_off = _asymptote_offset(to, sub(ship_state(tr, tr.arrive).v, planet_state(to, tr.arrive).v))
-	var r := add(s.r, scale(arr_off, fade.call(sub(s.r, arr.r), to)))
-	r = _clamp_outside(r, arr.r, body(to).periKm)
+		var vinf_arr := sub(ship_state(tr, tr.arrive).v, planet_state(to, tr.arrive).v)
+		view = _near_body(view, to, t, tr.arrive, vinf_arr, false, body(to).soiKm)
+	var r := _clamp_outside(view.r, planet_state(to, t).r, body(to).periKm)
 	# Linkouksessa alus ohittaa planeetan perikeskuksen etäisyydeltä.
 	var flyby: Variant = tr.get("flyby")
 	if flyby is Dictionary:
 		var fb_body: String = flyby.body
 		r = _clamp_outside(r, planet_state(fb_body, t).r, minf(flyby.rpKm, float(body(fb_body).soiKm) / 4.0))
+	view = {"r": r, "v": view.v}
 	if is_planet(tr.from):
 		var from: String = tr.from
-		var dep_off := _asymptote_offset(from, sub(tr.v1, planet_state(from, tr.depart).v))
-		if time <= float(tr.depart):
-			var ps := planet_state(from, time)
-			return {"r": add(ps.r, dep_off), "v": ps.v}
-		r = add(r, scale(dep_off, fade.call(sub(s.r, planet_state(from, t).r), from)))
+		var vinf_dep := sub(tr.v1, planet_state(from, tr.depart).v)
+		view = _near_body(view, from, t, tr.depart, vinf_dep, true, body(from).soiKm)
+		# Ennen lähtöä alus odottaa perikeskuksessa ja kulkee planeetan mukana.
+		if time < float(tr.depart):
+			var shift := sub(planet_state(from, time).r, planet_state(from, tr.depart).r)
+			return {"r": add(view.r, shift), "v": planet_state(from, time).v}
 	elif time <= float(tr.depart):
 		return departure_state(tr.from, time)
-	return {"r": r, "v": s.v}
+	return view
 
 
 # --- Pysäköintiradat ---
@@ -701,15 +730,21 @@ static func orbit_at(name: String, r: PackedFloat64Array, time: float) -> Dictio
 ## e = 1 + r·v∞²/μ. Venyneellä radalla poltto tehdään seuraavassa perikeskuksessa.
 static func injection_time(name: String, vinf: PackedFloat64Array, after: float, orbit: Variant = null) -> float:
 	var o := orbit_of(name)
+	var peri: float = o.periKm
+	var speed := norm(vinf)
+	var e: float = 1.0 + peri * speed * speed / float(o.mu)
+	return angle_time(name, atan2(vinf[1], vinf[0]) - acos(-1.0 / e), after, orbit)
+
+
+## Ensimmäinen hetki ajan after jälkeen, jolloin alus on pysäköintiradalla suunnassa want (rad). Venyneellä radalla
+## seuraava perikeskus.
+static func angle_time(name: String, want: float, after: float, orbit: Variant = null) -> float:
+	var o := orbit_of(name)
 	var epoch := _orbit_epoch(orbit)
 	var arg := _orbit_arg(orbit)
 	var period := orbit_period(name) * 1000.0
-	var peri: float = o.periKm
-	if float(o.apoKm) - peri > 1.0:
+	if float(o.apoKm) - float(o.periKm) > 1.0:
 		return epoch + ceil((after - epoch) / period) * period
-	var speed := norm(vinf)
-	var e: float = 1.0 + peri * speed * speed / float(o.mu)
-	var want := atan2(vinf[1], vinf[0]) - acos(-1.0 / e)
 	var now := arg + 2.0 * PI * (after - epoch) / period
 	var turn := fmod(fmod(want - now, 2.0 * PI) + 2.0 * PI, 2.0 * PI)
 	return after + turn / (2.0 * PI) * period

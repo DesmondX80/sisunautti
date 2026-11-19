@@ -493,6 +493,20 @@ func arm() -> bool:
 	var orbital: bool = Flight.is_planet(p.from) and not p.get("local", false)
 	var depart := now + ARM_LEAD
 	var tr: Dictionary = p if orbital else _replan(p, depart)
+	# Kuuhun tai kuusta: poltto siinä pysäköintiradan kohdassa, josta siirtorata (tai lähtöhyperbeli) alkaa.
+	if p.get("local", false) and state.orbit != null:
+		for i in 2:
+			var from: String = p.from
+			var want: float
+			if tr.toMoon:
+				want = float(tr.apoAngle) + PI
+			else:
+				var vinf := Flight.sub(Flight.ship_state(tr, tr.depart).v, Flight.body_state(from, tr.depart).v)
+				var o := Flight.orbit_of(from)
+				var e: float = 1.0 + float(o.periKm) * Flight.dot(vinf, vinf) / float(o.mu)
+				want = atan2(vinf[1], vinf[0]) - acos(-1.0 / e)
+			depart = Flight.angle_time(from, want, now + ARM_LEAD, state.orbit)
+			tr = _replan(p, depart)
 	if orbital:
 		for i in 2:
 			if tr.is_empty():

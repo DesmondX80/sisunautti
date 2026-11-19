@@ -27,10 +27,10 @@ void fragment() {
 	// Häikäisy: lika ja naarmut sirottavat auringonvaloa, kun katse on lähellä Auringon suuntaa.
 	float toward = max(dot(-view, normalize(sun_dir_view)), 0.0);
 	float glare = (pow(toward, 400.0) * 2.0 + pow(toward, 40.0) * 0.12) * (0.3 + smudge * 1.2 + scratch * 4.0) * sun_visible * glare_strength;
-	ALBEDO = vec3(0.6, 0.7, 0.75) * tint + smudge * 0.02;
-	ROUGHNESS = 0.04 + smudge * 0.3;
+	ALBEDO = vec3(0.6, 0.7, 0.75) * tint + smudge * 0.005;
+	ROUGHNESS = 0.04 + smudge * 0.15;
 	METALLIC = 0.0;
 	SPECULAR = 0.6;
 	EMISSION = vec3(1.0, 0.95, 0.85) * glare;
-	ALPHA = clamp(0.03 + fres * 0.3 + smudge * 0.04 + scratch * 0.08, 0.0, 1.0);
+	ALPHA = clamp(0.02 + fres * 0.3 + smudge * 0.012 + scratch * 0.06, 0.0, 1.0);
 }

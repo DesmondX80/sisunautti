@@ -111,7 +111,6 @@ func _transfers() -> void:
 		var tr := Flight.local_transfer(c.from, c.to, c.depart)
 		same("localTransfer %s→%s" % [c.from, c.to], tr, c.result)
 		same("localTransfer keskellä %s→%s" % [c.from, c.to], Flight.ship_state(tr, (float(tr.depart) + float(tr.arrive)) / 2.0), c.mid)
-		same("localTransfer näkymä %s→%s" % [c.from, c.to], Flight.ship_view(tr, tr.arrive), c.view)
 
 
 func _searches() -> void:
@@ -166,9 +165,4 @@ func _course() -> void:
 	same("flightStats korjattu", Flight.flight_stats(burned, 500), c.statsBurned)
 	same("encounter", Flight.encounter(tr, mid, float(tr.arrive) + 30.0 * Flight.DAY_MS), c.encounter, ORBIT_TOL, 1e4)
 	same("nearestPlanet", Flight.nearest_planet(s.r, s.v, mid), c.nearest)
-	var flights := {"mars": tr, "burned": burned}
-	var merc: Array = ref.searches[1].result.filter(func(o: Dictionary) -> bool: return o.kind == "assist")
-	if not merc.is_empty():
-		flights.merkurius = merc[0]
-	for v: Dictionary in ref.view:
-		same("shipView %s %s" % [v.flight, v.time], Flight.ship_view(flights[v.flight], v.time), v.result)
+	# shipView-arvoja ei enää verrata: Godot-versiossa ohjaamonäkymän rata on oikea hyperbeli (#20, orbittest).

@@ -177,8 +177,25 @@ func _cockpit_view() -> void:
 	var tr := _mars_flight()
 	var dep := F.norm(sub(F.ship_view(tr, tr.depart).r, F.planet_state("Maa", tr.depart).r))
 	var arr := F.norm(sub(F.ship_view(tr, tr.arrive).r, F.planet_state("Mars", tr.arrive).r))
-	check("alus ei ole planeetan sisällä lähtiessä", dep > F.body("Maa").periKm and dep < 50000.0)
-	check("alus ei ole planeetan sisällä saapuessa", arr > F.body("Mars").periKm)
+	check("lähtöpoltto pysäköintiradan korkeudella", absf(dep - F.body("Maa").periKm) < 1.0)
+	check("jarrutuspoltto pysäköintiradan korkeudella", absf(arr - F.body("Mars").periKm) < 1.0)
+	# Lähtö- ja saapumishyperbelit: perikeskuksessa nopeus kohtisuorassa säteeseen ja suuruus √(v∞² + 2μ/r).
+	var vinf_dep := sub(tr.v1, F.planet_state("Maa", tr.depart).v)
+	var dv := F.ship_view(tr, tr.depart)
+	var rel := sub(dv.r, F.planet_state("Maa", tr.depart).r)
+	var rel_v := sub(dv.v, F.planet_state("Maa", tr.depart).v)
+	var mu: float = F.body("Maa").mu
+	var peri: float = F.body("Maa").periKm
+	check("lähtöperikeskuksen nopeus", absf(F.norm(rel_v) - sqrt(F.dot(vinf_dep, vinf_dep) + 2.0 * mu / peri)) < 1e-6
+		and absf(F.dot(rel, rel_v)) < 1e-3 * F.norm(rel) * F.norm(rel_v))
+	var e := 1.0 + peri * F.dot(vinf_dep, vinf_dep) / mu
+	var want := atan2(vinf_dep[1], vinf_dep[0]) - acos(-1.0 / e)
+	check("lähtöpoltto samassa kohdassa kuin pysäköintiradan ruiskutushetki", absf(angle_difference(atan2(rel[1], rel[0]), want)) < 1e-6)
+	var out := F.ship_view(tr, tr.depart + DAY)
+	var out_rel := sub(out.v, F.planet_state("Maa", tr.depart + DAY).v)
+	check("lähdön jälkeen alus etääntyy menosuuntaan", F.dot(sub(out.r, F.planet_state("Maa", tr.depart + DAY).r), out_rel) > 0.0)
+	var near := F.norm(sub(F.ship_view(tr, tr.arrive - 60000.0).r, F.planet_state("Mars", tr.arrive - 60000.0).r))
+	check("saapuminen on jatkuva", near > arr and near - arr < 50.0)
 	var before := F.ship_view(tr, tr.depart - 30 * DAY)
 	check("ennen laukaisua alus kulkee Maan mukana", absf(F.norm(sub(before.r, F.planet_state("Maa", tr.depart - 30 * DAY).r)) - dep) < 0.5)
 	var mid: float = (tr.depart + tr.arrive) / 2.0
@@ -255,8 +272,20 @@ func _assists_moons_ships() -> void:
 	var back := F.local_transfer("Kuu", "Maa", START)
 	check("paluu lähtee Kuusta", F.norm(sub(F.ship_state(back, back.depart).r, F.body_state("Kuu", back.depart).r)) < 1)
 	check("meno ja paluu maksavat saman", absf(back.dvTotal - go.dvTotal) < 1e-6)
-	check("ohjaamossa alus ei ole Kuun sisällä",
-		F.norm(sub(F.ship_view(go, go.arrive).r, F.body_state("Kuu", go.arrive).r)) >= F.orbit_of("Kuu").periKm - 1)
+	check("Kuun kiertoradalle asettuminen 100 km:n korkeudella",
+		absf(F.norm(sub(F.ship_view(go, go.arrive).r, F.body_state("Kuu", go.arrive).r)) - F.orbit_of("Kuu").periKm) < 1.0)
+	var moon_d := func(h: float) -> float: return F.norm(sub(F.ship_view(go, go.arrive - h * 3600000.0).r, F.body_state("Kuu", go.arrive - h * 3600000.0).r))
+	check("Kuu lähestyy koko ajan", moon_d.call(12.0) > moon_d.call(6.0) and moon_d.call(6.0) > moon_d.call(1.0)
+		and moon_d.call(1.0) > moon_d.call(0.1) and moon_d.call(0.1) > F.orbit_of("Kuu").periKm)
+	var park := F.parking_state("Maa", START, {"epoch": START, "arg": 0.0})
+	var t_go := F.angle_time("Maa", float(go.apoAngle) + PI, START, {"epoch": START, "arg": 0.0})
+	var go2 := F.local_transfer("Maa", "Kuu", t_go)
+	t_go = F.angle_time("Maa", float(go2.apoAngle) + PI, START, {"epoch": START, "arg": 0.0})
+	go2 = F.local_transfer("Maa", "Kuu", t_go)
+	check("kuulennon lähtöpoltto pysäköintiradan kohdassa", park.r.size() == 3
+		and F.norm(sub(F.ship_view(go2, go2.depart).r, F.parking_state("Maa", go2.depart, {"epoch": START, "arg": 0.0}).r)) < 50.0)
+	check("paluu lähtee Kuun kiertoradalta",
+		absf(F.norm(sub(F.ship_view(back, back.depart).r, F.body_state("Kuu", back.depart).r)) - F.orbit_of("Kuu").periKm) < 1.0)
 	check("Marsin kuu", F.moons_of("Mars") == PackedStringArray(["Phobos"]) and F.is_moon("Titan") and not F.is_moon("Mars"))
 	var ion := F.find_windows("Maa", "Mars", START, {"ship": "ioni", "fuel": F.SHIPS.ioni.fuel})
 	var spiral_ok := ion.size() > 0

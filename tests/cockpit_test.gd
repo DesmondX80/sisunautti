@@ -26,7 +26,7 @@ func _ready() -> void:
 	G.jump_to_window()
 	G.arm()
 	s = CockpitState.make()
-	check("lähtöpoltto päällä: nokka menosuuntaan", s.get("nose") != null and s.screens[0][0] == "LÄHTÖPOLTTO")
+	check("lähtöpoltto päällä: asento radan mukaan", s.get("burn_frame", false) and s.screens[0][0] == "LÄHTÖPOLTTO")
 	G.burn_at = G.real_ms()
 	s = CockpitState.make()
 	check("polton hehku", float(s.thrust) > 0.9)
@@ -46,6 +46,23 @@ func _ready() -> void:
 	fit = CockpitScreen.fit_text(mono, long + long + long, 26, 300.0)
 	check("liian pitkä teksti ellipsillä", String(fit[0]).ends_with("…") and fit[1] == 16
 		and mono.get_string_size(fit[0], HORIZONTAL_ALIGNMENT_LEFT, -1, fit[1]).x <= 300.0)
+	# Asento kappaleen lähellä (#20, #25, #26).
+	var R := 6371.0
+	var leo := CockpitState.body_frame(Flight.vec(R + 200.0, 0, 0), Flight.vec(0, 7.8, 0), R)
+	var down := asin(-Flight.dot(leo.nose, Flight.vec(1, 0, 0)))
+	check("matalalla radalla nokka menosuuntaan hieman alaspäin", leo.weight == 1.0 and Flight.dot(leo.nose, Flight.vec(0, 1, 0)) > 0.85
+		and down > 15.0 * CockpitState.DEG and down < 30.0 * CockpitState.DEG and Flight.dot(leo.up, Flight.vec(1, 0, 0)) > 0.85)
+	var far := CockpitState.body_frame(Flight.vec(R * 40.0, 0, 0), Flight.vec(-1.0, 0.1, 0), R)
+	var to_c := Flight.vec(-1, 0, 0)
+	var elev := asin(Flight.dot(to_c, far.up))
+	check("kaukaa lähestyttäessä kappale ikkunan keskellä", far.weight < 0.05
+		and absf(elev - CockpitState.AIM_RAISE) < 0.01 and Flight.dot(far.nose, to_c) > 0.95)
+	var near_away := CockpitState.body_frame(Flight.vec(R * 1.3, -R * 0.2, 0), Flight.vec(8.0, 6.0, 0), R)
+	var top := asin(Flight.dot(Flight.vec(-1, 0, 0), near_away.up)) # suunnilleen keskipisteen korkeus
+	check("lähdön alussa horisontti näkyy ikkunassa", near_away.weight == 1.0 and top > -PI / 2.0 and top < 0.0)
+	var away := CockpitState.body_frame(Flight.vec(R * 15.0, -R * 2.5, 0), Flight.vec(8.0, 2.0, 0), R)
+	var vdir := Flight.scale(Flight.vec(8.0, 2.0, 0), 1.0 / Flight.norm(Flight.vec(8.0, 2.0, 0)))
+	check("kaukana lähdöstä nokka menosuuntaan ja planeetta takana alla", Flight.dot(away.nose, vdir) > 0.9 and Flight.dot(away.up, Flight.vec(1, 0, 0)) < 0.5)
 	# Pimennys
 	check("ei peittoa", Space.covered(0.01, 0.01, 0.5) == 0.0)
 	check("täysi peitto", Space.covered(0.01, 0.05, 0.0) == 1.0)

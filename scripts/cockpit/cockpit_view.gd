@@ -537,23 +537,40 @@ func _zoom_step(delta: float) -> void:
 	zoom_out_button.visible = fov_target < base_fov - 0.5
 
 
-# Aluksen asento: nokka kohteeseen (aim) tai annettuun suuntaan (nose, up), käännös pehmeästi.
+# Aluksen asento: laukaisussa annettu suunta (nose, up); muuten nokka kohteeseen (aim) niin, että kohde näkyy ikkunan
+# keskellä, ja kappaleen lähellä radan mukaan (CockpitState.body_frame). Käännös pehmeästi.
 func _attitude(s: Dictionary, delta: float) -> void:
 	var want: Basis = ship.basis
 	if s.get("nose") != null:
 		var nose := _ecl_to_scene(s.nose).normalized()
 		var up := _ecl_to_scene(s.up if s.get("up") != null else PackedFloat64Array([0, 0, 1])).normalized()
 		want = Basis.looking_at(nose, up)
-	elif s.get("aim") != null:
-		var aim_km: PackedFloat64Array = Flight.body_state(s.aim, s.t).r
-		var dir := Space.to_scene(Flight.sub(aim_km, s.ship.r)).normalized()
-		want = Basis.looking_at(dir, Vector3.UP if absf(dir.y) < 0.99 else Vector3.BACK)
+	else:
+		if s.get("aim") != null:
+			var aim_km: PackedFloat64Array = Flight.body_state(s.aim, s.t).r
+			var dir := Space.to_scene(Flight.sub(aim_km, s.ship.r)).normalized()
+			want = Basis.looking_at(dir, Vector3.UP if absf(dir.y) < 0.99 else Vector3.BACK) * Basis(Vector3.RIGHT, -CockpitState.AIM_RAISE)
+		var fr := _body_frame(s)
+		if not fr.is_empty():
+			var w: float = 1.0 if s.get("burn_frame", false) else float(fr.weight)
+			if w > 0.0:
+				var fb := Basis.looking_at(_ecl_to_scene(fr.nose).normalized(), _ecl_to_scene(fr.up).normalized())
+				want = Basis(want.get_rotation_quaternion().slerp(fb.get_rotation_quaternion(), w))
 	if not _attitude_ready:
 		ship.basis = want
 		_attitude_ready = true
 	else:
 		var q := ship.basis.get_rotation_quaternion().slerp(want.get_rotation_quaternion(), minf(1.0, delta / 1.5))
 		ship.basis = Basis(q)
+
+
+## Asento lähimmän (suurimman näköisen) kappaleen suhteen, tai {} jos nopeutta ei tunneta.
+func _body_frame(s: Dictionary) -> Dictionary:
+	if space.nearest.is_empty() or not (s.ship as Dictionary).has("v"):
+		return {}
+	var name: String = space.nearest.name
+	var b := Flight.body_state(name, s.t)
+	return CockpitState.body_frame(Flight.sub(s.ship.r, b.r), Flight.sub(s.ship.v, b.v), float(space.nearest.radius_m) / 1000.0)
 
 
 func _lighting(s: Dictionary) -> void:

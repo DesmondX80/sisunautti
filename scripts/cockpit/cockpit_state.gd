@@ -4,6 +4,11 @@ class_name CockpitState
 ## taivaan kirkkaus ja väri sekä kolmen päänäytön rivit.
 ## Näyttörivit: [otsikko, [[teksti, koko, väri?], ...], polttoaine 0–1 tai null].
 
+## Ohjaamokuvan "suoraan eteen" on kojelaudan näyttöjen yläreunassa, joten kohde nostetaan ikkunan keskelle (rad).
+const AIM_RAISE := 0.227 # 13°
+## Matalalla radalla horisontti ikkunan alaosassa (rad näkymän keskeltä ylöspäin).
+const HORIZON_RAISE := 0.262 # 15°
+const DEG := PI / 180.0
 const MUTED := Color("#8b9ac0")
 const WARM := Color("#ffb547")
 const FG := Color("#e8eefc")
@@ -74,18 +79,15 @@ static func make() -> Dictionary:
 		ship = Flight.parking_state(tr.from, t, s.orbit)
 	else:
 		ship = Flight.departure_state(tr.from, t)
-	# Kun lähtöpoltto on päällä, alus kääntyy kiertoradalla nokka menosuuntaan ja katto poispäin planeetasta.
-	if f == null and tr.get("armed", false) and ship.has("rel"):
-		base.nose = ship.rel.v
-		base.up = ship.rel.r
-	# Lennolla nokka osoittaa ensin lähtöplaneettaan, sitten linkousplaneettaan (vielä 3 h ohituksen jälkeen) ja
-	# lopuksi kohteeseen.
+	# Kun lähtöpoltto on päällä, alus on kiertoradalla nokka menosuuntaan ja katto poispäin planeetasta (body_frame).
+	if f == null and tr.get("armed", false):
+		base.burn_frame = true
+	# Lennolla nokka osoittaa linkousplaneettaan ohitukseen asti ja sitten kohteeseen. Lähtö- ja kohdeplaneetan
+	# lähellä asennon määrää rata (body_frame): lähtiessä planeetta jää hiljalleen alle ja taakse.
 	var aim: String = tr.to
 	if f != null:
 		var fb: Variant = tr.get("flyby")
-		if Flight.is_planet(tr.from) and t < float(tr.get("exit", tr.depart)):
-			aim = tr.from
-		elif fb is Dictionary and t < float(fb.t) + 3.0 * 3600000.0:
+		if fb is Dictionary and t < float(fb.t):
 			aim = fb.body
 	elif Flight.is_planet(tr.from):
 		aim = tr.from
@@ -116,3 +118,36 @@ static func _readouts(t: float) -> Dictionary:
 		near = {"name": tr.from, "speed": 0.0}
 	return {"met": "T+ %s" % Flight.fmt_duration(t - float(f.depart)) if f != null else "T− %s" % Flight.fmt_duration(float(tr.depart) - t),
 		"speed": speed, "near": near, "dist": Fmt.km(Flight.norm(Flight.sub(ship.r, Flight.body_state(tr.to, t).r)))}
+
+
+## Asento kappaleen lähellä kuten lentokoneella: nokka menosuuntaan ja katto poispäin kappaleesta, ja kappale näkyy
+## kaarevana aluksen alla. rel_r ja rel_v: aluksen paikka (km) ja nopeus kappaleen suhteen, ekliptikan koordinaatit.
+## Ratatasossa e1 osoittaa kappaleen keskipisteeseen ja e2 menosuuntaan (ratanopeuden suunta). Nokka on kulmassa φ
+## e1:stä e2:een päin, katto kohtisuorassa poispäin kappaleesta, ja kappaleen keskipiste näkyy korkeudella c = −φ.
+## Matalalla radalla (kulmasäde ρ suuri) horisontti on ikkunan alaosassa; kaukana kappaleen keskipiste on ikkunan
+## keskellä. Etääntyessä (lähtö) nokka seuraa nopeutta, ja kappale jää hiljalleen alle ja taakse.
+## Palauttaa {nose, up, weight}: weight 0–1 kertoo, kuinka paljon asento seuraa rataa kohteeseen osoittamisen sijaan.
+static func body_frame(rel_r: PackedFloat64Array, rel_v: PackedFloat64Array, radius_km: float) -> Dictionary:
+	var dist := Flight.norm(rel_r)
+	var rho := asin(clampf(radius_km / dist, 0.0, 1.0))
+	var r_hat := Flight.scale(rel_r, 1.0 / dist)
+	var e1 := Flight.scale(r_hat, -1.0)
+	var n := Flight.cross(rel_r, rel_v)
+	if Flight.norm(n) < 1e-9 * dist * maxf(Flight.norm(rel_v), 1e-9):
+		n = Flight.vec(0.0, 0.0, 1.0)
+	var e2 := Flight.cross(n, r_hat)
+	if Flight.norm(e2) < 1e-12:
+		e2 = Flight.cross(Flight.vec(0.0, 0.0, 1.0), r_hat) if absf(r_hat[2]) < 0.99 else Flight.vec(1.0, 0.0, 0.0)
+	e2 = Flight.scale(e2, 1.0 / Flight.norm(e2))
+	var alpha := atan2(Flight.dot(rel_v, e2), Flight.dot(rel_v, e1)) if Flight.norm(rel_v) > 1e-9 else PI / 2.0
+	# Keskipisteen korkeus näkymässä: kaukana ikkunan keskellä, lähellä niin, että yläreuna (horisontti) on ikkunan alaosassa.
+	var c := lerpf(AIM_RAISE, HORIZON_RAISE - rho, smoothstep(10.0 * DEG, 40.0 * DEG, rho))
+	var phi := -c
+	# Etääntyessä nokka seuraa nopeutta hieman alaspäin kallistettuna; kallistus häviää kappaleen pienentyessä. Lähellä
+	# horisontti pysyy ikkunassa, ja kappale vajoaa alle vasta, kun se on pienentynyt (kulmasäde alle 30°).
+	var pitch_down := clampf(PI / 2.0 + c, 0.0, 25.0 * DEG) * smoothstep(0.0, 20.0 * DEG, rho)
+	var leaving := minf(alpha - pitch_down, rho - HORIZON_RAISE + (1.0 - smoothstep(5.0 * DEG, 30.0 * DEG, rho)) * PI)
+	phi = lerpf(phi, maxf(phi, leaving), smoothstep(PI / 2.0, PI / 2.0 + 20.0 * DEG, alpha))
+	var nose := Flight.add(Flight.scale(e1, cos(phi)), Flight.scale(e2, sin(phi)))
+	var up := Flight.add(Flight.scale(e1, -sin(phi)), Flight.scale(e2, cos(phi)))
+	return {"nose": nose, "up": up, "weight": smoothstep(3.0 * DEG, 20.0 * DEG, rho), "rho": rho}

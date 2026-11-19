@@ -227,6 +227,9 @@ func _run() -> void:
 	# Näyttöjen tekstit eri vaiheissa (#21): lähtölaskenta, lento kaukana (pitkät luvut) ja kuun kiertorata.
 	if want("naytot"):
 		await _screens_shots()
+	# Lähestyminen Kuuhun ja saapuminen kiertoradalle (#20).
+	if want("kuu"):
+		await _moon_approach()
 	# Ruutunopeus: kiertorata Maan yllä, katse Maahan, 5 s.
 	orbit_at("Maa", t0, sun_angle("Maa", t0, false) + 0.3)
 	cv.reset_view()
@@ -275,3 +278,47 @@ func _zoom_all(phase: String) -> void:
 		cv.zoom_to(i)
 		await shot("naytto-%s-%d" % [phase, i], 30)
 	cv.reset_view()
+
+
+## Kuu-lento: kuvat ennen saapumista (h) ja kiertoradalla saapumisen jälkeen.
+func _moon_approach() -> void:
+	var t0 := START + 86400000.0
+	orbit_at("Maa", t0, 0.0)
+	G.local_option("Kuu")
+	if G.options.is_empty() or not G.choose(G.options[0]):
+		check("Kuu-lento", false)
+		return
+	G.jump_to_window()
+	G.arm()
+	cv.snap_attitude()
+	cv.reset_view()
+	await shot("kuu-lahtopoltto", 40)
+	G.launch()
+	G.burn_at = -INF
+	var f: Dictionary = G.state.flight
+	var arrive := float(f.arrive)
+	# Irtautuminen kiertoradalta (#26): Maa jää hiljalleen alle ja taakse.
+	for m: float in [5.0, 30.0, 120.0, 600.0]:
+		G.anchor(float(f.depart) + m * 60000.0, 0)
+		cv.snap_attitude()
+		await shot("kuu-lahto-%dmin" % roundi(m), 30)
+	for h: float in [48.0, 24.0, 12.0, 6.0, 3.0, 1.0, 0.25]:
+		var t := arrive - h * 3600000.0
+		if t < float(f.depart):
+			continue
+		G.anchor(t, 0)
+		cv.snap_attitude()
+		cv.reset_view()
+		var d := Flight.norm(Flight.sub(Flight.ship_view(f, t).r, Flight.body_state("Kuu", t).r))
+		report.append("kuu -%s h: etäisyys %d km" % [h, roundi(d)])
+		await shot("kuu-%sh" % str(h).replace(".", "_"), 30)
+	G.anchor(arrive, 0)
+	G.tick()
+	G.burn_at = -INF
+	await _frames(5)
+	cv.reset_view()
+	await shot("kuu-saapuminen", 60)
+	G.capture()
+	G.burn_at = -INF
+	G.anchor(arrive + 600000.0, 0)
+	await shot("kuu-kiertorata", 60)
