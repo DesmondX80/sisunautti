@@ -208,7 +208,37 @@ func _ready() -> void:
 	check("ulkokamera ei näe ohjaamon lasia", cv.rear_cam.cull_mask & Cabin.INTERIOR_LAYER == 0
 		and cv.cabin.glass_material != null)
 	cv.toggle_rear()
-	check("takakamera kohdekameraksi", not cv.is_rear() and cv.rear_view.render_target_update_mode == SubViewport.UPDATE_DISABLED)
+	check("takakamera kohdekameraksi", not cv.is_rear() and cv.cam_mode == "kohde" and cv.rear_cam.projection == Camera3D.PROJECTION_FRUSTUM
+		and cv.rear_cam.cull_mask & Space.DOT_LAYER == 0 and cv.rear_cam.environment == cv.tele_env)
+	# Kohdekamera (#39): kaukoputki aluksen paikalta kohteeseen, kohteen pintakartta kuvan koon mukaan.
+	cv._process(0.016)
+	cv._update_tele(true)
+	var aim_name: String = cv._state.aim if cv._state.get("aim") != null else "Aurinko"
+	var aim_pos: Vector3 = cv.space.sun_root.position if aim_name == "Aurinko" else (cv._bodies[aim_name].root as Node3D).position
+	var tele_dir := -cv.rear_cam.global_transform.basis.z
+	check("kohdekamera osoittaa kohteeseen aluksen paikalta", tele_dir.dot((aim_pos - cv.ship.global_position).normalized()) > 0.99999
+		and cv.rear_cam.global_position.is_equal_approx(cv.ship.global_position))
+	check("kohdekameran kohde näkyy kuvassa", cv.space.focus == aim_name and cv._camera_screen().tele.x > 1.0)
+	var tele_r: float = cv.space.sun_mesh.scale.x if aim_name == "Aurinko" else (cv._bodies[aim_name].tilt as Node3D).scale.x
+	var tele_c := cv.rear_cam.unproject_position(aim_pos)
+	var tele_e := cv.rear_cam.unproject_position(aim_pos + cv.rear_cam.global_transform.basis.y * tele_r)
+	var cam_anchor := cv._camera_screen().tele_anchor()
+	check("kohdekameran kohde näytön kehän kokoisena kohdassa TELE_X", cv._camera_screen().close
+		or (absf(tele_c.distance_to(tele_e) / cv.rear_view.size.y - cv.TELE_RADIUS * cam_anchor.z) < 0.01
+		and absf(tele_c.x / cv.rear_view.size.x * 2.0 - 1.0 - cam_anchor.x) < 0.01))
+	# Lähinäkymän pallo (globe.gdshader, sphere_uv) käyttää samaa pintakartan UV:ta kuin kappaleiden SphereMesh.
+	var arrays := (cv.space.bodies[2].mesh as MeshInstance3D).mesh.surface_get_arrays(0)
+	var verts: PackedVector3Array = arrays[Mesh.ARRAY_VERTEX]
+	var uvs: PackedVector2Array = arrays[Mesh.ARRAY_TEX_UV]
+	var uv_err := 0.0
+	for i in range(0, verts.size(), 97):
+		var v := verts[i].normalized()
+		if absf(v.y) > 0.99:
+			continue
+		var u := fposmod(atan2(v.x, v.z) / TAU, 1.0)
+		var du := absf(u - fposmod(uvs[i].x, 1.0))
+		uv_err = maxf(uv_err, maxf(minf(du, 1.0 - du), absf(acos(v.y) / PI - uvs[i].y)))
+	check("pallon UV vastaa kappaleiden SphereMeshiä", uv_err < 1e-3)
 	# 360°-kamera (#38): T kiertää kohde → taka → 360° → kohde, raahaus ja nuolet kääntävät, koko näytön tila.
 	cv.cycle_camera()
 	cv.cycle_camera()
@@ -231,7 +261,7 @@ func _ready() -> void:
 		and cv.viewport.render_target_update_mode == SubViewport.UPDATE_DISABLED and cv.pan_full_button.text == "Ohjaamoon")
 	cv.cycle_camera()
 	check("kameran vaihto sulkee koko näytön", cv.cam_mode == "kohde" and not cv.pan_full and not cv._pan_layer.visible
-		and cv.viewport.render_target_update_mode == SubViewport.UPDATE_ALWAYS and cv.rear_view.size == Vector2i(768, 432))
+		and cv.viewport.render_target_update_mode == SubViewport.UPDATE_ALWAYS and cv.rear_view.size == cv._feed_size(cv._camera_screen()))
 	cv.pan_bearing = 0.0
 	cv.pan_tilt = -0.15
 	cv.zoom_by(0.5)

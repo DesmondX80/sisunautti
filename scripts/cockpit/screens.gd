@@ -8,8 +8,8 @@ extends Control
 ##   "ship"     aluskaavio polttoaineineen ja moottorin liekkeineen sekä päänäytön 1 rivit (aika, päivä, kiihdytys)
 ##   "target"   tähtäin ja työntö sekä päänäytön 2 rivit (nopeus)
 ##   "systems"  järjestelmät: etäisyydet planeetoille, mittarit, kohteen hologrammi ja tilarivit
-##   "camera"   kohdekamera: kohteen pinta ja päänäytön 3 rivit (kohde, polttoaine); vaihdettavissa takakameraksi tai
-##              360°-kameraksi (set_feed), jolloin näytöllä on 3D-kuva aluksen ulkopuolelta
+##   "camera"   kohdekamera: kaukoputken kuva kohteesta aluksen paikalta (sama puoli ja valaistus kuin ikkunasta) ja
+##              päänäytön 3 rivit (kohde, polttoaine); vaihdettavissa takakameraksi tai 360°-kameraksi (set_feed)
 ##   "mini"     keskikonsolin pikkunäyttö: aikakiihdytys ja moottori
 
 const SIZE := Vector2(1024, 576)
@@ -26,6 +26,8 @@ const BG_BOTTOM := Color("#0a2c5e")
 ## Planeettojen lyhenteet etäisyyspylväisiin.
 const SHORT := {"Merkurius": "ME", "Venus": "VE", "Maa": "MA", "Mars": "MR", "Jupiter": "JU", "Saturnus": "SA", "Uranus": "UR", "Neptunus": "NE"}
 const REDRAW_MS := 50
+## Kohdekameran kohteen keskikohta näytöllä (x, sisältöalueen koordinaateissa; y keskellä).
+const TELE_X := 720.0
 
 var kind := "nav"
 var view_size := SIZE # SubViewportin koko
@@ -41,8 +43,14 @@ var globe: ColorRect = null
 var globe_mat: ShaderMaterial = null
 var over: Control # päällyskerros pallon päällä
 var rear: TextureRect = null # ulkokameran kuva (kohdekameranäytöllä)
-## Ulkokameran tila: "" kohdekamera, "taka" takakamera, "360" kääntyvä kamera.
+## Kameran tila: "kohde" kohdekamera, "taka" takakamera, "360" kääntyvä kamera ("" = ei kuvaa, pallo).
 var feed := ""
+## Kohdekameran zoom (suhteessa ikkunanäkymään, 0 = lähinäkymä) ja kohteen säde kuvassa (osuus kuvan korkeudesta).
+var tele := Vector2(1, 0)
+## Kohdekameran lähinäkymä (set_close): kohde suunnattuna pallona, aluksen kohta keskellä; tele_label alareunaan.
+var close := false
+var tele_label := ""
+const GLOBE_MARGIN := 1.18
 ## 360°-kameran suunta: x = suuntima (rad, myötäpäivään keulasta), y = kallistus (rad), z = zoomauskerroin.
 var pan := Vector3(0, 0, 1)
 var _globe_name := ""
@@ -61,9 +69,12 @@ func _ready() -> void:
 		globe_mat.shader = load("res://shaders/globe.gdshader")
 		globe.material = globe_mat
 		if kind == "camera":
-			globe.position = _off + Vector2(330, 60) * _k
-			globe.size = Vector2(780, 780) * _k
+			# Lähinäkymän pallo kohdekameran kohteen paikalla ja koossa (TELE_X, säde 0,34 kuvan korkeudesta).
+			var gr := 0.34 * SIZE.y * GLOBE_MARGIN
+			globe.position = _off + (Vector2(TELE_X, SIZE.y / 2.0) - Vector2(gr, gr)) * _k
+			globe.size = Vector2(gr, gr) * 2.0 * _k
 			globe_mat.set_shader_parameter("spin", 0.004)
+			globe_mat.set_shader_parameter("margin", GLOBE_MARGIN)
 		else:
 			globe.position = _off + Vector2(640, 92) * _k
 			globe.size = Vector2(300, 300) * _k
@@ -117,10 +128,36 @@ func set_feed(tex: Texture2D, mode: String = "taka") -> void:
 	if rear == null:
 		return
 	feed = mode if tex != null else ""
+	close = false
+	globe_mat.set_shader_parameter("oriented", false)
 	rear.texture = tex
 	rear.visible = tex != null
 	globe.visible = tex == null
+	(rear.material as ShaderMaterial).set_shader_parameter("grain", 0.3 if mode == "kohde" else 1.0)
+	(rear.material as ShaderMaterial).set_shader_parameter("solar", 0.0)
 	tick(true)
+
+
+## Kohdekameran kohteen paikka kamerakuvassa (kuva peittää koko näytön): x, y normalisoituina (−1…1, y ylös) ja
+## sisältöalueen korkeus osuutena näytön korkeudesta.
+func tele_anchor() -> Vector3:
+	var p := _off + Vector2(TELE_X, SIZE.y / 2.0) * _k
+	return Vector3((p.x - view_size.x / 2.0) / (view_size.x / 2.0), -(p.y - view_size.y / 2.0) / (view_size.y / 2.0), SIZE.y * _k / view_size.y)
+
+
+## Kohdekameran lähinäkymä päälle ja pois: params ovat globe-varjostimen suunnatun tilan arvot (view_to_body,
+## light_dir, pilvet, yövalot, ilmakehä).
+func set_close(on: bool, params: Dictionary = {}) -> void:
+	if rear == null:
+		return
+	if on != close:
+		close = on
+		globe_mat.set_shader_parameter("oriented", on)
+		rear.visible = not on and rear.texture != null
+		globe.visible = on or rear.texture == null
+		tick(true)
+	for k: String in params:
+		globe_mat.set_shader_parameter(k, params[k])
 
 
 func is_rear() -> bool:
@@ -499,7 +536,7 @@ func _draw_camera(c: CanvasItem) -> void:
 		draw_pan_hud(c, font, mono, SIZE, pan, 1.0)
 		_feed_footer(c)
 		return
-	if is_rear():
+	if feed == "taka":
 		_draw_rear(c)
 		return
 	# Tekstipaneeli kamerakuvan päällä.
@@ -514,10 +551,24 @@ func _draw_camera(c: CanvasItem) -> void:
 	var cam_w := mono.get_string_size(cam[0], HORIZONTAL_ALIGNMENT_LEFT, -1, cam[1]).x
 	c.draw_circle(Vector2(SIZE.x - 50 - cam_w, 44), 8.0, BAD if blink else Color(BAD, 0.3))
 	_right(c, mono, cam[0], SIZE.x - 30, 52, cam[1], BRIGHT)
-	# Tähtäysrasti kuvan keskellä.
-	var p := Vector2(720, 300)
+	# Tähtäysrasti kohteen keskellä ja kehänmerkit kohteen ympärillä.
+	var p := Vector2(TELE_X, SIZE.y / 2.0)
 	for d: Vector2 in [Vector2.LEFT, Vector2.RIGHT, Vector2.UP, Vector2.DOWN]:
 		c.draw_line(p + d * 14, p + d * 40, Color(BRIGHT, 0.7), 2.0)
+	if feed == "kohde" and tele.y > 0.0:
+		var rr := tele.y * SIZE.y + 14.0
+		for i in 4:
+			var a := TAU * i / 4.0 + PI / 4.0
+			c.draw_arc(p, rr, a - 0.28, a + 0.28, 16, Color(ACCENT, 0.75), 2.0, true)
+	if feed == "kohde" and close:
+		# Aluksen kohta pallon keskellä: sykkivä rengas ja merkintä.
+		var pulse := fmod(_time_s(), 1.6) / 1.6
+		c.draw_arc(p, 6.0 + 22.0 * pulse, 0, TAU, 32, Color(GOOD, 0.8 * (1.0 - pulse)), 2.0, true)
+		c.draw_circle(p, 4.0, GOOD)
+		c.draw_string(mono, p + Vector2(12, -10), "ALUS", HORIZONTAL_ALIGNMENT_LEFT, -1, 16, GOOD)
+	if feed == "kohde":
+		var z := tele_label if close else "ZOOM %s×" % (Fmt.num(tele.x, 1) if tele.x < 10.0 else Fmt.num(roundf(tele.x)))
+		_right(c, mono, z, SIZE.x - 30, SIZE.y - 30, 18, MUTED, SIZE.x - 470.0)
 
 
 ## Takakamera: kuva täyttää näytön; otsikko ja tallennusvalo ylhäällä, kohde ja polttoaine alareunan palkissa.

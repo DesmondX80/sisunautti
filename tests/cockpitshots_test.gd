@@ -301,6 +301,11 @@ func _run() -> void:
 	# Takakamera kohdekameranäytöllä (#24): alustalla, kiertoradalla ja lähdön jälkeen poistuva Maa.
 	if want("taka"):
 		await _rear_shots()
+	# Kohdekamera (#39): kaukoputki aluksen paikalta.
+	if want("kohde"):
+		await _tele_shots()
+	if only == "kohdeaurinko":
+		await _tele_sun(START + 86400000.0)
 	# 360°-kamera (#38): näytöllä ja koko näytöllä.
 	if want("360"):
 		await _pan_shots()
@@ -409,6 +414,61 @@ func _moon_approach() -> void:
 	G.burn_at = -INF
 	G.anchor(arrive + 600000.0, 0)
 	await shot("kuu-kiertorata", 60)
+
+
+func _tele_shots() -> void:
+	G.fake_real_ms = pad_day()
+	G.new_game()
+	cv.zoom_to(4)
+	await shot("kohde-alusta", 60)
+	var t0 := START + 86400000.0
+	orbit_at("Maa", t0, sun_angle("Maa", t0, false) + 0.3)
+	cv.snap_attitude()
+	cv.zoom_to(4)
+	await shot("kohde-kiertorata", 60)
+	G.local_option("Kuu")
+	G.choose(G.options[0])
+	G.jump_to_window()
+	G.arm()
+	G.launch()
+	G.burn_at = -INF
+	var f: Dictionary = G.state.flight
+	for frac: float in [0.02, 0.5, 0.97, 0.98, 0.99]:
+		G.anchor(float(f.depart) + (float(f.arrive) - float(f.depart)) * frac, 0)
+		cv.snap_attitude()
+		cv.zoom_to(4)
+		await shot("kohde-kuulento-%d" % roundi(frac * 100.0), 60)
+		report.append("kohde %d %%: %s" % [roundi(frac * 100.0), cv._camera_screen().tele])
+	orbit_at("Kuu", t0, sun_angle("Kuu", t0, false) + 0.3)
+	cv.snap_attitude()
+	cv.zoom_to(4)
+	await shot("kohde-kuu-kiertorata", 60)
+	# Kaukaiset kohteet: Neptunus ja Saturnus lennolla, Aurinko ilman kohdetta.
+	for target: String in ["Neptunus", "Saturnus"]:
+		orbit_at("Maa", t0, 0.0)
+		G.change_ship("ydin")
+		G.state.fuel = G.fuel_max()
+		G.begin_search(target)
+		G.finish_search()
+		if not G.options.is_empty() and G.choose(G.options[0]):
+			G.jump_to_window()
+			if G.arm():
+				G.launch()
+				var ft: Dictionary = G.state.flight
+				G.anchor(float(ft.depart) + (float(ft.arrive) - float(ft.depart)) * 0.6, 0)
+				cv.snap_attitude()
+				cv.zoom_to(4)
+				await shot("kohde-" + target.to_lower(), 60)
+	await _tele_sun(t0)
+	cv.reset_view()
+
+
+func _tele_sun(t0: float) -> void:
+	var ve: PackedFloat64Array = Flight.planet_state("Venus", t0).r
+	drift_at(Flight.add(ve, PackedFloat64Array([3.0e6, 2.0e6, 0.0])), t0)
+	await _frames(3)
+	cv.zoom_to(4)
+	await shot("kohde-aurinko", 90)
 
 
 func _pan_shots() -> void:

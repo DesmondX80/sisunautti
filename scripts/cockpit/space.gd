@@ -43,6 +43,8 @@ const RELIEF := {
 	"Mars": {"height": 7000.0, "normal": 1.7, "regolith": 0.15, "craters": 0.55, "contrast": 1.3, "saturation": 1.0}}
 # Kiekon säde pikseleinä, jolla kuva haetaan, jolla vaihdetaan tarkkaan karttaan ja jolla palataan takaisin.
 const PHOTO_MIN_PX := 2.0
+## Kaukaisten kappaleiden pisteiden näkyvyyskerros: kohdekamera (kaukoputki) ei näe niitä.
+const DOT_LAYER := 8
 const HIRES_PX := 200.0
 const HIRES_BACK_PX := 120.0
 
@@ -70,6 +72,10 @@ var sunlit := 1.0
 var sun_distance := AU_M
 var nearest: Dictionary = {}
 var nearest_size := 0.0
+## Kohdekameran kohde ja sen koko kamerakuvassa (px): kohteen pintakartta valitaan tämän mukaan, vaikka se
+## näkyisi ikkunasta vain pisteenä.
+var focus := ""
+var focus_px := 0.0
 
 
 static func to_scene(v: PackedFloat64Array) -> Vector3:
@@ -309,6 +315,7 @@ func _build_body(name: String, radius_km: float, color: Color, moon: bool) -> vo
 	dot.material_override = dm
 	dot.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	dot.extra_cull_margin = 1e6
+	dot.layers = DOT_LAYER
 	root.add_child(dot)
 	b.dot = dot
 	bodies.append(b)
@@ -438,7 +445,7 @@ func update(ship_km: PackedFloat64Array, t: float, px_per_rad: float) -> void:
 		var px := size * px_per_rad
 		(b.dot as Node3D).visible = px < 2.0 and (not b.moon or d < 2e10)
 		(b.dot as Node3D).scale = Vector3.ONE * radius * k
-		_texture_level(b, px)
+		_texture_level(b, maxf(px, focus_px) if name == focus else px)
 
 
 func _texture_level(b: Dictionary, px: float) -> void:

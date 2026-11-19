@@ -32,8 +32,8 @@ var sparks: GPUParticles3D
 var tools: HBoxContainer
 var tower: LaunchTower
 ## Ulkokamera: toinen kamera samassa 3D-maailmassa, kuva kohdekameranäytölle. Tilat (cycle_camera, T):
-## "kohde" kohdekamera, "taka" takakamera ja "360" aluksen katolla kääntyvä kamera (#38), jonka voi avata
-## koko näytölle (toggle_pan_full).
+## "kohde" kaukoputki aluksen paikalta kohteeseen (#39), "taka" takakamera ja "360" aluksen katolla kääntyvä
+## kamera (#38), jonka voi avata koko näytölle (toggle_pan_full).
 var rear_view: SubViewport
 var rear_cam: Camera3D
 var rear_button: Button
@@ -51,6 +51,11 @@ var _pan_rect: TextureRect
 var _pan_hud: Control
 var _pan_drag := false
 const PAN_FOV := 64.0
+## Kohdekamera: kohteen säde osuutena kuvan korkeudesta, suurin pystykuvakulma ja musta tausta (kaukoputkessa
+## Linnunrata olisi suurennettuna pelkkää sumua).
+const TELE_RADIUS := 0.34
+const TELE_MAX_FOV := 62.0
+var tele_env: Environment
 const PAN_MOUNT := Vector3(0.0, 0.9, 0.2) # aluksen katolla ohjaamon takana
 var _throttle := 0.0 # tehovivun asento 0–1 (pehmennetty)
 ## Manuaaliohjaus (#30): aluksen asento näppäimillä 360°, kaasu ja jarrutus lennolla.
@@ -121,6 +126,7 @@ func _ready() -> void:
 	_build_rear()
 	_build_pan_layer()
 	_build_tools()
+	set_cam_mode("kohde")
 	Settings.quality_changed.connect(apply_quality)
 	apply_quality(Settings.quality)
 	resized.connect(_fit_fov)
@@ -441,6 +447,9 @@ func _build_rear() -> void:
 	# Ohjaamon sisäosat (lasi, plasma, häikäisy) eivät näy ulkokameraan.
 	rear_cam.cull_mask = 0xFFFFF & ~Cabin.INTERIOR_LAYER
 	rear_view.add_child(rear_cam)
+	tele_env = env.duplicate()
+	tele_env.background_mode = Environment.BG_COLOR
+	tele_env.background_color = Color.BLACK
 
 
 ## Koko näytön 360°-kamera: kuva ja tähtäin ohjaamonäkymän päällä (työkalurivin alla).
@@ -519,9 +528,19 @@ func set_cam_mode(mode: String) -> void:
 	cam_mode = mode
 	if mode != "360" and pan_full:
 		toggle_pan_full()
-	cs.set_feed(rear_view.get_texture() if mode != "kohde" else null, mode)
+	# Kuvasuhde näytön mukaan, jotta kuvaa ei rajata (kohdekameran mittakaava ja paikka täsmäävät).
+	if not pan_full:
+		rear_view.size = _feed_size(cs)
+	cs.set_feed(rear_view.get_texture(), mode)
+	var tele := mode == "kohde"
+	rear_cam.projection = Camera3D.PROJECTION_FRUSTUM if tele else Camera3D.PROJECTION_PERSPECTIVE
+	rear_cam.near = camera.near
 	rear_cam.fov = PAN_FOV if mode == "360" else 62.0
-	rear_view.render_target_update_mode = SubViewport.UPDATE_ONCE if mode != "kohde" else SubViewport.UPDATE_DISABLED
+	rear_cam.environment = tele_env if tele else null
+	rear_cam.cull_mask = 0xFFFFF & ~Cabin.INTERIOR_LAYER & ~(Space.DOT_LAYER if tele else 0)
+	if not tele:
+		space.focus = ""
+	rear_view.render_target_update_mode = SubViewport.UPDATE_ONCE
 	if rear_button != null:
 		rear_button.text = CAM_NAMES[CAM_MODES[(CAM_MODES.find(mode) + 1) % CAM_MODES.size()]]
 		pan_full_button.visible = mode == "360"
@@ -539,10 +558,17 @@ func toggle_pan_full() -> void:
 		_pan_rect.texture = rear_view.get_texture()
 		_resize_pan_view()
 	else:
-		rear_view.size = Vector2i(768, 432)
+		rear_view.size = _feed_size(_camera_screen())
 		rear_view.render_target_update_mode = SubViewport.UPDATE_ONCE
 	viewport.render_target_update_mode = SubViewport.UPDATE_DISABLED if pan_full else SubViewport.UPDATE_ALWAYS
 	pan_full_button.text = "Ohjaamoon" if pan_full else "Koko näyttö"
+
+
+## Ulkokameran kuvan koko näytöllä: 768 px leveä, kameranäytön kuvasuhteessa.
+func _feed_size(cs: CockpitScreen) -> Vector2i:
+	if cs == null or cs.view_size.x <= 0.0:
+		return Vector2i(768, 432)
+	return Vector2i(768, roundi(768.0 * cs.view_size.y / cs.view_size.x))
 
 
 func _resize_pan_view() -> void:
@@ -559,6 +585,9 @@ func _resize_pan_view() -> void:
 func _update_rear(screen_drawn: bool) -> void:
 	if cam_mode == "360":
 		_update_pan(screen_drawn)
+		return
+	if cam_mode == "kohde":
+		_update_tele(screen_drawn)
 		return
 	if not is_rear():
 		return
@@ -599,6 +628,92 @@ func _update_pan(screen_drawn: bool) -> void:
 		_pan_hud.queue_redraw()
 	elif screen_drawn:
 		rear_view.render_target_update_mode = SubViewport.UPDATE_ONCE
+
+
+## Kohdekamera (#39): kaukoputki aluksen paikalla osoittaa kohteeseen (ilman kohdetta Aurinkoon), joten kuvassa on
+## sama puoli, vaihe, ilmakehä ja renkaat kuin ikkunasta katsottuna. Kuvakulma valitaan niin, että kohteen säde on
+## TELE_RADIUS kuvan korkeudesta (lähellä enintään TELE_MAX_FOV, jolloin kuvassa on pinta aluksen alla). Kohde on
+## näytön oikealla puolella tekstipaneelin vieressä: kapea näkökenttä ja sivusiirto tehdään frustum-projektiolla,
+## jonka pieni koko ei rajoitu perspektiivikameran 1°:n vähimmäiskulmaan. Kuvan yläsuunta on aluksen katto.
+func _update_tele(screen_drawn: bool) -> void:
+	var aim: Variant = _state.get("aim")
+	var name: String = aim if aim != null else "Aurinko"
+	var pos: Vector3
+	var radius: float
+	if name == "Aurinko":
+		pos = space.sun_root.position
+		radius = space.sun_mesh.scale.x
+	else:
+		var body: Dictionary = _bodies.get(name, {})
+		if body.is_empty():
+			return
+		pos = (body.root as Node3D).position
+		radius = (body.tilt as Node3D).scale.x
+	var origin := ship.global_position
+	var rel := pos - origin
+	var dist := maxf(rel.length(), 1e-6)
+	var dir := rel / dist
+	var rho := asin(clampf(radius / dist, 0.0, 1.0))
+	# Renkaat (Saturnus) mahtuvat kuvaan, kun kappale on pienempi.
+	var share := TELE_RADIUS * (0.45 if name == "Saturnus" else 1.0)
+	var t_max := tan(deg_to_rad(TELE_MAX_FOV) / 2.0)
+	var cs := _camera_screen()
+	if cs == null:
+		return
+	var anchor := cs.tele_anchor()
+	# Säde on share sisältöalueen korkeudesta eli 2 · share · anchor.z puolikorkeudesta.
+	var t_half := minf(tan(rho) / (2.0 * share * anchor.z), t_max)
+	# Kuvan yläsuunta on kohteen pohjoisnapa (Auringolla ekliptikan pohjoinen), kuten planeettakuvissa.
+	var north := Vector3.UP if name == "Aurinko" else (_bodies[name].tilt as Node3D).global_transform.basis.y.normalized()
+	if absf(dir.dot(north)) > 0.999:
+		north = ship.global_transform.basis.y.normalized()
+	space.focus = name
+	# Lähellä kohde ei mahtuisi kuvaan: näytetään koko pallo aluksen kohta keskellä (sama puoli kuin ikkunasta).
+	if name != "Aurinko" and tan(rho) / (2.0 * share * anchor.z) > t_max:
+		space.focus_px = Space.HIRES_PX - 1.0
+		_tele_close(cs, name, dir, north, share)
+		return
+	cs.set_close(false)
+	# Aurinkosuodin: Auringon pinta (reunatummennus) näkyy ilman ylivalotusta.
+	tele_env.tonemap_exposure = 0.012 if name == "Aurinko" else 1.0
+	tele_env.glow_enabled = name != "Aurinko"
+	(cs.rear.material as ShaderMaterial).set_shader_parameter("solar", 1.0 if name == "Aurinko" else 0.0)
+	rear_cam.global_transform = Transform3D(Basis.looking_at(dir, north), origin)
+	var near := clampf(0.5 * (dist - radius), 0.02, 50.0)
+	var height := 2.0 * near * t_half
+	var aspect := float(rear_view.size.x) / float(maxi(rear_view.size.y, 1))
+	# Optinen akseli (kohteen keskipiste) näytön kohtaan TELE_X: siirto on lähitason yksiköissä.
+	rear_cam.set_frustum(height, Vector2(-anchor.x * height / 2.0 * aspect, -anchor.y * height / 2.0), near, camera.far)
+	space.focus_px = minf(rho / t_half * rear_view.size.y, Space.HIRES_PX - 1.0)
+	cs.tele = Vector2(tan(deg_to_rad(base_fov) / 2.0) / t_half, share)
+	if screen_drawn:
+		rear_view.render_target_update_mode = SubViewport.UPDATE_ONCE
+
+
+## Kohdekameran lähinäkymä: kohde suunnattuna pallona näytöllä (globe.gdshader), keskellä kohta, jonka yllä alus on,
+## pohjoinen ylhäällä, Auringon valo oikeasta suunnasta, Maalla pilvet ja yövalot.
+func _tele_close(cs: CockpitScreen, name: String, dir: Vector3, north: Vector3, share: float) -> void:
+	var b: Dictionary = _bodies[name]
+	var z := -dir # kuvasta katsojaan (alukseen)
+	var y := (north - z * north.dot(z)).normalized()
+	var view := Basis(y.cross(z), y, z)
+	var mesh_inv := (b.mesh as MeshInstance3D).global_transform.basis.orthonormalized().inverse()
+	var to_body := mesh_inv * view
+	var sun_local: Vector3 = (b.mat as ShaderMaterial).get_shader_parameter("sun_local")
+	var params := {"view_to_body": to_body, "light_dir": to_body.transposed() * sun_local,
+		"has_clouds": b.has("cloud_spin") and b.clouds != null, "has_night": b.has("night_path"),
+		"atmo": float(Space.ATMOS[name][3]) if Space.ATMOS.has(name) else 0.0,
+		"atmo_color": Space.ATMOS[name][0] if Space.ATMOS.has(name) else Color(0.35, 0.6, 1.0)}
+	if params.has_clouds:
+		params.view_to_cloud = (b.cloud_spin as Node3D).global_transform.basis.orthonormalized().inverse() * view
+		params.cloud_tex = (b.clouds as ShaderMaterial).get_shader_parameter("cloud_tex")
+	if params.has_night:
+		params.night_tex = (b.mat as ShaderMaterial).get_shader_parameter("night_tex")
+	cs.set_close(true, params)
+	cs.tele = Vector2(0.0, share)
+	var ship_r: PackedFloat64Array = _state.ship.r
+	var alt := Flight.norm(Flight.sub(ship_r, Flight.body_state(name, float(_state.t)).r)) - float(Flight.orbit_of(name).radiusKm)
+	cs.tele_label = "ALUKSEN KOHTA · KORKEUS %s" % Fmt.km(maxf(alt, 0.0))
 
 
 ## 360°-kameran perusasento: kaukana aluksen akselit, lähellä kappaletta (kulmasäde yli muutaman asteen) vakautettu
