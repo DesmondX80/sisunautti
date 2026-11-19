@@ -18,6 +18,9 @@ var panel_hidden := false
 ## Äänenvoimakkuus 0–1 ja mykistys (pääväylä).
 var volume := 0.8
 var muted := false
+## Radio: musiikin voimakkuus 0–1 ja valittu kanava (−1 pois).
+var music_volume := 0.6
+var radio_channel := -1
 var path := PATH # testit vaihtavat polun, jotta oikeat asetukset eivät muutu
 
 
@@ -84,6 +87,17 @@ func set_muted(m: bool) -> void:
 	save_settings()
 
 
+func set_music_volume(v: float) -> void:
+	music_volume = clampf(v, 0.0, 1.0)
+	audio_changed.emit()
+	save_settings()
+
+
+func set_radio_channel(c: int) -> void:
+	radio_channel = c
+	save_settings()
+
+
 ## Pääväylän voimakkuus ja mykistys.
 func apply_audio() -> void:
 	AudioServer.set_bus_volume_db(0, linear_to_db(maxf(volume, 0.0001)))
@@ -99,6 +113,8 @@ func load_settings() -> void:
 		panel_hidden = false
 		volume = 0.8
 		muted = false
+		music_volume = 0.6
+		radio_channel = -1
 		apply_audio()
 		return
 	quality = clampi(int(cfg.get_value("graphics", "quality", default_quality())), Quality.LOW, max_quality())
@@ -106,6 +122,8 @@ func load_settings() -> void:
 	panel_hidden = bool(cfg.get_value("ui", "panel_hidden", false))
 	volume = clampf(float(cfg.get_value("audio", "volume", 0.8)), 0.0, 1.0)
 	muted = bool(cfg.get_value("audio", "muted", false))
+	music_volume = clampf(float(cfg.get_value("audio", "music_volume", 0.6)), 0.0, 1.0)
+	radio_channel = int(cfg.get_value("audio", "radio_channel", -1))
 	apply_audio()
 
 
@@ -116,4 +134,6 @@ func save_settings() -> void:
 	cfg.set_value("ui", "panel_hidden", panel_hidden)
 	cfg.set_value("audio", "volume", volume)
 	cfg.set_value("audio", "muted", muted)
+	cfg.set_value("audio", "music_volume", music_volume)
+	cfg.set_value("audio", "radio_channel", radio_channel)
 	cfg.save(path)

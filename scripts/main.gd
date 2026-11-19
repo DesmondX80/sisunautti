@@ -7,6 +7,7 @@ const TEST_DIR := "res://tests/"
 var ui: VoyageUI
 var menu: StartMenu
 var sound: GameSound
+var radio: Radio
 
 
 func _ready() -> void:
@@ -31,6 +32,9 @@ func _ready() -> void:
 	sound = GameSound.new()
 	sound.name = "Sound"
 	add_child(sound)
+	radio = Radio.new()
+	radio.name = "Radio"
+	add_child(radio)
 	menu.closed.connect(func() -> void:
 		ui.visible = true
 		sound.quiet = false)

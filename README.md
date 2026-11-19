@@ -34,6 +34,19 @@ sekunnin piippaukset sekä kellosoinnut ilmoituksista (kiertorata, lähtöpoltto
 Voimakkuus ja mykistys ovat aloitusvalikon asetuksissa (`Settings.volume`, `Settings.muted`). Valikon ollessa auki
 pelin äänet hiljenevät.
 
+Ohjaamon radio (yläpalkin ♪ Radio, `scripts/radio.gd`) soittaa viittä kanavaa: Avaruustunnelma, Syntikka,
+Johtokeskus (Apollo-lentojen radioliikennettä), Rock ja Klassinen. Kanavan kappaleet soivat peräkkäin, ja kanavaa
+vaihdettaessa kuuluu radiokohina. Valittu kanava ja musiikin voimakkuus tallentuvat asetuksiin. Kaikki kappaleet ovat
+vapaasti käytettäviä (CC0 tai public domain), ja ne on pakattu Ogg Vorbisiksi hakemistoon `assets/music/`:
+
+| Kanava | Kappale | Lähde ja lisenssi |
+| --- | --- | --- |
+| Avaruustunnelma | Cosmic Navigation; Outer Space Loop | synth-thetic; wipics ([OpenGameArt](https://opengameart.org/content/cosmic-navigation), [OpenGameArt](https://opengameart.org/content/outer-space-loop)), CC0 |
+| Syntikka | Space Synth Wave; Space City | pro-sensory; mintodog ([OpenGameArt](https://opengameart.org/content/space-synth-wave), [OpenGameArt](https://opengameart.org/content/space-city)), CC0 |
+| Johtokeskus | Apollo 11:n laskeutuminen Kuuhun; Apollo 13 "Houston, we've had a problem" | NASA ([Wikimedia Commons](https://commons.wikimedia.org/wiki/File:Pouso_da_Apollo_11_na_Lua.ogg), [Wikimedia Commons](https://commons.wikimedia.org/wiki/File:Apollo13-wehaveaproblem.ogg)), public domain |
+| Rock | Epic Rock Battle Theme; Space Adventure | hydrogene; mintodog ([OpenGameArt](https://opengameart.org/content/jrpg-epic-rock-battle-theme-1), [OpenGameArt](https://opengameart.org/content/space-adventure)), CC0 |
+| Klassinen | Johann Strauss II: An der schönen blauen Donau; Gustav Holst: Planeetat – Jupiter | European Archive, CC0 ([Wikimedia Commons](https://commons.wikimedia.org/wiki/File:Strauss,_An_der_sch%C3%B6nen_blauen_Donau.ogg)); Yhdysvaltain ilmavoimien soittokunta, public domain ([Wikimedia Commons](https://commons.wikimedia.org/wiki/File:Holst_The_Planets_Jupiter.ogg)) |
+
 ## Kehitys
 
 Tarvitaan [Godot 4.7.2](https://godotengine.org/download/) (vakioversio, ei .NET).

@@ -31,6 +31,24 @@ func _ready() -> void:
 	check("poltossa moottori", burn.burn == 1.0 and burn.rumble < 0.5 and burn.plasma == 0.0)
 	check("ilmajarrutuksessa plasma", GameSound.levels({"aero": 0.9}, false).plasma == 0.9)
 	check("humina aina", GameSound.levels({}, false).hum > 0.0)
+	# Radio: viisi kanavaa, joiden tiedostot löytyvät; viritys, seuraava kappale ja sammutus.
+	var files := true
+	for ch: Array in Radio.CHANNELS:
+		for t: Array in ch[1]:
+			files = files and ResourceLoader.exists(Radio.DIR + String(t[0]))
+	check("radiossa viisi kanavaa ja tiedostot", Radio.CHANNELS.size() == 5 and files)
+	var radio: Radio = get_parent().radio
+	var saved_channel: int = Settings.radio_channel
+	radio.tune(2)
+	check("radio viritetty", radio.channel == 2 and radio.track == 0 and String(radio.now_playing()[1]).contains("NASA"))
+	radio.next_track()
+	check("seuraava kappale", radio.track == 1)
+	radio.next_track()
+	check("kanava alkaa alusta", radio.track == 0)
+	radio.tune(-1)
+	check("radio pois", radio.channel == -1 and radio.now_playing().is_empty() and Settings.radio_channel == -1)
+	Settings.set_radio_channel(saved_channel)
+	check("radiokohina", SoundSynth.radio_static().size() > SoundSynth.RATE / 3)
 	var sound: GameSound = get_parent().sound
 	check("äänisolmu pääscenessä", sound != null and not sound.quiet)
 	finish()

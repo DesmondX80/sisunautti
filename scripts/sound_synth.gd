@@ -188,3 +188,19 @@ static func beep(hz: float, length: float) -> PackedFloat32Array:
 		var t := float(i) / RATE
 		x[i] = sin(TAU * hz * t) * minf(1.0, t / 0.005) * minf(1.0, (length - t) / 0.02) * 0.5
 	return x
+
+
+## Radiokohina kanavaa vaihdettaessa: kaistarajattu kohina, rätinä ja vihellys, joka häipyy.
+static func radio_static() -> PackedFloat32Array:
+	var n := int(0.45 * RATE)
+	var band := _lowpass(_highpass(_noise(n, 61), 500.0), 3500.0)
+	var rng := RandomNumberGenerator.new()
+	rng.seed = 62
+	var x := PackedFloat32Array()
+	x.resize(n)
+	for i in n:
+		var t := float(i) / RATE
+		var env := minf(1.0, t / 0.01) * (1.0 - t / 0.45)
+		var crack := (rng.randf() * 2.0 - 1.0) * (1.0 if rng.randf() < 0.02 else 0.0)
+		x[i] = (band[i] * 1.6 + crack * 0.5 + sin(TAU * (1800.0 - 1400.0 * t / 0.45) * t) * 0.08) * env
+	return _normalize(x, 0.6)

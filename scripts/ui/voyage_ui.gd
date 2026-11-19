@@ -15,6 +15,9 @@ const SOURCES := "Kuvalähteet: Solar System Scope (planeetat, Maan pilvet ja y�
 
 ## Valikkopainike tai Esc: pääscene avaa aloitusvalikon.
 signal menu_requested
+var _radio_btn: Button
+var _brand: Label
+var _radio_popup: PopupPanel
 var map: FlightMap
 var cockpit_view: CockpitView = null # 3D-ohjaamo
 
@@ -138,7 +141,8 @@ func _build_top() -> void:
 	menu_btn.tooltip_text = "Valikko (Esc)"
 	menu_btn.custom_minimum_size = Vector2(32, 28)
 	h.add_child(menu_btn)
-	h.add_child(UiKit.label("Sisunautti", "BrandLabel", false))
+	_brand = UiKit.label("Sisunautti", "BrandLabel", false)
+	h.add_child(_brand)
 	var info := UiKit.button("i", show_about)
 	info.tooltip_text = "Tietoa pelistä"
 	info.custom_minimum_size = Vector2(28, 28)
@@ -153,6 +157,10 @@ func _build_top() -> void:
 	clock.add_child(_date)
 	clock.add_child(_time)
 	h.add_child(clock)
+	_radio_btn = UiKit.button("♪ Radio", show_radio)
+	_radio_btn.tooltip_text = "Ohjaamon radio: musiikkia ja johtokeskuksen radioliikennettä"
+	_radio_btn.custom_minimum_size = Vector2(0, 32)
+	h.add_child(_radio_btn)
 	_panel_btn = UiKit.button("▤", toggle_panel)
 	_panel_btn.tooltip_text = "Piilota sivupaneeli (P)"
 	_panel_btn.custom_minimum_size = Vector2(36, 32)
@@ -298,6 +306,10 @@ func scroll_panel_to_end() -> void:
 
 func _layout() -> void:
 	var wide := size.x >= WIDE_MIN
+	# Kapeassa ikkunassa radiopainikkeessa vain kuvake, jotta yläpalkki mahtuu.
+	_radio_btn.text = "♪ Radio" if size.x >= 520.0 else "♪"
+	_radio_btn.custom_minimum_size.x = 0.0 if size.x >= 520.0 else 36.0
+	_brand.visible = size.x >= 440.0
 	if wide != _wide or _view_area.get_parent() == null:
 		_wide = wide
 		for n: Control in [_view_area, _panel_scroll, _panel_pad]:
@@ -621,6 +633,60 @@ func _popup(d: AcceptDialog, content: Control, max_w: int) -> void:
 	d.size = Vector2i(w, 0)
 	d.reset_size()
 	d.move_to_center()
+
+
+## Radiopaneeli yläpalkin painikkeen alle: kanavat, soiva kappale, seuraava kappale, sammutus ja voimakkuus.
+func show_radio() -> void:
+	var radio := get_tree().get_first_node_in_group("radio") as Radio
+	if radio == null:
+		return
+	if _radio_popup == null:
+		_radio_popup = PopupPanel.new()
+		_radio_popup.add_theme_stylebox_override("panel", UiKit.box(Color(UiKit.CARD, 0.97), Color(UiKit.ACCENT, 0.35), 12, 16))
+		add_child(_radio_popup)
+		radio.changed.connect(func() -> void:
+			if _radio_popup.visible:
+				_fill_radio(radio))
+	_fill_radio(radio)
+	var w := mini(340, int(size.x) - 16)
+	var p := _radio_btn.get_global_rect()
+	var x := clampi(int(p.end.x) - w, 8, int(size.x) - w - 8)
+	_radio_popup.popup(Rect2i(Vector2i(x, int(p.end.y) + 6), Vector2i(w, 0)))
+
+
+func _fill_radio(radio: Radio) -> void:
+	for c in _radio_popup.get_children():
+		c.queue_free()
+	var v := UiKit.vbox(10)
+	_radio_popup.add_child(v)
+	v.add_child(UiKit.label("♪ Radio", "TitleLabel"))
+	var np := radio.now_playing()
+	if np.is_empty():
+		v.add_child(UiKit.label("Radio on pois päältä. Valitse kanava.", "MutedLabel"))
+	else:
+		v.add_child(UiKit.label("Soi: " + String(np[0])))
+		v.add_child(UiKit.label(String(np[1]), "MutedLabel"))
+	for i in Radio.CHANNELS.size():
+		var b := UiKit.button(String(Radio.CHANNELS[i][0]), radio.tune.bind(i), "GoButton" if i == radio.channel else "")
+		b.alignment = HORIZONTAL_ALIGNMENT_LEFT
+		v.add_child(b)
+	var row := UiKit.hbox(8)
+	var nxt := UiKit.button("Seuraava kappale", radio.next_track)
+	nxt.disabled = radio.channel < 0
+	row.add_child(nxt)
+	var off := UiKit.button("Sammuta", radio.tune.bind(-1))
+	off.disabled = radio.channel < 0
+	row.add_child(off)
+	v.add_child(row)
+	v.add_child(UiKit.label("Musiikin voimakkuus", "MutedLabel"))
+	var slider := HSlider.new()
+	slider.min_value = 0.0
+	slider.max_value = 1.0
+	slider.step = 0.05
+	slider.value = Settings.music_volume
+	slider.value_changed.connect(func(x: float) -> void: Settings.set_music_volume(x))
+	v.add_child(slider)
+	_radio_popup.reset_size.call_deferred()
 
 
 ## Pelin versio (project.godot), näytetään Tietoa-ikkunassa.
