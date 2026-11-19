@@ -156,9 +156,12 @@ func _frame(c: CanvasItem) -> void:
 
 
 func _header(c: CanvasItem, text: String, right: String = "") -> void:
-	c.draw_string(font, Vector2(30, 52), text, HORIZONTAL_ALIGNMENT_LEFT, SIZE.x - 300, 30, ACCENT)
+	var room := SIZE.x - 60.0
 	if right != "":
-		_right(c, mono, right, SIZE.x - 30, 50, 22, MUTED)
+		var r: Array = fit_text(mono, right, 22, 260.0)
+		_text(c, mono, Vector2(SIZE.x - 30, 50), r[0], r[1], MUTED, -1.0, HORIZONTAL_ALIGNMENT_RIGHT)
+		room -= mono.get_string_size(r[0], HORIZONTAL_ALIGNMENT_LEFT, -1, r[1]).x + 24.0
+	_text(c, font, Vector2(30, 52), text, 30, ACCENT, room)
 	c.draw_line(Vector2(30, 66), Vector2(SIZE.x - 30, 66), Color(ACCENT, 0.35), 2.0)
 	for i in 6:
 		c.draw_rect(Rect2(30 + i * 14, 72, 8, 4), Color(ACCENT, 0.6 if i < 3 else 0.25))
@@ -170,7 +173,7 @@ func _rows(c: CanvasItem, x: float, y: float, w: float, k: float = 1.3) -> float
 		var size_px: int = roundi(float(r[1]) * k)
 		var col: Color = r[2] if r.size() > 2 else FG
 		y += size_px * 1.2
-		c.draw_string(font if int(r[1]) >= 34 else mono, Vector2(x, y), String(r[0]), HORIZONTAL_ALIGNMENT_LEFT, w, size_px, col)
+		_text(c, font if int(r[1]) >= 34 else mono, Vector2(x, y), String(r[0]), size_px, col, w)
 		y += size_px * 0.3
 	return y
 
@@ -190,14 +193,46 @@ func _fuel_bar(c: CanvasItem, rect: Rect2) -> void:
 			c.draw_rect(Rect2(rect.position.x + i * cw + 1, rect.position.y + 2, cw - 3, rect.size.y - 4), col)
 
 
-func _right(c: CanvasItem, f: Font, text: String, x: float, y: float, fs: int, col: Color) -> void:
-	var tw := f.get_string_size(text, HORIZONTAL_ALIGNMENT_LEFT, -1, fs).x
-	c.draw_string(f, Vector2(x - tw, y), text, HORIZONTAL_ALIGNMENT_LEFT, -1, fs, col)
+func _right(c: CanvasItem, f: Font, text: String, x: float, y: float, fs: int, col: Color, max_w: float = -1.0) -> void:
+	_text(c, f, Vector2(x, y), text, fs, col, max_w, HORIZONTAL_ALIGNMENT_RIGHT)
 
 
-func _center(c: CanvasItem, f: Font, text: String, x: float, y: float, fs: int, col: Color) -> void:
-	var tw := f.get_string_size(text, HORIZONTAL_ALIGNMENT_LEFT, -1, fs).x
-	c.draw_string(f, Vector2(x - tw / 2.0, y), text, HORIZONTAL_ALIGNMENT_LEFT, -1, fs, col)
+func _center(c: CanvasItem, f: Font, text: String, x: float, y: float, fs: int, col: Color, max_w: float = -1.0) -> void:
+	_text(c, f, Vector2(x, y), text, fs, col, max_w, HORIZONTAL_ALIGNMENT_CENTER)
+
+
+## Teksti kohtaan p (perusviiva; x on vasen reuna, oikea reuna tai keskikohta tasauksen mukaan). Jos max_w > 0, teksti
+## sovitetaan leveyteen (fit_text).
+func _text(c: CanvasItem, f: Font, p: Vector2, text: String, fs: int, col: Color, max_w: float = -1.0,
+		align: HorizontalAlignment = HORIZONTAL_ALIGNMENT_LEFT) -> void:
+	var fit: Array = fit_text(f, text, fs, max_w)
+	var tw := f.get_string_size(fit[0], HORIZONTAL_ALIGNMENT_LEFT, -1, fit[1]).x
+	var x := p.x
+	if align == HORIZONTAL_ALIGNMENT_RIGHT:
+		x -= tw
+	elif align == HORIZONTAL_ALIGNMENT_CENTER:
+		x -= tw / 2.0
+	c.draw_string(f, Vector2(x, p.y), fit[0], HORIZONTAL_ALIGNMENT_LEFT, -1, fit[1], col)
+
+
+## Sovittaa tekstin leveyteen max_w: fonttia pienennetään enintään min_scale-kertaiseksi, ja jos se ei riitä, loppu
+## korvataan ellipsillä. Palauttaa [teksti, fonttikoko]. max_w <= 0: ei rajaa.
+static func fit_text(f: Font, text: String, fs: int, max_w: float, min_scale: float = 0.6) -> Array:
+	if max_w <= 0.0:
+		return [text, fs]
+	var w := f.get_string_size(text, HORIZONTAL_ALIGNMENT_LEFT, -1, fs).x
+	if w <= max_w:
+		return [text, fs]
+	var smallest := maxi(1, ceili(fs * min_scale))
+	var size := clampi(floori(fs * max_w / w), smallest, fs)
+	while size > smallest and f.get_string_size(text, HORIZONTAL_ALIGNMENT_LEFT, -1, size).x > max_w:
+		size -= 1
+	if f.get_string_size(text, HORIZONTAL_ALIGNMENT_LEFT, -1, size).x <= max_w:
+		return [text, size]
+	var t := text
+	while t.length() > 1 and f.get_string_size(t.strip_edges() + "…", HORIZONTAL_ALIGNMENT_LEFT, -1, size).x > max_w:
+		t = t.substr(0, t.length() - 1)
+	return [t.strip_edges() + "…", size]
 
 
 ## Rengasmittari: arvo 0–1, otsikko ja teksti keskellä.
@@ -207,7 +242,7 @@ func _ring_gauge(c: CanvasItem, p: Vector2, r: float, v: float, label: String, t
 	if v > 0.0:
 		c.draw_arc(p, r, a0, a0 + TAU * clampf(v, 0.0, 1.0), 64, col, 10.0, true)
 	c.draw_arc(p, r - 16, 0, TAU, 48, Color(ACCENT, 0.3), 1.5, true)
-	_center(c, font, text, p.x, p.y + 9, 24, FG)
+	_center(c, font, text, p.x, p.y + 9, 24, FG, (r - 20.0) * 2.0)
 	_center(c, mono, label, p.x, p.y + r + 34, 18, MUTED)
 
 
@@ -278,7 +313,7 @@ func _draw_nav(c: CanvasItem) -> void:
 			["SÄDE", "%s AU" % (Fmt.num(reach, 1) if reach < 10.0 else Fmt.num(roundf(reach))), FG],
 			["AURINGOSTA", "%s AU" % Fmt.num(Flight.norm(ship) / au, 2), FG]]:
 		c.draw_string(mono, Vector2(30, y), item[0], HORIZONTAL_ALIGNMENT_LEFT, -1, 18, MUTED)
-		c.draw_string(font, Vector2(30, y + 32), item[1], HORIZONTAL_ALIGNMENT_LEFT, 290, 26, item[2])
+		_text(c, font, Vector2(30, y + 32), item[1], 26, item[2], 290.0)
 		y += 98.0
 	# Oikea sarake: lähimmät planeetat.
 	dists.sort()
@@ -287,8 +322,8 @@ func _draw_nav(c: CanvasItem) -> void:
 		var e: Array = dists[i]
 		var yy := 158.0 + i * 92.0
 		c.draw_circle(Vector2(826, yy - 7), 6.0, Planets.info(e[1]).color)
-		c.draw_string(mono, Vector2(842, yy), e[1], HORIZONTAL_ALIGNMENT_LEFT, -1, 20, FG)
-		c.draw_string(font, Vector2(818, yy + 34), _au_or_km(float(e[0])), HORIZONTAL_ALIGNMENT_LEFT, -1, 24, ACCENT)
+		_text(c, mono, Vector2(842, yy), e[1], 20, FG, SIZE.x - 30 - 842)
+		_text(c, font, Vector2(818, yy + 34), _au_or_km(float(e[0])), 24, ACCENT, SIZE.x - 30 - 818)
 
 
 ## Etäisyys AU:na, lähellä kilometreinä.
@@ -337,7 +372,7 @@ func _draw_ship(c: CanvasItem) -> void:
 	c.draw_rect(Rect2(tank.position + Vector2(3, 3), Vector2((tank.size.x - 6) * fuel, tank.size.y - 6)), Color(GOOD if fuel > 0.2 else BAD, 0.55))
 	# Selitteet viivoineen.
 	c.draw_line(o + Vector2(-20, 30) * s, Vector2(150, 520), Color(ACCENT, 0.5), 1.5)
-	c.draw_string(mono, Vector2(40, 540), "SÄILIÖ %d %%" % roundi(fuel * 100.0), HORIZONTAL_ALIGNMENT_LEFT, -1, 20, FG)
+	_text(c, mono, Vector2(40, 540), "SÄILIÖ %d %%" % roundi(fuel * 100.0), 20, FG, 580.0)
 	c.draw_line(o + Vector2(-190, 0) * s, Vector2(40, 140), Color(ACCENT, 0.5), 1.5)
 	c.draw_string(mono, Vector2(30, 130), "MOOTTORI %s" % ("POLTTO" if thrust > 0.02 else "VALMIUS"), HORIZONTAL_ALIGNMENT_LEFT, -1, 20, WARM if thrust > 0.02 else FG)
 	# Oikea sarake: päänäytön rivit.
@@ -423,13 +458,14 @@ func _draw_systems_over(c: CanvasItem) -> void:
 	if data.is_empty():
 		return
 	var aim: Variant = data.get("aim")
-	_center(c, font, String(aim).to_upper() if aim != null else "AURINKO", 790, 420, 24, ACCENT)
+	_center(c, font, String(aim).to_upper() if aim != null else "AURINKO", 790, 420, 24, ACCENT, 340.0)
 	var list := [["SUUNTA", String(aim) if aim != null else "vapaa"], ["MOOTTORI", String(data.engine)],
 		["AIKAKIIHDYTYS", warp_label(float(data.warp))], ["SÄTEILYSUOJA", "OK"]]
 	for i in list.size():
 		var y := 462.0 + i * 26.0
 		c.draw_string(mono, Vector2(630, y), list[i][0], HORIZONTAL_ALIGNMENT_LEFT, -1, 18, MUTED)
-		_right(c, mono, list[i][1], 990, y, 18, FG)
+		var label_w := mono.get_string_size(list[i][0], HORIZONTAL_ALIGNMENT_LEFT, -1, 18).x
+		_right(c, mono, list[i][1], 990, y, 18, FG, 990.0 - 630.0 - label_w - 16.0)
 
 
 # --- Kohdekamera ---
@@ -438,15 +474,15 @@ func _draw_camera(c: CanvasItem) -> void:
 	# Tekstipaneeli kamerakuvan päällä.
 	c.draw_rect(Rect2(10, 10, 420, SIZE.y - 20), Color(0.01, 0.04, 0.09, 0.78))
 	c.draw_line(Vector2(430, 10), Vector2(430, SIZE.y - 10), Color(ACCENT, 0.4), 2.0)
-	c.draw_string(font, Vector2(30, 52), title, HORIZONTAL_ALIGNMENT_LEFT, 390, 28, ACCENT)
+	_text(c, font, Vector2(30, 52), title, 28, ACCENT, 390.0)
 	c.draw_line(Vector2(30, 66), Vector2(410, 66), Color(ACCENT, 0.35), 2.0)
 	_rows(c, 30, 90, 390, 1.25)
 	_fuel_bar(c, Rect2(30, SIZE.y - 70, 380, 30))
 	var blink := fmod(_time_s(), 1.6) < 0.8
-	var cam_label := "KOHDEKAMERA  %s" % _globe_name.to_upper()
-	var cam_w := mono.get_string_size(cam_label, HORIZONTAL_ALIGNMENT_LEFT, -1, 20).x
+	var cam: Array = fit_text(mono, "KOHDEKAMERA  %s" % _globe_name.to_upper(), 20, SIZE.x - 30.0 - 470.0)
+	var cam_w := mono.get_string_size(cam[0], HORIZONTAL_ALIGNMENT_LEFT, -1, cam[1]).x
 	c.draw_circle(Vector2(SIZE.x - 50 - cam_w, 44), 8.0, BAD if blink else Color(BAD, 0.3))
-	_right(c, mono, cam_label, SIZE.x - 30, 52, 20, BRIGHT)
+	_right(c, mono, cam[0], SIZE.x - 30, 52, cam[1], BRIGHT)
 	# Tähtäysrasti kuvan keskellä.
 	var p := Vector2(720, 300)
 	for d: Vector2 in [Vector2.LEFT, Vector2.RIGHT, Vector2.UP, Vector2.DOWN]:
@@ -461,9 +497,9 @@ func _draw_mini(c: CanvasItem) -> void:
 		return
 	var thrust := clampf(float(data.get("thrust", 0.0)), 0.0, 1.0)
 	c.draw_string(mono, Vector2(40, 150), "AIKAKIIHDYTYS", HORIZONTAL_ALIGNMENT_LEFT, -1, 36, MUTED)
-	c.draw_string(font, Vector2(40, 240), warp_label(float(data.warp)), HORIZONTAL_ALIGNMENT_LEFT, -1, 80, WARM)
+	_text(c, font, Vector2(40, 240), warp_label(float(data.warp)), 80, WARM, 490.0)
 	c.draw_string(mono, Vector2(560, 150), "MOOTTORI", HORIZONTAL_ALIGNMENT_LEFT, -1, 36, MUTED)
-	c.draw_string(font, Vector2(560, 240), String(data.engine).to_upper(), HORIZONTAL_ALIGNMENT_LEFT, -1, 64, WARM if thrust > 0.02 else FG)
+	_text(c, font, Vector2(560, 240), String(data.engine).to_upper(), 64, WARM if thrust > 0.02 else FG, SIZE.x - 40.0 - 560.0)
 	var r := Rect2(40, 330, SIZE.x - 80, 60)
 	c.draw_rect(r, Color("#0d2340"))
 	c.draw_rect(Rect2(r.position, Vector2(r.size.x * thrust, r.size.y)), WARM)

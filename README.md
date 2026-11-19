@@ -53,7 +53,8 @@ tools/run_tests.sh          # ikkunattomat testit, esim. tools/run_tests.sh sett
   panoraamaan. Panoraaman horisonttia on laskettu 11°, jotta sen kojelauta jää etukuvan kojelaudan taakse, ja sen omat
   ohjainsauvat on retusoitu pois (LaMa-inpainting), joten alas katsottaessa näkyvät vain lentäjän kädet sauvoissa. Näytöt (tutka, aluskaavio, tähtäin,
   järjestelmät, kohdekamera ja pikkunäyttö) ovat `SubViewport`-tekstuureja kuvan näyttöjen muodossa (leveys 1024),
-  jotka piirretään uudelleen enintään 20 kertaa sekunnissa; kohdekamera ja järjestelmänäytön hologrammi näyttävät
+  jotka piirretään uudelleen enintään 20 kertaa sekunnissa (pitkät tekstit sovitetaan näytölle pienentämällä fonttia,
+  viimeisenä keinona ellipsillä, `CockpitScreen.fit_text`); kohdekamera ja järjestelmänäytön hologrammi näyttävät
   kohteen pinnan pyörivänä pallona (`shaders/globe.gdshader`). Näyttöä napsauttamalla katse kääntyy siihen ja
   kuvakulma kapenee niin, että näyttö täyttää kuvan; uusi napsautus, Esc tai Loitonna palauttaa näkymän. Rullalla
   ja nipistämällä zoomataan vapaasti. Moottorin ja plasman hehku sävyttää ohjaamon kuvaa, ja ikkunan lasissa on

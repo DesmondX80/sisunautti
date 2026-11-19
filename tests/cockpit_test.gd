@@ -35,6 +35,17 @@ func _ready() -> void:
 	check("ilmajarrutuksen plasma ja taivaan väri", float(s.aero) > 0.9 and s.sky_color != null)
 	G.burn_at = -INF
 	G.aero_at = -INF
+	# Näyttöjen tekstit mahtuvat leveyteen: ensin fonttia pienennetään, sitten ellipsi.
+	var mono: Font = load(UiKit.FONT)
+	var fit: Array = CockpitScreen.fit_text(mono, "lyhyt", 20, 300.0)
+	check("lyhyt teksti ennallaan", fit[0] == "lyhyt" and fit[1] == 20)
+	var long := "Ganymedes 1 234 567 890 km"
+	fit = CockpitScreen.fit_text(mono, long, 26, 300.0)
+	check("pitkä teksti pienemmällä fontilla", fit[0] == long and fit[1] < 26 and fit[1] >= 16
+		and mono.get_string_size(fit[0], HORIZONTAL_ALIGNMENT_LEFT, -1, fit[1]).x <= 300.0)
+	fit = CockpitScreen.fit_text(mono, long + long + long, 26, 300.0)
+	check("liian pitkä teksti ellipsillä", String(fit[0]).ends_with("…") and fit[1] == 16
+		and mono.get_string_size(fit[0], HORIZONTAL_ALIGNMENT_LEFT, -1, fit[1]).x <= 300.0)
 	# Pimennys
 	check("ei peittoa", Space.covered(0.01, 0.01, 0.5) == 0.0)
 	check("täysi peitto", Space.covered(0.01, 0.05, 0.0) == 1.0)

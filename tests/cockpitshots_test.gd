@@ -3,7 +3,8 @@ extends TestCase
 ##   godot -- --cockpitshotstest=/polku/kuviin [--size=1600x900] [--quality=2] [--only=nimi] [--state=tallennus.json]
 ## --state: kuva annetusta tallennuksesta (pelaajan näkymä sellaisenaan ja katse alas), muut näkymät ohitetaan.
 ## Näkymät: laukaisualusta päivällä, Max Q, kiertorata Maan päivä- ja yöpuolen yllä, Mars lähellä, Jupiterin
-## ilmajarrutus, Saturnus renkaineen, Aurinko kohti katsottaessa, planeetan varjo ja zoomaus näyttöihin. Lopuksi mitataan ruutunopeus.
+## ilmajarrutus, Saturnus renkaineen, Aurinko kohti katsottaessa, planeetan varjo, zoomaus näyttöihin ja kaikki
+## näytöt lähtölaskennassa, pitkällä lennolla ja kuun kiertoradalla (--only=naytot). Lopuksi mitataan ruutunopeus.
 
 const START := 1794614400000.0 # 2026-11-14T00:00:00Z
 
@@ -223,6 +224,9 @@ func _run() -> void:
 			cv.pitch = v[2]
 			await shot("katse-" + v[0], 20)
 		cv.reset_view()
+	# Näyttöjen tekstit eri vaiheissa (#21): lähtölaskenta, lento kaukana (pitkät luvut) ja kuun kiertorata.
+	if want("naytot"):
+		await _screens_shots()
 	# Ruutunopeus: kiertorata Maan yllä, katse Maahan, 5 s.
 	orbit_at("Maa", t0, sun_angle("Maa", t0, false) + 0.3)
 	cv.reset_view()
@@ -236,3 +240,38 @@ func _run() -> void:
 	report.append("ruutunopeus: %.1f fps (%s, %s, laatu %s, ikkuna %s)" % [fps, RenderingServer.get_video_adapter_name(),
 		RenderingServer.get_current_rendering_method(), Settings.quality_name(), DisplayServer.window_get_size()])
 	print(report[-1])
+
+
+## Zoomaus jokaiseen näyttöön (0–5) eri vaiheissa.
+func _screens_shots() -> void:
+	G.fake_real_ms = START
+	G.new_game()
+	G.start_countdown()
+	G.fake_real_ms += 4000.0
+	await _zoom_all("alusta")
+	# Lento Neptunukselle puolivälissä: pitkä lentoaika, suuret etäisyydet ja nopeudet.
+	var t0 := START + 86400000.0
+	orbit_at("Maa", t0, 0.0)
+	G.change_ship("ydin")
+	G.state.fuel = G.fuel_max()
+	G.begin_search("Neptunus")
+	G.finish_search()
+	if not G.options.is_empty() and G.choose(G.options[0]):
+		G.jump_to_window()
+		if G.arm():
+			G.launch()
+			var f: Dictionary = G.state.flight
+			G.anchor(float(f.depart) + (float(f.arrive) - float(f.depart)) * 0.6, 7)
+			await _zoom_all("lento")
+	orbit_at("Ganymedes", t0, 0.5)
+	await _zoom_all("ganymedes")
+	cv.reset_view()
+
+
+func _zoom_all(phase: String) -> void:
+	cv.snap_attitude()
+	await _frames(2)
+	for i in 6:
+		cv.zoom_to(i)
+		await shot("naytto-%s-%d" % [phase, i], 30)
+	cv.reset_view()
