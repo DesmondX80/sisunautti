@@ -30,6 +30,7 @@ var exhaust: GPUParticles3D
 var smoke: GPUParticles3D
 var sparks: GPUParticles3D
 var tools: HBoxContainer
+var tower: LaunchTower
 var overlay: ColorRect # ohjaamon kuva ja näytöt 3D-näkymän päällä
 var overlay_mat: ShaderMaterial
 var zoom_out_button: Button
@@ -79,6 +80,8 @@ func _ready() -> void:
 	head.add_child(camera)
 	cabin = Cabin.new()
 	ship.add_child(cabin)
+	tower = LaunchTower.new()
+	world.add_child(tower)
 	_build_lights()
 	_build_particles()
 	_build_flare()
@@ -142,6 +145,7 @@ func _build_lights() -> void:
 	shine = DirectionalLight3D.new()
 	shine.light_energy = 0.0
 	shine.shadow_enabled = false
+	shine.light_cull_mask = ~LaunchTower.LAYER
 	world.add_child(shine)
 	ceiling = OmniLight3D.new()
 	ceiling.light_color = Color(1.0, 0.91, 0.8)
@@ -508,6 +512,7 @@ func _process(delta: float) -> void:
 	var px_per_rad := size.y / 2.0 / tan(deg_to_rad(camera.fov) / 2.0)
 	space.update(ship_km, t, px_per_rad)
 	_attitude(s, delta)
+	tower.update(s)
 	_zoom_step(delta)
 	# Katse ja tärinä: nopeaa värinää, hitaampaa heiluntaa ja pientä kiertoa (zoomattuna vähemmän).
 	var rumble := clampf(float(s.shake), 0.0, 1.0) * camera.fov / base_fov
@@ -604,6 +609,8 @@ func _lighting(s: Dictionary) -> void:
 		sky_mat.set_shader_parameter("day_color", sky_color if sky_color != null else SKY_DAY)
 		sky_mat.set_shader_parameter("sun_dir", space.sun_dir)
 	space.star_material.set_shader_parameter("fade", maxf(0.0, 1.0 - sky * 2.5))
+	# Kirkas päivätaivas ylittää hehkun kynnyksen: hehku valuisi ohuiden rakenteiden (laukaisutorni) päälle harsona.
+	env.glow_hdr_threshold = lerpf(1.5, 6.0, clampf(sky * 2.0, 0.0, 1.0))
 	env.ambient_light_color = (sky_color if sky_color != null else SKY_LIGHT) if sky > 0.0 else Color(0.55, 0.6, 0.7)
 	env.ambient_light_energy = 0.05 + sky * 0.5
 	# Lasin häikäisy ja linssiheijastus.

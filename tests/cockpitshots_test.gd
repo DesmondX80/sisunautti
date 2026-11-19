@@ -2,7 +2,7 @@ extends TestCase
 ## Kuvakaappaukset ohjaamosta (vaatii ikkunan, ei mukana tools/run_tests.sh:ssa):
 ##   godot -- --cockpitshotstest=/polku/kuviin [--size=1600x900] [--quality=2] [--only=nimi] [--state=tallennus.json]
 ## --state: kuva annetusta tallennuksesta (pelaajan näkymä sellaisenaan ja katse alas), muut näkymät ohitetaan.
-## Näkymät: laukaisualusta päivällä, Max Q, kiertorata Maan päivä- ja yöpuolen yllä, Mars lähellä, Jupiterin
+## Näkymät: laukaisualusta päivällä, laukaisutorni (nousu ja yö, --only=torni), Max Q, kiertorata Maan päivä- ja yöpuolen yllä, Mars lähellä, Jupiterin
 ## ilmajarrutus, Saturnus renkaineen, Aurinko kohti katsottaessa, planeetan varjo, zoomaus näyttöihin ja kaikki
 ## näytöt lähtölaskennassa, pitkällä lennolla ja kuun kiertoradalla (--only=naytot). Lopuksi mitataan ruutunopeus.
 
@@ -137,6 +137,22 @@ func _run() -> void:
 	cv.reset_view()
 	if want("alusta"):
 		await shot("alusta-paiva", 60)
+	# Laukaisutorni nousun alussa ja yöllä (#27).
+	if want("torni"):
+		G.start_countdown()
+		G.fake_real_ms += 10000.0 + 3000.0
+		G.tick()
+		await shot("torni-nousu-3s", 20)
+		G.fake_real_ms += 5000.0
+		G.tick()
+		await shot("torni-nousu-8s", 20)
+		G.fake_real_ms = best + 43200000.0
+		G.new_game()
+		cv.reset_view()
+		await shot("torni-yo", 60)
+		G.fake_real_ms = best
+		G.new_game()
+		cv.reset_view()
 	G.start_countdown()
 	G.fake_real_ms += 10000.0 + 68000.0
 	G.tick()

@@ -12,6 +12,14 @@ func _ready() -> void:
 	G.new_game()
 	var s := CockpitState.make()
 	check("alustalla nokka ylös ja kolme näyttöä", s.get("nose") != null and s.screens.size() == 3 and s.screens[0][0] == "LAUKAISUALUSTA")
+	# Laukaisutorni: alustalla aluksen vieressä, yläosa ohjaamon yläpuolella; katoaa nousussa.
+	var tower := LaunchTower.new()
+	add_child(tower)
+	tower.update(s)
+	var side := Vector2(LaunchTower.OFFSET_RIGHT, LaunchTower.OFFSET_ROOF).length()
+	var tower_top := tower.position + tower.basis.y * LaunchTower.HEIGHT
+	check("laukaisutorni alustan vieressä", tower.visible and absf(tower.position.length() - Vector2(side, 60.0).length()) < 1.0
+		and tower_top.dot(tower.basis.y) > 50.0)
 	G.start_countdown()
 	G.fake_real_ms += 12000.0
 	s = CockpitState.make()
@@ -19,6 +27,9 @@ func _ready() -> void:
 	G.fake_real_ms += 600000.0
 	G.tick()
 	s = CockpitState.make()
+	tower.update(s)
+	check("laukaisutorni katoaa nousussa", not tower.visible)
+	tower.queue_free()
 	check("kiertoradalla nokka Maahan", s.aim == "Maa" and s.screens[0][0] == "KIERTORATA")
 	G.begin_search("Mars")
 	G.finish_search()
