@@ -16,6 +16,15 @@ korvasi selainversion samassa osoitteessa: ensimmäisellä käynnistyksellä sel
 localStoragesta (avaimet `avaruuslento`, `avaruuslento.view` ja `avaruuslento.panel`), kirjaa tuonnin lokikirjaan
 ja poistaa vanhan service workerin ja sen välimuistit.
 
+## Aloitusvalikko
+
+Peli alkaa aloitusvalikosta (`scripts/ui/start_menu.gd`): Jatka peliä (kun peli on tallessa), Uusi peli (kysyy
+vahvistuksen, jos tallennus korvataan), Asetukset (grafiikan laatu, koko näyttö) ja Lopeta peli (vain työpöydällä).
+Pelistä valikkoon pääsee yläpalkin ≡-painikkeella tai Esc-näppäimellä. Taustalla on James Webb -avaruusteleskoopin
+kuva Kosmiset kalliot Carinan sumussa (NASA, ESA, CSA, STScI, [CC BY 4.0](https://esawebb.org/copyright/),
+`assets/menu/taustakuva.webp`) hitaasti liukuen ja zoomaten, hiiren mukaan parallaksina ja tähdet tuikkien
+(`shaders/menu_bg.gdshader`).
+
 ## Kehitys
 
 Tarvitaan [Godot 4.7.2](https://godotengine.org/download/) (vakioversio, ei .NET).
@@ -40,7 +49,7 @@ tools/run_tests.sh          # ikkunattomat testit, esim. tools/run_tests.sh sett
 - Käyttöliittymä (`scripts/ui/`): näkymä (lentokartta, myöhemmin 3D-ohjaamo) täyttää ikkunan, ja ohjaimet ovat oikean
   reunan 420 px:n paneelissa, jonka voi piilottaa. Alle 1000 px:n levyisessä ikkunassa paneeli on näkymän alla.
   Teema on selainversion väreissä (`ui/theme.tres`, luodaan komennolla `godot --headless -s tools/make_theme.gd`).
-  Näppäimet: 1–8 aikakiihdytys, + ja − zoomaus, P sivupaneeli, T takakamera, F11 koko näyttö. Kartan zoomaus myös hiiren rullalla ja
+  Näppäimet: Esc valikko, 1–8 aikakiihdytys, + ja − zoomaus, P sivupaneeli, T takakamera, F11 koko näyttö. Kartan zoomaus myös hiiren rullalla ja
   nipistämällä.
 - 3D-ohjaamo (`scripts/cockpit/`, varjostimet `shaders/`): etuseinä on ohjaamon kuva (`assets/cockpit/ohjaamo.png`)
   täsmälleen kuvan kuvakulmassa (vaakakulma noin 95°). Koska kamera vain kääntyy paikallaan, tasainen kuva näkyy oikein
@@ -121,6 +130,8 @@ tests/, tools/                      # Godot: ikkunattomat testit, vertailuarvot 
 ```
 
 ## Tekstuurien lähteet
+
+Aloitusvalikon taustakuva `assets/menu/taustakuva.webp` (3840 × 2224, pienennetty alkuperäisestä 14575 × 8441) on James Webb -avaruusteleskoopin kuva Kosmiset kalliot Carinan sumussa ([ESA/Webb weic2205a](https://esawebb.org/images/weic2205a/)): NASA, ESA, CSA, STScI, [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/).
 
 Ohjaamon kuva `assets/cockpit/ohjaamo.png` (1382 × 777) on pelin tekijän antama kuva; sen ikkuna-alue on tehty läpinäkyväksi. Ohjaamon panoraama on pelin tekijän tekemä (Gemini, 1456 × 720), ja se on suurennettu nelinkertaiseksi Real-ESRGANilla (malli realesrgan-x4plus, reunat kierrettyinä, jotta sauma pysyy jatkuvana).
 

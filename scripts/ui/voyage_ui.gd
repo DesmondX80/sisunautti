@@ -13,6 +13,8 @@ const BURN_SIZES := [[0.01, "10 m/s"], [0.05, "50 m/s"], [0.1, "100 m/s"], [0.5,
 const ABOUT := "Peli, jossa lähdetään laukaisualustalta Maan pinnalta kiertoradalle ja sieltä muille planeetoille ja niiden kuille. Kantoraketti nostaa aluksen 200 km:n radalle noin 8,5 minuutissa. Kiertoradalla lähtöpoltto kytketään päälle, ja moottori syttyy, kun alus on radalla kohdassa, josta poltto linkoaa sen kohteeseen. Perillä jarrutetaan matalalle radalle. Radat, laukaisuikkunat ja polttoaineen kulutus (Δv) lasketaan oikeilla taivaanmekaniikan kaavoilla, ja pelin kello kulkee oikeassa ajassa, ellei aikaa kiihdytä."
 const SOURCES := "Kuvalähteet: Solar System Scope (planeetat, Maan pilvet ja yövalot, Kuu ja Saturnuksen renkaat; CC BY 4.0, solarsystemscope.com/textures), NASA/Goddard SVS Deep Star Maps 2020 (Linnunrata), NASA/JPL/USGS (Phobos, Io), NASA/JPL-Caltech/SSI/LPI (Enceladus, Triton), Björn Jónsson NASAn kuvista (Ganymedes) ja Seek9750 Wikimedia Commonsissa (Europa). Kirjasin: DejaVu Sans (Bitstream Vera -lisenssi)."
 
+## Valikkopainike tai Esc: pääscene avaa aloitusvalikon.
+signal menu_requested
 var map: FlightMap
 var cockpit_view: CockpitView = null # 3D-ohjaamo
 
@@ -98,7 +100,9 @@ func _unhandled_key_input(event: InputEvent) -> void:
 	var e := event as InputEventKey
 	if e == null or not e.pressed or e.echo:
 		return
-	if e.keycode == KEY_F11:
+	if e.keycode == KEY_ESCAPE and is_visible_in_tree():
+		menu_requested.emit()
+	elif e.keycode == KEY_F11:
 		toggle_fullscreen()
 	elif e.keycode == KEY_P:
 		toggle_panel()
@@ -130,6 +134,10 @@ func _build_top() -> void:
 	_top.theme_type_variation = "TopBar"
 	var h := UiKit.hbox(12)
 	_top.add_child(h)
+	var menu_btn := UiKit.button("≡", func() -> void: menu_requested.emit())
+	menu_btn.tooltip_text = "Valikko (Esc)"
+	menu_btn.custom_minimum_size = Vector2(32, 28)
+	h.add_child(menu_btn)
 	h.add_child(UiKit.label("Sisunautti", "BrandLabel", false))
 	var info := UiKit.button("i", show_about)
 	info.tooltip_text = "Tietoa pelistä"

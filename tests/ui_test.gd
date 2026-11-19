@@ -18,6 +18,7 @@ func _ready() -> void:
 	_play()
 	_layout()
 	check("versio Tietoa-ikkunan otsikossa", ui._about.title == "Sisunautti " + VoyageUI.version())
+	_menu()
 	G.fake_real_ms = -1.0
 	DirAccess.remove_absolute(G.TEST_SAVE_PATH)
 	finish()
@@ -214,3 +215,26 @@ func _layout() -> void:
 	for m: String in Flight.MOONS:
 		ok = ok and info.get(m, {}).get("facts", []).size() >= 2
 	check("jokaisella planeetalla ja kuulla on tietokortti", ok)
+
+
+## Aloitusvalikko: testeissä piilossa; avautuu valikkopainikkeesta, Jatka peliä vain tallennetulle pelille,
+## Uusi peli kysyy vahvistuksen ja aloittaa alustalta.
+func _menu() -> void:
+	var menu: StartMenu = get_parent().menu
+	check("valikko piilossa testeissä", menu != null and not menu.visible)
+	ui.menu_requested.emit()
+	check("valikko avautuu", menu.visible)
+	check("jatka peliä tallennetulle pelille", G.has_saved_game and menu.continue_button.visible and not menu.continue_button.disabled)
+	check("lopeta peli työpöydällä", menu.quit_button.visible == not OS.has_feature("web"))
+	menu.toggle_settings()
+	check("asetukset auki", menu.settings_panel.visible)
+	menu.toggle_settings()
+	G.fake_real_ms = START_REAL + 1000.0
+	G.state.fuel = 1.0
+	menu._ask_new()
+	check("uusi peli kysyy vahvistuksen", menu.confirm.visible)
+	menu.confirm.hide()
+	menu._start_new()
+	check("uusi peli alustalta", G.state.pad and float(G.state.fuel) == Flight.FUEL_KMS)
+	menu.visible = false
+	ui.visible = true

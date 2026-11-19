@@ -65,6 +65,8 @@ const KINDS := {"cheapest": ["Halvin", "Vähiten polttoainetta"], "faster": ["No
 	"assist": ["Linkous", "Ohilento toisen planeetan ohi kääntää rataa lähes ilmaiseksi"],
 	"local": ["Siirtorata", "Hohmannin siirto planeetan ympärillä"]}
 
+## Oliko tallennettu peli olemassa (aloitusvalikon Jatka peliä); uusi peli tallentuu heti.
+var has_saved_game := false
 var state: Dictionary = {}
 var save_path := SAVE_PATH
 ## Testit asettavat oikean ajan (ms) käsin; < 0 = järjestelmän kello.
@@ -220,6 +222,7 @@ func fresh() -> Dictionary:
 
 
 func new_game() -> void:
+	has_saved_game = true
 	state = fresh()
 	_reset_runtime()
 	_sync_low_orbit()
@@ -275,8 +278,10 @@ func _finite(v: Variant) -> Variant:
 func load_game() -> void:
 	var text := FileAccess.get_file_as_string(save_path) if FileAccess.file_exists(save_path) else ""
 	if text == "" and save_path == SAVE_PATH and _import_browser_save():
+		has_saved_game = true
 		return
-	if not load_json(text):
+	has_saved_game = load_json(text)
+	if not has_saved_game:
 		state = fresh()
 	load_game_from_state()
 

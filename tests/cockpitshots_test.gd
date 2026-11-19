@@ -2,7 +2,7 @@ extends TestCase
 ## Kuvakaappaukset ohjaamosta (vaatii ikkunan, ei mukana tools/run_tests.sh:ssa):
 ##   godot -- --cockpitshotstest=/polku/kuviin [--size=1600x900] [--quality=2] [--only=nimi] [--state=tallennus.json]
 ## --state: kuva annetusta tallennuksesta (pelaajan näkymä sellaisenaan ja katse alas), muut näkymät ohitetaan.
-## Näkymät: takakamera (--only=taka), laukaisualusta päivällä, laukaisutorni (nousu ja yö, --only=torni), Max Q, kiertorata Maan päivä- ja yöpuolen yllä, Mars lähellä, Jupiterin
+## Näkymät: aloitusvalikko (--only=valikko), takakamera (--only=taka), laukaisualusta päivällä, laukaisutorni (nousu ja yö, --only=torni), Max Q, kiertorata Maan päivä- ja yöpuolen yllä, Mars lähellä, Jupiterin
 ## ilmajarrutus, Saturnus renkaineen, Aurinko kohti katsottaessa, planeetan varjo, zoomaus näyttöihin ja kaikki
 ## näytöt lähtölaskennassa, pitkällä lennolla ja kuun kiertoradalla (--only=naytot). Lopuksi mitataan ruutunopeus.
 
@@ -246,6 +246,15 @@ func _run() -> void:
 	# Lähestyminen Kuuhun ja saapuminen kiertoradalle (#20).
 	if want("kuu"):
 		await _moon_approach()
+	# Aloitusvalikko (#29) ja sen asetukset.
+	if want("valikko"):
+		var menu: StartMenu = get_parent().menu
+		menu.open()
+		await shot("valikko", 90)
+		menu.toggle_settings()
+		await shot("valikko-asetukset", 30)
+		menu.toggle_settings()
+		menu.visible = false
 	# Takakamera kohdekameranäytöllä (#24): alustalla, kiertoradalla ja lähdön jälkeen poistuva Maa.
 	if want("taka"):
 		await _rear_shots()

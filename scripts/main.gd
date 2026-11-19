@@ -5,6 +5,7 @@ const TEST_DIR := "res://tests/"
 
 
 var ui: VoyageUI
+var menu: StartMenu
 
 
 func _ready() -> void:
@@ -18,6 +19,20 @@ func _ready() -> void:
 	ui.name = "VoyageUI"
 	layer.add_child(ui)
 	var test := TestFlags.find(OS.get_cmdline_user_args())
+	# Aloitusvalikko pelin päällä (ei testeissä); pelinäkymä piilotetaan, kun valikko on auki.
+	var menu_layer := CanvasLayer.new()
+	menu_layer.name = "Menu"
+	menu_layer.layer = 5
+	add_child(menu_layer)
+	menu = StartMenu.new()
+	menu.name = "StartMenu"
+	menu_layer.add_child(menu)
+	menu.closed.connect(func() -> void: ui.visible = true)
+	ui.menu_requested.connect(show_menu)
+	if test != "":
+		menu.visible = false
+	else:
+		ui.visible = false
 	if test != "":
 		var path := TEST_DIR + test + "_test.gd"
 		if not ResourceLoader.exists(path):
@@ -32,3 +47,11 @@ func _ready() -> void:
 		var node: Node = script.new()
 		node.name = "Test"
 		add_child(node)
+
+
+## Avaa aloitusvalikon pelin päälle (valikkopainike tai Esc).
+func show_menu() -> void:
+	menu.open()
+	await get_tree().create_timer(0.3).timeout
+	if menu.visible:
+		ui.visible = false
