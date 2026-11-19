@@ -35,6 +35,8 @@ var tower: LaunchTower
 var rear_view: SubViewport
 var rear_cam: Camera3D
 var rear_button: Button
+var _throttle := 0.0 # tehovivun asento 0–1 (pehmennetty)
+var _steer := Vector2.ZERO # ohjainsauvan poikkeama (px) aluksen kääntymisen mukaan
 const REAR_TILT := 0.87 # 50°
 var overlay: ColorRect # ohjaamon kuva ja näytöt 3D-näkymän päällä
 var overlay_mat: ShaderMaterial
@@ -281,6 +283,7 @@ func _build_overlay() -> void:
 	overlay_mat.set_shader_parameter("image_center", Cabin.CENTER)
 	overlay_mat.set_shader_parameter("focal", Cabin.FOCAL)
 	overlay_mat.set_shader_parameter("panorama", load(Cabin.panorama_path()))
+	overlay_mat.set_shader_parameter("lights_map", load("res://assets/cockpit/ohjaamo_valot.png"))
 	for i in cabin.monitors.size():
 		overlay_mat.set_shader_parameter("screen%d" % i, cabin.monitors[i].texture)
 		overlay_mat.set_shader_parameter("homography%d" % i, cabin.monitors[i].homography)
@@ -644,8 +647,13 @@ func _attitude(s: Dictionary, delta: float) -> void:
 		ship.basis = want
 		_attitude_ready = true
 	else:
+		var before := ship.basis
 		var q := ship.basis.get_rotation_quaternion().slerp(want.get_rotation_quaternion(), minf(1.0, delta / 1.5))
 		ship.basis = Basis(q)
+		# Ohjainsauva kallistuu kääntymisen suuntaan: kiertymä aluksen koordinaateissa (y = sivuttain, x = nokka ylös/alas).
+		var rot := (before.inverse() * ship.basis).get_euler()
+		var rate := Vector2(-rot.y, -rot.x) / maxf(delta, 1e-3)
+		_steer = _steer.lerp((rate * 40.0).limit_length(7.0), minf(1.0, delta * 5.0))
 
 
 ## Asento lähimmän (suurimman näköisen) kappaleen suhteen, tai {} jos nopeutta ei tunneta.
@@ -728,12 +736,21 @@ func _effects(s: Dictionary) -> void:
 	# Merkkivalot ja vipu pelin tilan mukaan.
 	cabin.set_light("moottori", clampf(thrust * 1.5, 0.0, 1.0))
 	cabin.set_light("kiihdytys", 1.0 if float(s.warp) > 1.0 else 0.15)
-	cabin.set_light("polttoaine", 1.0 if float(s.fuel) > 0.2 else 0.0)
+	# Polttoaineen varoitusvalo vilkkuu, kun polttoainetta on alle 20 %.
 	var low := 1.0 if float(s.fuel) <= 0.2 else 0.0
-	cabin.set_light("ilmakeha", maxf(aero, low * (0.5 + 0.5 * sin(Time.get_ticks_msec() / 200.0))))
+	var blink := 1.0 if fmod(Time.get_ticks_msec() / 1000.0, 0.8) < 0.4 else 0.0
+	cabin.set_light("polttoaine", low * blink)
+	cabin.set_light("ilmakeha", maxf(aero, float(s.get("sky", 0.0)) * 0.6 if Game.state.pad else aero))
 	var f: Variant = Game.state.flight
 	cabin.set_light("vaikutuspiiri", 1.0 if f != null and float(s.t) >= float(f.soi) else 0.1)
 	cabin.set_light("suunta", 1.0 if s.get("aim") != null or s.get("nose") != null else 0.1)
+	overlay_mat.set_shader_parameter("indicators", cabin.indicator_values())
+	# Kädet: tehovipu eteen työnnön mukaan, ohjainsauva värähtelee tärinässä ja liikkuu aluksen kääntyessä.
+	_throttle = lerpf(_throttle, thrust, minf(1.0, get_process_delta_time() * 4.0))
+	overlay_mat.set_shader_parameter("throttle_px", Vector2(5.0, -14.0) * _throttle)
+	var shake := clampf(float(s.shake), 0.0, 1.0)
+	var jitter := Vector2(randf() - 0.5, randf() - 0.5) * 3.0 * shake
+	overlay_mat.set_shader_parameter("stick_px", _steer + jitter)
 	# Moottorin ja plasman hehku ohjaamon kuvassa.
 	var glow := Color(1.0, 0.54, 0.23) * (thrust * 0.12 * (0.85 + randf() * 0.3)) + Color(1.0, 0.45, 0.15) * (aero * 0.35 * (0.8 + randf() * 0.4))
 	overlay_mat.set_shader_parameter("glow", Vector3(glow.r, glow.g, glow.b))

@@ -120,6 +120,11 @@ func _ready() -> void:
 	check("zoomaus keskinäyttöön kaventaa kuvakulmaa", cv.zoom_index == 2 and cv.fov_target < cv.base_fov * 0.5)
 	cv.zoom_out()
 	check("loitonnus palauttaa kuvakulman", cv.zoom_index == -1 and cv.fov_target == cv.base_fov)
+	cv.cabin.set_light("moottori", 2.0)
+	cv.cabin.set_light("polttoaine", 0.0)
+	var ind := cv.cabin.indicator_values()
+	check("merkkivalot kuvan valoina", ind.size() == 6 and ind[0] == 1.0 and ind[5] == 0.0
+		and ResourceLoader.exists("res://assets/cockpit/ohjaamo_valot.png"))
 	cv.toggle_rear()
 	check("kohdekamera takakameraksi", cv.is_rear() and cv.rear_button.text == "Kohdekamera"
 		and cv.rear_view.world_3d == cv.viewport.find_world_3d())

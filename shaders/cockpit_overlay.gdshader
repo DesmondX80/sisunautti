@@ -27,6 +27,43 @@ uniform mat3 homography4;
 uniform mat3 homography5;
 uniform float screen_brightness = 1.35;
 
+// Kuvan elävöitys: kädet ja sauvat liikkuvat (siirto pikseleinä pehmeällä painolla) ja merkkivalot palavat pelin
+// tilan mukaan. Valokartta (ohjaamo_valot.png): R = vaihe, G = vilkkutapa (0 tasainen, 1 hidas, 2 nopea),
+// B = merkkivalon numero (1–6, pelin tila indicators[]), A = valon peitto.
+uniform sampler2D lights_map : filter_nearest;
+uniform float indicators[6];
+uniform vec2 throttle_px = vec2(0.0); // vasen käsi: tehovipu
+uniform vec2 stick_px = vec2(0.0); // oikea käsi: ohjainsauva
+const vec2 THROTTLE_C = vec2(528.0, 505.0);
+const vec2 STICK_C = vec2(862.0, 505.0);
+
+vec2 animate_hands(vec2 p) {
+	float wl = 1.0 - smoothstep(22.0, 92.0, length((p - THROTTLE_C) * vec2(1.0, 0.8)));
+	float wr = 1.0 - smoothstep(22.0, 92.0, length((p - STICK_C) * vec2(1.0, 0.8)));
+	return p - throttle_px * wl - stick_px * wr;
+}
+
+vec3 panel_lights(vec3 c, vec2 iuv) {
+	vec4 L = texture(lights_map, iuv);
+	if (L.a <= 0.0) {
+		return c;
+	}
+	float ph = L.r;
+	float kind = L.g * 255.0;
+	float ind = L.b * 255.0;
+	float on;
+	if (ind > 0.5) {
+		on = indicators[clamp(int(ind + 0.5) - 1, 0, 5)];
+	} else if (kind < 0.5) {
+		on = 0.8 + 0.2 * sin(TIME * (1.5 + ph * 3.0) + ph * 40.0);
+	} else if (kind < 1.5) {
+		on = step(0.45, fract(TIME * (0.3 + ph * 0.4) + ph));
+	} else {
+		on = step(0.72, fract(TIME * (1.6 + ph * 1.5) + ph * 7.0));
+	}
+	return c * mix(1.0, mix(0.22, 1.5, on), L.a);
+}
+
 bool screen_uv(mat3 h, vec2 p, out vec2 uv) {
 	vec3 q = h * vec3(p, 1.0);
 	uv = q.xy / q.z;
@@ -74,7 +111,9 @@ void fragment() {
 		vec2 p = image_center + vec2(d.x, -d.y) / -d.z * focal;
 		vec2 iuv = p / image_size;
 		if (iuv.x >= 0.0 && iuv.x <= 1.0 && iuv.y >= 0.0 && iuv.y <= 1.0) {
-			vec4 c = textureGrad(image, iuv, dFdx(iuv), dFdy(iuv));
+			vec2 auv = animate_hands(p) / image_size;
+			vec4 c = textureGrad(image, auv, dFdx(iuv), dFdy(iuv));
+			c.rgb = panel_lights(c.rgb, auv);
 			vec2 suv;
 			if (screen_uv(homography0, p, suv)) { c = vec4(screen_color(screen0, suv), 1.0); }
 			else if (screen_uv(homography1, p, suv)) { c = vec4(screen_color(screen1, suv), 1.0); }

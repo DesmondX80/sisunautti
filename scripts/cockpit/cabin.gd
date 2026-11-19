@@ -50,7 +50,9 @@ var monitors: Array[Dictionary] = []
 var glass_material: ShaderMaterial
 var plasma_material: ShaderMaterial
 var plasma: Node3D
-var lights := {} # merkkivalot ovat osa kuvaa
+## Merkkivalot ovat kuvan valoja (assets/cockpit/ohjaamo_valot.png, B-kanava 1–6) tässä järjestyksessä; arvo 0–1.
+const INDICATORS := ["moottori", "kiihdytys", "suunta", "vaikutuspiiri", "ilmakeha", "polttoaine"]
+var lights := {}
 var noise_tex: NoiseTexture2D
 var scratch_tex: NoiseTexture2D
 
@@ -200,6 +202,12 @@ func _build_plasma() -> void:
 
 ## Merkkivalojen kirkkaus (0–1) nimen mukaan (kuvassa valot ovat kiinteitä).
 func set_light(name: String, on: float) -> void:
-	var m: StandardMaterial3D = lights.get(name)
-	if m != null:
-		m.emission_energy_multiplier = on * 3.0
+	lights[name] = clampf(on, 0.0, 1.0)
+
+
+## Merkkivalojen arvot INDICATORS-järjestyksessä (ohjaamon kuvan varjostimelle).
+func indicator_values() -> PackedFloat32Array:
+	var out := PackedFloat32Array()
+	for n: String in INDICATORS:
+		out.append(float(lights.get(n, 0.0)))
+	return out
