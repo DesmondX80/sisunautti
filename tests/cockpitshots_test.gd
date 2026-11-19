@@ -218,7 +218,7 @@ func _run() -> void:
 			await shot("zoom-%d" % i, 60)
 		cv.reset_view()
 		# Katse käännettynä: kuvan reunan yli jatkuva sisätila (sivut, katto, taakse).
-		for v: Array in [["vasen", 0.9, 0.1], ["oikea", -0.8, 0.2], ["katto", 0.0, 0.95], ["taakse", 2.5, -0.1]]:
+		for v: Array in [["vasen", 0.9, 0.1], ["oikea", -0.8, 0.2], ["katto", 0.0, 0.95], ["taakse", 2.5, -0.1], ["alas", 0.0, -0.8], ["alas-vasen", 0.5, -0.6]]:
 			cv.yaw = v[1]
 			cv.pitch = v[2]
 			await shot("katse-" + v[0], 20)

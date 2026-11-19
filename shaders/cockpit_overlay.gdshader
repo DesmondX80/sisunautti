@@ -43,7 +43,7 @@ vec3 screen_color(sampler2D tex, vec2 uv) {
 // reunoilla etukuva häivytetään panoraamaan; panoraaman sävy sovitetaan etukuvaan.
 uniform sampler2D panorama : source_color, filter_linear_mipmap, repeat_enable;
 uniform float pano_yaw = 0.0; // panoraaman kierto (rad)
-uniform float pano_pitch = 0.0; // panoraaman horisontin siirto (rad)
+uniform float pano_pitch = -0.19; // panoraaman kojelauta etukuvan kojelaudan taakse (rad)
 uniform vec3 pano_tint = vec3(1.0);
 uniform float pano_gain = 0.85;
 uniform float seam = 70.0; // häivytyksen leveys etukuvan reunalla (px)
