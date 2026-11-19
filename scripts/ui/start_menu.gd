@@ -157,6 +157,12 @@ func _build_settings() -> void:
 	_quality_seg = UiKit.seg(levels, Settings.quality, func(i: int) -> void: Settings.set_quality(i))
 	v.add_child(_quality_seg)
 	v.add_child(UiKit.label("Korkea ja Ultra: pehmeät varjot, varjojen peitto ja Ultralla heijastukset sekä 8k-pintakartat. Selaimessa enintään Keski.", "MutedLabel"))
+	v.add_child(UiKit.label("Aluksen häiriöt", "MutedLabel"))
+	var faults := []
+	for i in Settings.FAULT_NAMES.size():
+		faults.append([i, Settings.FAULT_NAMES[i]])
+	v.add_child(UiKit.seg(faults, Settings.faults, func(i: int) -> void: Settings.set_faults(i)))
+	v.add_child(UiKit.label("Lennolla ja kiertoradalla aluksessa voi tulla vikoja, jotka on korjattava ajassa: johtojen kytkentä, ohjelmavirhe tai paineet. Muuten alus tuhoutuu.", "MutedLabel"))
 	v.add_child(UiKit.label("Äänet", "MutedLabel"))
 	var row := UiKit.hbox(10)
 	volume_slider = HSlider.new()

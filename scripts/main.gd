@@ -37,12 +37,14 @@ func _ready() -> void:
 	add_child(radio)
 	menu.closed.connect(func() -> void:
 		ui.visible = true
+		Game.faults_paused = false
 		sound.quiet = false)
 	ui.menu_requested.connect(show_menu)
 	if test != "":
 		menu.visible = false
 	else:
 		ui.visible = false
+		Game.faults_paused = true
 		sound.quiet = true
 	if test != "":
 		var path := TEST_DIR + test + "_test.gd"
@@ -63,6 +65,7 @@ func _ready() -> void:
 ## Avaa aloitusvalikon pelin päälle (valikkopainike tai Esc).
 func show_menu() -> void:
 	menu.open()
+	Game.faults_paused = true
 	sound.quiet = true
 	await get_tree().create_timer(0.3).timeout
 	if menu.visible:

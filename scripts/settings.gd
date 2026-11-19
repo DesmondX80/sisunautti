@@ -21,6 +21,9 @@ var muted := false
 ## Radio: musiikin voimakkuus 0–1 ja valittu kanava (−1 pois).
 var music_volume := 0.6
 var radio_channel := -1
+## Aluksen häiriöt (#42): 0 pois, 1 harvoin, 2 usein.
+var faults := 1
+const FAULT_NAMES: PackedStringArray = ["Pois", "Harvoin", "Usein"]
 var path := PATH # testit vaihtavat polun, jotta oikeat asetukset eivät muutu
 
 
@@ -99,6 +102,11 @@ func set_radio_channel(c: int) -> void:
 
 
 ## Pääväylän voimakkuus ja mykistys.
+func set_faults(level: int) -> void:
+	faults = clampi(level, 0, 2)
+	save_settings()
+
+
 func apply_audio() -> void:
 	AudioServer.set_bus_volume_db(0, linear_to_db(maxf(volume, 0.0001)))
 	AudioServer.set_bus_mute(0, muted or volume <= 0.0)
@@ -115,6 +123,7 @@ func load_settings() -> void:
 		muted = false
 		music_volume = 0.6
 		radio_channel = -1
+		faults = 1
 		apply_audio()
 		return
 	quality = clampi(int(cfg.get_value("graphics", "quality", default_quality())), Quality.LOW, max_quality())
@@ -124,6 +133,7 @@ func load_settings() -> void:
 	muted = bool(cfg.get_value("audio", "muted", false))
 	music_volume = clampf(float(cfg.get_value("audio", "music_volume", 0.6)), 0.0, 1.0)
 	radio_channel = int(cfg.get_value("audio", "radio_channel", -1))
+	faults = clampi(int(cfg.get_value("game", "faults", 1)), 0, 2)
 	apply_audio()
 
 
@@ -136,4 +146,5 @@ func save_settings() -> void:
 	cfg.set_value("audio", "muted", muted)
 	cfg.set_value("audio", "music_volume", music_volume)
 	cfg.set_value("audio", "radio_channel", radio_channel)
+	cfg.set_value("game", "faults", faults)
 	cfg.save(path)

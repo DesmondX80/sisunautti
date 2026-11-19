@@ -29,6 +29,11 @@ var _go: AudioStreamWAV
 var _state_at := -1000
 var _target := {}
 var _last_count := 99
+## Vian hälytys (#42) silmukkana vian ajan ja kertaäänet.
+var _alarm: AudioStreamPlayer
+var _buzz: AudioStreamWAV
+var _fixed: AudioStreamWAV
+var _boom: AudioStreamWAV
 
 
 func _ready() -> void:
@@ -52,6 +57,16 @@ func _ready() -> void:
 	Game.arrived.connect(func(_b: String) -> void: announce("arrive"))
 	Game.capture_done.connect(func(_b: String, ok: bool, _a: bool) -> void: announce("capture"))
 	Game.survey_finished.connect(func(_b: String, _f: bool) -> void: announce("survey"))
+	_alarm = AudioStreamPlayer.new()
+	_alarm.stream = SoundSynth.to_wav(SoundSynth.alarm(), true)
+	_alarm.volume_db = -12.0
+	add_child(_alarm)
+	_buzz = SoundSynth.to_wav(SoundSynth.buzz(), false)
+	_fixed = SoundSynth.to_wav(SoundSynth.fixed(), false)
+	_boom = SoundSynth.to_wav(SoundSynth.explosion(), false)
+	Game.fault_mistake.connect(func(_k: String) -> void: _play(_buzz, -6.0))
+	Game.fault_fixed.connect(func(_k: String) -> void: _play(_fixed, -6.0))
+	Game.ship_destroyed.connect(func(_k: String) -> void: _play(_boom, 0.0))
 	get_tree().node_added.connect(_on_node_added)
 	_hook_buttons.call_deferred(get_tree().root)
 
@@ -86,6 +101,13 @@ func _process(delta: float) -> void:
 			for k: String in _target:
 				_target[k] = 0.0
 		_countdown(s)
+		# Hälytys soi vian ajan (ei valikossa).
+		var alarm := Game.state.get("fault") != null and not quiet
+		if alarm != _alarm.playing:
+			if alarm:
+				_alarm.play()
+			else:
+				_alarm.stop()
 	for name: String in LOOPS:
 		var lv: float = lerpf(float(_levels[name]), float(_target.get(name, 0.0)), minf(1.0, delta * 4.0))
 		_levels[name] = lv

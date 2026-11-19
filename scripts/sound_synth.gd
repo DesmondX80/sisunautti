@@ -184,3 +184,53 @@ static func radio_static() -> PackedFloat32Array:
 		var crack := (rng.randf() * 2.0 - 1.0) * (1.0 if rng.randf() < 0.02 else 0.0)
 		x[i] = (band[i] * 1.6 + crack * 0.5 + sin(TAU * (1800.0 - 1400.0 * t / 0.45) * t) * 0.08) * env
 	return _normalize(x, 0.6)
+
+
+## Vian hälytys (#42): kaksisävelinen sointi kuin aluksen master alarm, silmukkana (1,2 s).
+static func alarm() -> PackedFloat32Array:
+	var n := int(1.2 * RATE)
+	var x := PackedFloat32Array()
+	x.resize(n)
+	for i in n:
+		var t := float(i) / RATE
+		var hz := 740.0 if t < 0.6 else 988.0
+		var tt := fmod(t, 0.6)
+		var env := minf(1.0, tt / 0.01) * minf(1.0, (0.5 - tt) / 0.04) if tt < 0.5 else 0.0
+		# Pehmennetty kanttiaalto (parittomat yläsävelet) ja kevyt huojunta.
+		var s := sin(TAU * hz * t) + sin(TAU * hz * 3.0 * t) / 3.0 * 0.6 + sin(TAU * hz * 5.0 * t) / 5.0 * 0.3
+		x[i] = s * maxf(env, 0.0) * (0.9 + 0.1 * sin(TAU * 7.0 * t))
+	return _normalize(x, 0.55)
+
+
+## Väärä yritys: matala surina.
+static func buzz() -> PackedFloat32Array:
+	var n := int(0.32 * RATE)
+	var x := PackedFloat32Array()
+	x.resize(n)
+	for i in n:
+		var t := float(i) / RATE
+		var saw := fmod(t * 110.0, 1.0) * 2.0 - 1.0
+		x[i] = saw * minf(1.0, t / 0.01) * minf(1.0, (0.32 - t) / 0.06)
+	return _normalize(_lowpass(x, 1800.0), 0.5)
+
+
+## Korjattu: nouseva kolmisointu.
+static func fixed() -> PackedFloat32Array:
+	var x := PackedFloat32Array()
+	for hz: float in [660.0, 880.0, 1320.0]:
+		x.append_array(beep(hz, 0.11))
+	return x
+
+
+## Räjähdys: kova isku ja pitkä, matala jyrinä, joka vaimenee.
+static func explosion() -> PackedFloat32Array:
+	var n := int(3.5 * RATE)
+	var noise := _noise(n, 71)
+	var low := _lowpass(_lowpass(noise, 180.0), 120.0)
+	var mid := _lowpass(noise, 1200.0)
+	var x := PackedFloat32Array()
+	x.resize(n)
+	for i in n:
+		var t := float(i) / RATE
+		x[i] = low[i] * 6.0 * exp(-t / 1.1) + mid[i] * exp(-t / 0.12) * 1.4 + sin(TAU * 38.0 * t) * exp(-t / 0.6) * 0.4
+	return _normalize(x, 0.9)

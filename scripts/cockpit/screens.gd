@@ -196,6 +196,37 @@ func _draw_over() -> void:
 		"systems": _draw_systems_over(over)
 	over.draw_set_transform(Vector2.ZERO)
 	_frame(over)
+	_draw_alert(over)
+
+
+## Vian aikana (#42) näytön yläreunassa vilkkuu punainen VIKA-palkki ja kehys punertuu; tuhon jälkeen näytöillä on
+## kohinaa ja teksti SIGNAALI KATKESI.
+func _draw_alert(c: CanvasItem) -> void:
+	if Game.state.is_empty():
+		return
+	var w := view_size.x
+	var h := view_size.y
+	if Game.state.get("destroyed") != null:
+		var rng := RandomNumberGenerator.new()
+		rng.seed = Time.get_ticks_msec() / 50
+		c.draw_rect(Rect2(0, 0, w, h), Color(0.02, 0.02, 0.03, 0.92))
+		for i in 260:
+			var l := rng.randf()
+			c.draw_rect(Rect2(rng.randf() * w, rng.randf() * h, rng.randf_range(2.0, 14.0), 2.0), Color(l, l, l, 0.35))
+		var fs := roundi(minf(w / 14.0, h / 5.0))
+		_center(c, font, "SIGNAALI KATKESI", w / 2.0, h / 2.0 + fs * 0.35, fs, BAD, w * 0.9)
+		return
+	var f: Variant = Game.state.get("fault")
+	if f == null:
+		return
+	var on := fmod(Time.get_ticks_msec() / 600.0, 1.0) < 0.55
+	var bar := clampf(h * 0.13, 24.0, 70.0)
+	c.draw_rect(Rect2(0, 0, w, h), Color(1.0, 0.1, 0.15, 0.10 if on else 0.04))
+	c.draw_rect(Rect2(10, 10, w - 20, h - 20), Color(BAD, 0.9 if on else 0.4), false, 4.0)
+	c.draw_rect(Rect2(0, 0, w, bar), Color(0.35, 0.02, 0.06, 0.92))
+	var left := maxf(0.0, float(f.remaining)) / 1000.0
+	var text := "⚠ VIKA · %s · %d:%02d" % [String(Faults.INFO[String(f.kind)].name).to_upper(), int(left) / 60, int(left) % 60]
+	_center(c, font, text, w / 2.0, bar * 0.68, roundi(bar * 0.5), Color("#ffd6dc") if on else BAD, w - 40.0)
 
 
 # --- Yhteiset osat ---

@@ -20,6 +20,8 @@ var _brand: Label
 var _radio_popup: PopupPanel
 var map: FlightMap
 var cockpit_view: CockpitView = null # 3D-ohjaamo
+var fault_panel: FaultPanel
+var game_over: GameOver
 
 var _root: VBoxContainer
 var _top: PanelContainer
@@ -88,6 +90,11 @@ func _ready() -> void:
 			bar.value = p)
 	_layout()
 	_rebuild()
+	# Aluksen vika (#42) ja tuhoutuminen kaiken päällä.
+	fault_panel = FaultPanel.new()
+	add_child(fault_panel)
+	game_over = GameOver.new()
+	add_child(game_over)
 
 
 func _process(_delta: float) -> void:
@@ -280,6 +287,13 @@ func _build_dialogs() -> void:
 	_quality_seg = UiKit.seg(levels, Settings.quality, func(i: int) -> void: Settings.set_quality(i))
 	v.add_child(_quality_seg)
 	v.add_child(UiKit.label("Korkea ja Ultra: pehmeät varjot, varjojen peitto (SSAO) ja Ultralla heijastukset (SSR) sekä 8k-pintakartat. Selaimessa enintään Keski.", "MutedLabel"))
+	v.add_child(UiKit.label("Aluksen häiriöt", "MutedLabel"))
+	var faults := []
+	for i in Settings.FAULT_NAMES.size():
+		faults.append([i, Settings.FAULT_NAMES[i]])
+	v.add_child(UiKit.seg(faults, Settings.faults, func(i: int) -> void: Settings.set_faults(i)))
+	v.add_child(UiKit.label("Lennolla ja kiertoradalla aluksessa voi tulla vikoja, jotka on korjattava ajassa: johtojen kytkentä, ohjelmavirhe tai paineet. Muuten alus tuhoutuu.", "MutedLabel"))
+
 	v.add_child(UiKit.label("Versio %s · %s" % [version(), "selain (Compatibility)" if Settings.is_compatibility() else "työpöytä (Forward+)"], "MutedLabel"))
 	_about.add_child(v)
 	add_child(_about)

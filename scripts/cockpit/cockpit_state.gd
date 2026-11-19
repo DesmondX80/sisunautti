@@ -25,7 +25,10 @@ static func make() -> Dictionary:
 	var aero := _shake_left(Game.aero_at, Game.AERO_MS)
 	var warp_name: String = Game.WARPS[Game.warp_index()][1]
 	var fuel_frac := clampf(float(s.fuel) / Game.fuel_max(), 0.0, 1.0)
-	var base := {"t": t, "warp": float(Game.WARPS[Game.warp_index()][0]), "shake": maxf(burn * 0.7, aero * 0.95), "thrust": burn,
+	# Vian aikana kevyt värinä, tuhoutuessa voimakas tärinä (#42).
+	var fault_shake := 0.05 if s.get("fault") != null else 0.0
+	var boom := _shake_left(Game.destroyed_at, 3000.0)
+	var base := {"t": t, "warp": float(Game.WARPS[Game.warp_index()][0]), "shake": maxf(maxf(burn * 0.7, aero * 0.95), maxf(fault_shake, boom)), "thrust": burn,
 		"sky": aero * 0.3 if aero > 0.0 else 0.0, "sky_color": Color("#ff6a1f") if aero > 0.0 else null, "aero": aero,
 		"phase": "", "fuel": fuel_frac, "low_orbit": s.get("lowOrbit") != null}
 	if s.pad:

@@ -36,6 +36,11 @@ signal capture_done(body: String, captured: bool, aero: bool)
 signal course_burn(dv: float)
 ## Kartoitus tai ionialuksen spiraalilasku valmis.
 signal survey_finished(body: String, first: bool)
+## Aluksen vika alkoi, korjattiin tai aika loppui (#42).
+signal fault_started(kind: String)
+signal fault_fixed(kind: String)
+signal fault_mistake(kind: String)
+signal ship_destroyed(kind: String)
 
 ## Tallennusavaimet ovat peräisin OmaAvaruuden Avaruuslennosta; niitä ei nimetä uudelleen (selaintallennusten tuonti).
 const KEY := "avaruuslento"
@@ -84,17 +89,31 @@ var aero_at := -INF
 
 var _last_save := 0.0
 var _emitted := {} # kerran lähetetyt tapahtumat: liftoff, soi, arrived (avain sisältää hetken)
+## Häiriöt (#42): vikoja tulee lennolla ja kiertoradalla pelatun ajan mukaan (Settings.faults). Testeissä pois,
+## ellei testi salli niitä. Ajastin kulkee vain pelattaessa (ei valikossa, taustalla tai suljettuna).
+var faults_allowed := true
+var faults_paused := false
+var fault_rng := RandomNumberGenerator.new()
+var _fault_clock := 0.0 # pelattua aikaa (ms) edellisestä viasta tai käynnistyksestä
+var _unfocused := false
+var destroyed_at := -INF # tuhon hetki (real_ms) tärinää varten
+## Keskimääräinen väli (ms pelattua aikaa) asetuksen mukaan ja armonaika käynnistyksen ja vian jälkeen.
+const FAULT_MEAN_MS := [INF, 12.0 * 60000.0, 5.0 * 60000.0]
+const FAULT_GRACE_MS := 90000.0
 
 
 func _ready() -> void:
 	if TestFlags.find(OS.get_cmdline_user_args()) != "":
 		save_path = TEST_SAVE_PATH
+		faults_allowed = false
+	fault_rng.randomize()
 	load_game()
 
 
-func _process(_delta: float) -> void:
+func _process(delta: float) -> void:
 	if state.is_empty():
 		return
+	fault_step(delta * 1000.0)
 	if search != null:
 		var p := search.run(SEARCH_BUDGET_MS)
 		progress = p
@@ -112,6 +131,11 @@ func _notification(what: int) -> void:
 	# Suljettaessa ja taustalle mentäessä kiihdytys palaa 1×:ään: suljettuna aika kulkee oikeaa vauhtia.
 	if what == NOTIFICATION_WM_CLOSE_REQUEST or what == NOTIFICATION_APPLICATION_PAUSED or what == NOTIFICATION_APPLICATION_FOCUS_OUT:
 		park()
+	# Vian ajastin ei kulu, kun peli ei ole edessä.
+	if what == NOTIFICATION_APPLICATION_FOCUS_OUT or what == NOTIFICATION_APPLICATION_PAUSED:
+		_unfocused = true
+	elif what == NOTIFICATION_APPLICATION_FOCUS_IN or what == NOTIFICATION_APPLICATION_RESUMED:
+		_unfocused = false
 
 
 # --- Kello ---
@@ -130,6 +154,8 @@ func _raw_time() -> float:
 
 ## Hetki, johon kello pysähtyy: nousun loppu, laukaisuikkuna (ionialuksella spiraalin alku) tai saapuminen.
 func hold_at() -> float:
+	if state.get("destroyed") != null:
+		return float(state.destroyed.t)
 	if state.ascent != null:
 		return float(state.ascent.liftoff) + Flight.ASCENT_S * 1000.0
 	var p: Variant = state.plan
@@ -162,6 +188,10 @@ func sim_now() -> float:
 
 ## Kiihdytys: lähtölaskennassa ja nousussa enintään 10×.
 func set_warp(i: int) -> void:
+	if state.get("fault") != null and i > 0:
+		_set_notice("Korjaa vika ennen ajan kiihdyttämistä.")
+		changed.emit()
+		return
 	_set_notice("")
 	anchor(sim_now(), mini(i, 1) if state.pad else clampi(i, 0, WARPS.size() - 1))
 	changed.emit()
@@ -218,7 +248,7 @@ func fresh() -> Dictionary:
 	var now := real_ms()
 	return {"v": 1, "location": "Maa", "pad": true, "ascent": null, "orbit": null, "lowOrbit": null, "drift": null,
 		"ship": "kemiallinen", "fuel": Flight.FUEL_KMS, "simTime": now, "realTime": now, "warp": 0,
-		"plan": null, "flight": null, "survey": null, "explored": ["Maa"], "flights": [], "log": []}
+		"plan": null, "flight": null, "survey": null, "explored": ["Maa"], "flights": [], "log": [], "fault": null, "destroyed": null}
 
 
 func new_game() -> void:
@@ -242,6 +272,7 @@ func _reset_runtime() -> void:
 	options_ready = false
 	progress = 0.0
 	_emitted.clear()
+	_fault_clock = 0.0
 	_set_notice("")
 
 
@@ -838,6 +869,140 @@ func change_ship(id: String) -> void:
 
 
 # --- Pelisilmukka ---
+
+# --- Häiriöt (#42) ---
+
+## Voiko vika alkaa: lennolla tai kiertoradalla (ei laukaisualustalla eikä nousussa), asetus päällä.
+func fault_possible() -> bool:
+	return faults_allowed and not faults_paused and Settings.faults > 0 and not state.pad and state.get("fault") == null \
+		and state.get("destroyed") == null and (state.flight != null or state.location != null or state.drift != null)
+
+
+## Pelatun ajan askel (ms): vian ajastin ja uusien vikojen arvonta.
+func fault_step(dt_ms: float) -> void:
+	if faults_paused or _unfocused or state.get("destroyed") != null:
+		return
+	var f: Variant = state.get("fault")
+	if f != null:
+		f.remaining = float(f.remaining) - dt_ms
+		if float(f.remaining) <= 0.0:
+			destroy_ship()
+		return
+	if not fault_possible():
+		return
+	_fault_clock += dt_ms
+	if _fault_clock < FAULT_GRACE_MS:
+		return
+	var mean: float = FAULT_MEAN_MS[clampi(Settings.faults, 0, 2)]
+	if fault_rng.randf() < dt_ms / mean:
+		start_fault(Faults.KINDS[fault_rng.randi_range(0, Faults.KINDS.size() - 1)])
+
+
+## Vika alkaa: kiihdytys 1×:ään, lokikirjaan ja ilmoitus.
+func start_fault(kind: String) -> void:
+	state.fault = Faults.make(kind, fault_rng)
+	_fault_clock = 0.0
+	var t := sim_now()
+	log_event(t, "Vika: %s – %s" % [Faults.INFO[kind].name, Faults.INFO[kind].title.to_lower()])
+	anchor(t, 0)
+	_set_notice("")
+	fault_started.emit(kind)
+	changed.emit()
+
+
+## Väärä yritys: aikasakko.
+func _fault_mistake() -> void:
+	var f: Dictionary = state.fault
+	f.remaining = float(f.remaining) - Faults.PENALTY_MS
+	f.mistakes = int(f.mistakes) + 1
+	fault_mistake.emit(String(f.kind))
+	if float(f.remaining) <= 0.0:
+		destroy_ship()
+	else:
+		changed.emit()
+
+
+func _fault_done() -> void:
+	var f: Dictionary = state.fault
+	var kind := String(f.kind)
+	var left := maxf(0.0, float(f.remaining)) / 1000.0
+	state.fault = null
+	_fault_clock = 0.0
+	log_event(sim_now(), "%s korjattu (%d s jäljellä)" % [Faults.INFO[kind].name, roundi(left)])
+	save_game()
+	fault_fixed.emit(kind)
+	changed.emit()
+
+
+## Johdotus: vasen johto l oikeaan liittimeen r. Palauttaa true, jos kytkentä oli oikein.
+func fault_wire(l: int, r: int) -> bool:
+	var f: Variant = state.get("fault")
+	if f == null or f.kind != "johdot":
+		return false
+	for link: Array in f.links:
+		if int(link[0]) == l or int(link[1]) == r:
+			return false
+	if not Faults.wire_ok(f, l, r):
+		_fault_mistake()
+		return false
+	f.links.append([l, r])
+	if Faults.wires_done(f):
+		_fault_done()
+	else:
+		changed.emit()
+	return true
+
+
+## Koodi: virheellisen rivin valinta. Palauttaa true, jos rivi oli oikea.
+func fault_code_line(i: int) -> bool:
+	var f: Variant = state.get("fault")
+	if f == null or f.kind != "koodi":
+		return false
+	if i != int(Faults.code_of(f).bug):
+		_fault_mistake()
+		return false
+	f.line = i
+	changed.emit()
+	return true
+
+
+## Koodi: korjauksen valinta (näyttöjärjestyksen indeksi). Palauttaa true, jos korjaus oli oikea.
+func fault_code_fix(option: int) -> bool:
+	var f: Variant = state.get("fault")
+	if f == null or f.kind != "koodi" or int(f.line) < 0:
+		return false
+	if option != int(Faults.code_of(f).right):
+		_fault_mistake()
+		return false
+	_fault_done()
+	return true
+
+
+## Paine: venttiilin avaus tai sulku. Kun kaikki paineet ovat vihreällä alueella, vika on korjattu.
+func fault_valve(v: int) -> void:
+	var f: Variant = state.get("fault")
+	if f == null or f.kind != "paine" or v < 0 or v >= Faults.VALVES:
+		return
+	f.valves[v] = not bool(f.valves[v])
+	if Faults.pressures_ok(f):
+		_fault_done()
+	else:
+		changed.emit()
+
+
+## Aika loppui: alus tuhoutuu. Kello pysähtyy tuhon hetkeen, ja peli alkaa alusta käyttäjän valitessa.
+func destroy_ship() -> void:
+	var f: Variant = state.get("fault")
+	var kind := String(f.kind) if f != null else ""
+	var t := sim_now()
+	state.destroyed = {"t": t, "kind": kind, "text": Faults.doom(kind)}
+	destroyed_at = real_ms()
+	state.fault = null
+	log_event(t, "Alus tuhoutui: %s" % Faults.doom(kind))
+	anchor(t, 0)
+	ship_destroyed.emit(kind)
+	changed.emit()
+
 
 func _once(key: String) -> bool:
 	if _emitted.has(key):

@@ -1180,6 +1180,11 @@ func _effects(s: Dictionary) -> void:
 	overlay_mat.set_shader_parameter("stick_px", _steer + jitter)
 	# Moottorin ja plasman hehku ohjaamon kuvassa.
 	var glow := Color(1.0, 0.54, 0.23) * (thrust * 0.12 * (0.85 + randf() * 0.3)) + Color(1.0, 0.45, 0.15) * (aero * 0.35 * (0.8 + randf() * 0.4))
+	# Vian hälytysvalo (#42): ohjaamo sykkii punaisena hälytyksen tahdissa.
+	if Game.state.get("fault") != null:
+		var beat := 0.5 + 0.5 * sin(Time.get_ticks_msec() / 1000.0 * TAU / 1.2)
+		var red := 0.25 + 0.55 * beat * beat
+		glow += Color(red, -red * 0.35, -red * 0.4)
 	overlay_mat.set_shader_parameter("glow", Vector3(glow.r, glow.g, glow.b))
 
 

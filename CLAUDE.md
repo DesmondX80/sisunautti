@@ -26,7 +26,7 @@ Vanha JS-selainversio poistettiin versiossa 1.0.0; sen tallennukset tuodaan sela
 ## Rakenne
 
 - `scripts/` – logiikka: autoloadit `settings.gd` ja `game.gd` (pelin tila, kello, tapahtumasignaalit, tallennus
-  `user://save.json`), muotoilu `format.gd` (`Fmt`), pääscenen `main.gd`; `scripts/orbit/` ratamekaniikka
+  `user://save.json`), muotoilu `format.gd` (`Fmt`), aluksen viat `faults.gd`, pääscenen `main.gd`; `scripts/orbit/` ratamekaniikka
   (`planets.gd`, `flight.gd`, ikkunahaku ruutu kerrallaan `window_search.gd`)
 - `scenes/` – scenet, pääscene `scenes/main.tscn`
 - `scripts/ui/` – käyttöliittymä koodissa (`voyage_ui.gd`, `flight_map.gd`, `ui_kit.gd`); `ui/theme.tres` luodaan

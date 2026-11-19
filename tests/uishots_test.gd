@@ -177,3 +177,39 @@ func _run() -> void:
 		ui.toggle_panel()
 		await shot("paneeli-piilossa")
 		ui.toggle_panel()
+	# Aluksen viat (#42): johdotus kesken, koodi rivi valittuna, venttiilit, piilotettu banneri ja tuhoutuminen.
+	G.load_json(orbit_json)
+	G.load_game_from_state()
+	G.start_fault("johdot")
+	var f: Dictionary = G.state.fault
+	G.fault_wire(0, f.right.find(f.left[0]))
+	G.fault_wire(1, f.right.find(f.left[1]))
+	await _frames(10)
+	await shot("vika-johdot")
+	G.state.fault = null
+	G.start_fault("koodi")
+	await shot("vika-koodi")
+	G.fault_code_line(int(Faults.code_of(G.state.fault).bug))
+	await _frames(3)
+	await shot("vika-koodi-rivi")
+	G.state.fault = null
+	G.start_fault("paine")
+	for v in Faults.VALVES:
+		var q: Dictionary = G.state.fault.duplicate(true)
+		q.valves[v] = true
+		if not Faults.pressures_ok(q):
+			G.fault_valve(v)
+			break
+	await _frames(30)
+	await shot("vika-paine")
+	ui.fault_panel._hidden = true
+	ui.fault_panel._sync()
+	G.state.fault.remaining = 14000.0
+	await shot("vika-banneri")
+	ui.fault_panel._hidden = false
+	G.destroy_ship()
+	await _frames(80)
+	await shot("tuhoutui")
+	G.new_game()
+	await _frames(3)
+	check("uusi peli tuhon jälkeen", not ui.game_over.visible and not ui.fault_panel.visible)

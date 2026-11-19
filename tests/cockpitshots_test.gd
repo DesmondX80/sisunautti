@@ -317,6 +317,20 @@ func _run() -> void:
 	# Takakamera kohdekameranäytöllä (#24): alustalla, kiertoradalla ja lähdön jälkeen poistuva Maa.
 	if want("taka"):
 		await _rear_shots()
+	# Aluksen vika (#42): punainen hälytysvalo ja näyttöjen VIKA-palkit; tuhon jälkeen kohina.
+	if only == "vika":
+		orbit_at("Maa", t0, sun_angle("Maa", t0, false) + 0.3)
+		G.start_fault("johdot")
+		ui.fault_panel._hidden = true
+		ui.fault_panel._sync()
+		for k in 3:
+			await shot("vika-%d" % k, 13 + k * 7)
+		G.destroy_ship()
+		ui.game_over.visible = false
+		ui.game_over.set_process(false)
+		await shot("vika-tuho", 20)
+		ui.game_over.set_process(true)
+		G.new_game()
 	# Kohdekamera (#39): kaukoputki aluksen paikalta.
 	if want("kohde"):
 		await _tele_shots()
