@@ -125,6 +125,9 @@ func _ready() -> void:
 		and not Cabin.through_window(Vector3(0, 0.1, 1).normalized()))
 	check("panoraamat löytyvät", ResourceLoader.exists(Cabin.PANORAMA) and Cabin.panorama_path() == Cabin.PANORAMA_HIRES)
 	cv.reset_view()
+	check("katse ei laske ohjaamokuvan alareunan alle (kädet lähtevät näkymän alareunasta)",
+		cv.min_pitch(0.0, cv.base_fov) > -0.1 and cv.min_pitch(0.0, 10.0) < cv.min_pitch(0.0, cv.base_fov)
+		and cv.min_pitch(2.5, cv.base_fov) == -1.2)
 	cv.zoom_to(2)
 	check("zoomaus keskinäyttöön kaventaa kuvakulmaa", cv.zoom_index == 2 and cv.fov_target < cv.base_fov * 0.5)
 	cv.zoom_out()

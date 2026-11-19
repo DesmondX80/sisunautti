@@ -465,6 +465,27 @@ func _update_rear(screen_drawn: bool) -> void:
 		rear_view.render_target_update_mode = SubViewport.UPDATE_ONCE
 
 
+## Alin sallittu katseen pystykulma (#19): näkymän alareuna ei saa mennä ohjaamokuvan alareunan alle, jotta pilotin
+## kädet lähtevät aina näkymän alareunasta (kuvan alla panoraamassa olisi tyhjä istuin ja keskikonsoli). Alareunan
+## säteitä verrataan kuvan alareunaan (pieni marginaali tärinää varten); sivuilla, missä kuvaa ei ole, raja ei vaikuta.
+func min_pitch(p_yaw: float, fov_deg: float) -> float:
+	var tan_v := tan(deg_to_rad(fov_deg) / 2.0)
+	var tan_h := tan_v * size.x / maxf(1.0, size.y)
+	var half_w := atan(Cabin.IMAGE_SIZE.x / 2.0 / Cabin.FOCAL) # kuvan vaakapuolikas (rad)
+	var bottom := (Cabin.IMAGE_SIZE.y - 8.0 - Cabin.CENTER.y) / Cabin.FOCAL # alareuna kuvatasolla (marginaali 8 px)
+	var need := -1.2
+	# Näkymän alareunan sarakkeet: sarakkeen suunta ax ja korkeus ey kameran koordinaateissa; kuvan alareunan
+	# korkeus suunnassa az on atan(−bottom·cos az) (kuvataso z = −1).
+	for i in 9:
+		var x := -1.0 + i / 4.0
+		var ax := atan(x * tan_h)
+		var ey := -atan(tan_v * cos(ax))
+		var az := p_yaw - ax
+		if absf(az) <= half_w:
+			need = maxf(need, atan(-bottom * cos(az)) - ey)
+	return clampf(need, -1.2, 1.05)
+
+
 ## Kääntää katseen scene-suuntaan dir (kuvakaappaukset ja testit).
 func look_toward(dir: Vector3) -> void:
 	var local := ship.basis.inverse() * dir.normalized()
@@ -684,6 +705,7 @@ func _process(delta: float) -> void:
 	var rumble := clampf(float(s.shake), 0.0, 1.0) * camera.fov / base_fov
 	var tt := Time.get_ticks_msec() / 1000.0
 	var jitter := func(k: float) -> float: return (randf() - 0.5) * k * rumble
+	pitch = maxf(pitch, min_pitch(yaw, camera.fov))
 	head.basis = Basis.from_euler(Vector3(pitch, yaw, 0.0), EULER_ORDER_YXZ) * Basis.from_euler(Vector3(jitter.call(0.014), jitter.call(0.01), jitter.call(0.012)))
 	# Vain kiertoa: siirtymä liikuttaisi näyttöjä ohjaamon kuvan päällä.
 	head.basis = head.basis * Basis.from_euler(Vector3((sin(tt * 31.0) * 0.4 + sin(tt * 47.0 + 1.0) * 0.3) * 0.012 * rumble, sin(tt * 23.0) * 0.006 * rumble, 0.0))

@@ -81,7 +81,7 @@ tools/run_tests.sh          # ikkunattomat testit, esim. tools/run_tests.sh sett
   näyttöjen päälle piirretään pelin näytöt projektiivisella kuvauksella (kulmat kuvasta, `Cabin.MONITORS`). Kuvan
   ympärillä on ohjaamon 360°-panoraama (`assets/cockpit/panoraama-6k.webp` 5824 × 2880 työpöydällä,
   `panoraama.webp` 4096 × 2048 selaimessa), joka lasketaan samasta katsesuunnasta; etukuva häivytetään reunoiltaan
-  panoraamaan. Panoraaman horisonttia on laskettu 11°, jotta sen kojelauta jää etukuvan kojelaudan taakse, ja sen omat
+  panoraamaan. Katse ei laske etukuvan alareunan alle (`CockpitView.min_pitch`), joten pilotin kädet lähtevät aina näkymän alareunasta. Panoraaman horisonttia on laskettu 11°, jotta sen kojelauta jää etukuvan kojelaudan taakse, ja sen omat
   ohjainsauvat on retusoitu pois (LaMa-inpainting), joten alas katsottaessa näkyvät vain lentäjän kädet sauvoissa. Näytöt (tutka, aluskaavio, tähtäin,
   järjestelmät, kohdekamera ja pikkunäyttö) ovat `SubViewport`-tekstuureja kuvan näyttöjen muodossa (leveys 1024),
   jotka piirretään uudelleen enintään 20 kertaa sekunnissa (pitkät tekstit sovitetaan näytölle pienentämällä fonttia,
