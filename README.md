@@ -97,17 +97,25 @@ tools/run_tests.sh          # ikkunattomat testit, esim. tools/run_tests.sh sett
   ja nipistämällä zoomataan vapaasti. Kuva elää pelin mukana: vasen käsi työntää tehovipua eteen moottorin työnnön mukaan, oikean käden ohjainsauva värähtelee tärinässä ja kallistuu aluksen kääntyessä (pehmeä siirto varjostimessa), ja paneelien pienet valot (valokartta `assets/cockpit/ohjaamo_valot.png`, tehty skriptillä `tools/make_cockpit_lights.py`) vilkkuvat kukin omassa tahdissaan; kuusi niistä on merkkivaloja (moottori, aikakiihdytys, suunta, vaikutuspiiri, ilmakehä ja polttoaineen varoitus). Moottorin ja plasman hehku sävyttää ohjaamon kuvaa, ja ikkunan lasissa on
   likaa ja naarmuja, jotka Aurinko sytyttää häikäisyksi. Avaruudessa ovat kirkkaat tähdet HDR-pisteinä ja Linnunrata taustana, Auringon
   HDR-kiekko hehkuineen ja linssiheijastus (ohjaamon rakenteet peittävät sen syvyyspuskurin perusteella), planeettojen
-  ja kuiden pintakartat (2k, lähellä 4k tai 8k), ilmakehän sironta varjostimella, Maan erillinen pilvikerros,
-  kaupunkien valot ja merien heijastus sekä Saturnuksen läpikuultavat renkaat varjoineen. Kappaleet piirretään
+  ja kuiden pintakartat (2k, lähellä 4k tai 8k, Maalla Ultra-tasolla 16k), ilmakehän sironta varjostimella, Maan
+  erillinen pilvikerros, kaupunkien valot ja merien heijastus sekä Saturnuksen läpikuultavat renkaat varjoineen.
+  Ilmakehän sironta (`shaders/atmosphere.gdshader`) kerää näkösäteen matkalta sironneen valon ja vaimennuksen:
+  tiheys laskee eksponentiaalisesti ja hiipuu kuoren ylärajalla nollaan, joten kiertoradalta horisontin yllä on ohut
+  sininen kaari, joka häipyy pehmeästi mustaan, ja kaukainen pinta häipyy horisonttia kohti usvaan. Auringonvalo
+  punertuu terminaattorilla. Kiertoradalta, kun kartan piste on kuvapistettä suurempi, pinnan rajat (rannikot,
+  laaksot) rikotaan kohinalla, paikallista kontrastia terävöitetään ja maalle lisätään hienoa vaihtelua; pilvien
+  reunat hajoavat ja niiden pintaan tulee Auringon valaisemia kumpuja, meren välke hajoaa aallokkoon ja yön
+  kaupunkivalot jakautuvat pieniksi pisteiksi (`surface_detail`, Keski, Korkea ja Ultra). Maan 16k-päiväkartta on
+  JPEG, joka tuodaan näytönohjaimen pakkaamana (S3TC, 89 Mt; pakkaamattomana 700 Mt). Kappaleet piirretään
   kameran suhteen: 64-bittiset sijainnit muutetaan suunnaksi ja logaritmisesti puristetuksi etäisyydeksi, ja niiden
   syvyysarvo kirjoitetaan aina ohjaamon taakse. Valaistus: auringonvalo ikkunoista pehmeine varjoineen, lähimmän
   kappaleen heijastama valo sen värisenä, himmeneminen kaukana Auringosta ja pimennys, kun kappale peittää Auringon.
   AgX-tonemapping, hehku ja automaattinen valotus. Laukaisussa päivätaivas, liekki ja pakokaasupilvi (GPU-partikkelit)
   ja tärinä; poltoissa moottorin hehku; ilmajarrutuksessa virtaava plasma, oranssi valo ja kipinät.
 - Laatutasot (Tietoa-ikkunassa): Matala, Keski, Korkea ja Ultra muuttavat varjojen tarkkuutta, SSAO:ta (Korkea),
-  SSR:ää (Ultra), reunanpehmennystä, partikkelimääriä, pintakarttojen tarkkuutta (Matala 2k, Keski 4k, Korkea ja
-  Ultra 8k) ja ilmakehän näytteitä. Oletus valitaan näytönohjaimen mukaan. Selaimessa (Compatibility) enintään
-  Keski, ilman SSAO:ta, SSR:ää ja automaattista valotusta, ja 8k-karttoja ei viedä selainversioon.
+  SSR:ää (Ultra), reunanpehmennystä, partikkelimääriä, pintakarttojen tarkkuutta (Matala 2k, Keski 4k, Korkea 8k,
+  Ultra 8k ja Maa 16k), pinnan lähikuvan yksityiskohtia (ei Matalassa) ja ilmakehän näytteitä. Oletus valitaan näytönohjaimen mukaan. Selaimessa (Compatibility) enintään
+  Keski, ilman SSAO:ta, SSR:ää ja automaattista valotusta, ja 8k- ja 16k-karttoja ei viedä selainversioon.
 - Kuvakaappaukset käyttöliittymän tiloista (vaatii ikkunan): `godot -- --uishotstest=/polku/kuviin --size=390x844`.
   Ohjaamosta: `godot -- --cockpitshotstest=/polku/kuviin [--quality=0–3]` (selaimen renderöijällä lisäksi
   `--rendering-method gl_compatibility`); raporttiin kirjataan myös ruutunopeus.
@@ -174,7 +182,9 @@ Ohjaamon pintakartat ovat hakemistossa `assets/textures/` (tasavälinen lieriöp
 | Europa | Seek9750: Moon Europa color map ([Wikimedia Commons](https://commons.wikimedia.org/wiki/File:Moon_Europa_color_map.jpg)), NASAn kuvista | CC0 |
 | Ganymedes | Björn Jónsson: Map of Ganymede, NASAn kuvista ([Wikimedia Commons](https://commons.wikimedia.org/wiki/File:Map_of_Ganymede_by_Bj%C3%B6rn_J%C3%B3nsson.jpg)). Tarkoissa kartoissa värit ovat tästä kartasta ja hienot yksityiskohdat USGS:n Voyager- ja Galileo-mosaiikin kirkkaudesta ([USGS Astrogeology](https://astrogeology.usgs.gov/search/map/ganymede_voyager_galileo_ssi_global_color_mosaic_1435m)) | vapaa käyttö, tekijä mainittava; USGS public domain |
 | Enceladus | Cassini-luotaimen värikartta PIA18435, NASA/JPL-Caltech/SSI/LPI ([Wikimedia Commons](https://commons.wikimedia.org/wiki/File:Enceladus_Color_Map.jpg)) | public domain |
-| Maan päiväkartta ilman pilviä, pilvikerros ja yövalot (Godot-versio, `assets/textures/maa-*`) | [Solar System Scope](https://www.solarsystemscope.com/textures/) Wikimedia Commonsin kautta: 8k earth daymap, clouds, nightmap ja 2k specular map; pienennetty ja muunnettu WebP:ksi (`tools/make_textures.gd`) | [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/) |
+| Maan päiväkartta ilman pilviä (`assets/textures/maa-paiva*`) ja merimaski (`maa-meri.webp`, päiväkartan väreistä) | NASA Earth Observatory: [Blue Marble Next Generation](https://science.nasa.gov/earth/earth-observatory/blue-marble-next-generation/), marraskuu 2004, maaston varjostuksella (21 600 × 10 800 px); pienennetty 16k-JPEG:ksi ja 8k/4k/2k-WebP:ksi (`tools/make_earth_textures.py`) | public domain (NASA) |
+| Maan yövalot (`assets/textures/maa-yo*`) | NASA Earth Observatory: [Black Marble 2016](https://science.nasa.gov/earth/earth-observatory/earth-at-night/maps/) (13 500 × 6 750 px); pelkät valot erotettu taustasta (`tools/make_earth_textures.py`) | public domain (NASA) |
+| Maan pilvikerros (`assets/textures/maa-pilvet*`) | [Solar System Scope](https://www.solarsystemscope.com/textures/) Wikimedia Commonsin kautta: 8k earth clouds; harmaasävyinen WebP (8k `tools/make_earth_textures.py`, 4k ja 2k `tools/make_textures.gd`) | [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/) |
 | Linnunrata (Godot-versio, `assets/textures/linnunrata-4k.webp`) | NASA/Goddard Space Flight Center Scientific Visualization Studio: [Deep Star Maps 2020](https://svs.gsfc.nasa.gov/4851/), Milkyway 2020 (Wikimedia Commonsin 3840 px versio), muunnettu WebP:ksi | public domain (NASA) |
 | Kirjasin (Godot-versio) | [DejaVu Sans](https://dejavu-fonts.github.io/) (`assets/fonts/`) | Bitstream Vera -lisenssi, ks. `assets/fonts/LICENSE-DejaVu.txt` |
 | Triton | Voyager 2:n värikartta PIA18668, NASA/JPL-Caltech/LPI ([Wikimedia Commons](https://commons.wikimedia.org/wiki/File:Triton_Map.jpg)). Voyager kuvasi vain osan pinnasta: kuvaamaton pohjoinen alue on täytetty ympäristön sumennetulla värillä, ja tehostettuja värejä on haalistettu. | public domain |

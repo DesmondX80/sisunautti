@@ -27,6 +27,10 @@ uniform float cloud_offset = 0.0;
 uniform float detail_strength = 0.0; // kaasujättiläisten pilvipyörteet lähikuvassa
 uniform float saturation = 1.0;
 uniform vec3 detail_tint = vec3(1.0); // lähikuvan sävy (karttapiste suurempi kuin kuvapiste)
+// Kiinteän pinnan lähikuva (kiertoradalta): kun karttapiste on kuvapistettä suurempi, rajat (rannikot, laaksot)
+// rikotaan kohinalla karttapistettä pienemmiksi, paikallista kontrastia terävöitetään ja pintaan lisätään hienoa
+// vaihtelua. Merillä vain aallokon välke Auringon heijastuksessa. 0 = pois (laatutaso).
+uniform float surface_detail = 0.0;
 
 varying vec3 local_pos;
 varying vec3 cam_local;
@@ -70,7 +74,36 @@ void fragment() {
 	vec3 n = normalize(local_pos);
 	vec3 l = normalize(sun_local);
 	vec3 v = normalize(cam_local - local_pos);
-	vec3 albedo = texture(albedo_tex, UV).rgb;
+	vec2 uv = UV;
+	float water = spec_strength > 0.0 ? texture(spec_tex, UV).r : 0.0;
+	vec3 wave_n = n;
+	float zoom = 0.0; // 0 kaukana, 1 kun karttapiste on selvästi kuvapistettä suurempi
+	if (surface_detail > 0.0) {
+		vec2 ts = vec2(textureSize(albedo_tex, 0));
+		float texels = fwidth(UV.y) * ts.y;
+		zoom = (1.0 - smoothstep(0.35, 1.2, texels)) * surface_detail;
+		if (zoom > 0.0) {
+			// Kohinan solu noin kaksi karttapistettä: kulma karttapisteinä = n · leveys / 2π.
+			vec3 q = n * ts.x / TAU * 0.5;
+			vec2 warp = vec2(fbm(q, 3), fbm(q + vec3(7.3, 2.1, 5.9), 3)) - 0.5;
+			uv += warp * 1.6 / ts * zoom;
+		}
+	}
+	vec3 albedo = texture(albedo_tex, uv).rgb;
+	if (zoom > 0.0) {
+		vec2 ts = vec2(textureSize(albedo_tex, 0));
+		// Terävöitys: ero sumeampaan tasoon (mipmap-siirto) korostaa paikallisia rajoja.
+		vec3 blur = texture(albedo_tex, uv, 2.0).rgb;
+		albedo = max(albedo + (albedo - blur) * 0.6 * zoom * (1.0 - water), 0.0);
+		// Hieno vaihtelu maalla karttapistettä pienemmässä mittakaavassa (pellot, kivikko, kasvillisuus).
+		vec3 q = n * ts.x / TAU * 3.0;
+		float f = fbm(q, 4) - 0.5;
+		float land = 1.0 - water;
+		albedo *= 1.0 + f * 0.55 * zoom * land;
+		// Merellä aallokko kallistaa pinnan normaalia hieman (Auringon välke hajoaa).
+		vec3 w = vec3(fbm(q * 2.0, 3), fbm(q * 2.0 + 3.7, 3), fbm(q * 2.0 + 8.1, 3)) - 0.5;
+		wave_n = normalize(n + w * 0.06 * zoom * water);
+	}
 	// Kaasujättiläisten lähikuva: pintakartta on suurennettuna tasainen, joten siihen lisätään sävy, kontrasti ja
 	// pilvipyörteet. Kauempaa (karttapiste kuvapisteen kokoinen tai pienempi) kartta näkyy sellaisenaan.
 	if (detail_strength > 0.0) {
@@ -118,23 +151,37 @@ void fragment() {
 	}
 	// Meret heijastavat Auringon (Blinn–Phong), vain päiväpuolella.
 	if (spec_strength > 0.0) {
-		float mask = texture(spec_tex, UV).r;
+		float mask = water;
 		vec3 hv = normalize(l + v);
-		float s = pow(max(dot(n, hv), 0.0), 400.0) * 1.6 + pow(max(dot(n, hv), 0.0), 30.0) * 0.06;
+		float s = pow(max(dot(wave_n, hv), 0.0), 400.0) * 1.6 + pow(max(dot(wave_n, hv), 0.0), 30.0) * 0.06;
 		color += vec3(1.0, 0.92, 0.8) * s * mask * spec_strength * day * sun_intensity;
 	}
 	// Kaupunkien valot yöpuolella.
 	if (night_strength > 0.0) {
 		float dark = 1.0 - smoothstep(-0.12, 0.04, ndl);
-		color += texture(night_tex, UV).rgb * vec3(1.0, 0.82, 0.55) * night_strength * dark;
+		vec3 lights = texture(night_tex, uv).rgb;
+		if (zoom > 0.0) {
+			// Lähikuvassa karttapiste on monen kuvapisteen kokoinen: valo jaetaan pieniksi pisteiksi ja juoviksi
+			// (kadut, taajamat), joiden väliin jää pimeää; keskimääräinen kirkkaus säilyy suunnilleen.
+			vec3 q = n * float(textureSize(night_tex, 0).x) / TAU * 4.0;
+			float sp = fbm(q, 3);
+			float mask = smoothstep(0.42, 0.62, sp);
+			lights *= mix(vec3(1.0), vec3(mask * 2.2), zoom);
+		}
+		lights = pow(lights, vec3(1.25));
+		// Natriumvalojen oranssi, kirkkaimmat keskustat valkoisemmiksi.
+		vec3 tint = mix(vec3(1.0, 0.58, 0.24), vec3(1.0, 0.82, 0.6), clamp(lights.r * 1.2 - 0.3, 0.0, 1.0));
+		color += lights * tint * night_strength * dark;
 	}
 	// Ilmakehän reunahehku: sironnut valo näkyy ohuena kaarena ja terminaattorilla punertavana.
-	if (atmo_strength > 0.0) {
+	// Lähellä (kiertoradalla) ilmakehän kuori hoitaa usvan ja reunan; reunahehku on kaukonäkymää varten.
+	float far = smoothstep(0.03, 0.6, length(cam_local) - 1.0);
+	if (atmo_strength > 0.0 && far > 0.0) {
 		float fres = pow(1.0 - max(dot(n, v), 0.0), 3.0);
 		float lit = smoothstep(-0.25, 0.35, ndl);
 		vec3 sunset = mix(vec3(1.0, 0.45, 0.2), atmo_color, smoothstep(-0.05, 0.3, ndl));
-		color = mix(color, sunset * sun_intensity, fres * atmo_strength * lit * 0.85);
-		color += atmo_color * atmo_strength * 0.08 * lit * sun_intensity;
+		color = mix(color, sunset * sun_intensity, fres * atmo_strength * lit * 0.85 * far);
+		color += atmo_color * atmo_strength * 0.08 * lit * sun_intensity * far;
 	}
 	ALBEDO = color;
 }

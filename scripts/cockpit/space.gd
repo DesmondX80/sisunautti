@@ -41,6 +41,8 @@ const HIRES_BACK_PX := 120.0
 var textures := BodyTextures.new()
 var max_texture := 4096
 var atmo_samples := 8
+## Pinnan ja pilvien lähikuvan yksityiskohdat (0–1, laatutaso).
+var surface_detail := 1.0
 var bodies: Array[Dictionary] = []
 var sun_root: Node3D
 var sun_mesh: MeshInstance3D
@@ -234,6 +236,7 @@ func _build_body(name: String, radius_km: float, color: Color, moon: bool) -> vo
 		amat.set_shader_parameter("atmo_color", a[0])
 		amat.set_shader_parameter("atmo_radius", a[1])
 		amat.set_shader_parameter("density", a[2])
+		amat.render_priority = 1 # pilvien jälkeen
 		am.material_override = amat
 		am.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 		tilt.add_child(am)
@@ -390,10 +393,13 @@ func update(ship_km: PackedFloat64Array, t: float, px_per_rad: float) -> void:
 			b.atmo.set_shader_parameter("sun_local", sun_tilt)
 			b.atmo.set_shader_parameter("sun_intensity", intensity)
 			b.atmo.set_shader_parameter("samples", atmo_samples)
+		if not GIANTS.has(b.name):
+			(b.mat as ShaderMaterial).set_shader_parameter("surface_detail", surface_detail)
 		if b.clouds != null:
 			var cinv := (b.cloud_spin as Node3D).global_transform.basis.orthonormalized().inverse()
 			b.clouds.set_shader_parameter("sun_local", cinv * to_sun)
 			b.clouds.set_shader_parameter("sun_intensity", intensity)
+			b.clouds.set_shader_parameter("surface_detail", surface_detail)
 		if b.rings != null:
 			b.rings.set_shader_parameter("sun_local", sun_tilt)
 			b.rings.set_shader_parameter("sun_intensity", intensity)
@@ -424,6 +430,16 @@ func _texture_level(b: Dictionary, px: float) -> void:
 		_apply_textures(b)
 
 
+## Maan yö- tai pilvikartta tasolle: lähellä tarkin (8k, jos laatutaso sallii ja tiedosto on mukana, muuten 4k).
+func _earth_map(base: String, level: int) -> String:
+	if level == 2:
+		var hi := BodyTextures.DIR + base + "-8k.webp"
+		if max_texture >= 8192 and BodyTextures.exists(hi):
+			return hi
+		return BodyTextures.DIR + base + "-4k.webp"
+	return BodyTextures.DIR + base + ".webp"
+
+
 func _apply_textures(b: Dictionary) -> void:
 	if b.level == 0:
 		return
@@ -436,15 +452,16 @@ func _apply_textures(b: Dictionary) -> void:
 	if tex != null:
 		mat.set_shader_parameter("albedo_tex", tex)
 	if b.has("night_path"):
-		var n := textures.get_texture(b.night_path)
+		var n := textures.get_texture(_earth_map("maa-yo", b.level))
+		if n == null:
+			n = textures.get_texture(b.night_path)
 		if n != null:
 			mat.set_shader_parameter("night_tex", n)
 		var s := textures.get_texture(b.spec_path)
 		if s != null:
 			mat.set_shader_parameter("spec_tex", s)
 	if b.clouds != null:
-		var path: String = BodyTextures.DIR + ("maa-pilvet-4k.webp" if b.level == 2 else "maa-pilvet.webp")
-		var c := textures.get_texture(path)
+		var c := textures.get_texture(_earth_map("maa-pilvet", b.level))
 		if c == null:
 			c = textures.get_texture(b.cloud_path)
 		if c != null:

@@ -2,10 +2,8 @@ extends SceneTree
 ## Tekee ladatuista lähdekuvista pelin tekstuurit (WebP) hakemistoon assets/textures/.
 ## Käyttö: godot --headless -s tools/make_textures.gd -- /polku/lähdekuviin
 ## Lähteet (Wikimedia Commons, ks. README):
-##   daymap8k.jpg   Solarsystemscope texture 8k earth daymap.jpg (CC BY 4.0)
 ##   clouds8k.jpg   Solarsystemscope texture 8k earth clouds.jpg (CC BY 4.0)
-##   night8k.jpg    Solarsystemscope texture 8k earth nightmap.jpg (CC BY 4.0)
-##   specular.jpg   Solarsystemscope texture 2k earth specular map.tif (CC BY 4.0, 1920 px esikatselukuva)
+## Maan päiväkartta, merimaski, yövalot ja 8k-pilvet: tools/make_earth_textures.py (NASA Blue Marble ja Black Marble).
 ##   milkyway.jpg   Deep Star Maps 2020 – Milkyway 2020 (NASA/GSFC SVS, public domain, 3840 px esikatselukuva)
 
 const OUT := "res://assets/textures/"
@@ -13,10 +11,7 @@ const OUT := "res://assets/textures/"
 
 func _init() -> void:
 	var src: String = OS.get_cmdline_user_args()[0] if OS.get_cmdline_user_args().size() > 0 else "."
-	make(src.path_join("daymap8k.jpg"), "maa-paiva", [8192, 4096, 2048], 0.82)
 	make(src.path_join("clouds8k.jpg"), "maa-pilvet", [4096, 2048], 0.8, true)
-	make(src.path_join("night8k.jpg"), "maa-yo", [4096, 2048], 0.8)
-	make(src.path_join("specular.jpg"), "maa-meri", [2048], 0.85, true)
 	make(src.path_join("milkyway.jpg"), "linnunrata", [4096], 0.85)
 	quit()
 

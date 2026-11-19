@@ -108,6 +108,17 @@ func _ready() -> void:
 		files = files and BodyTextures.exists(BodyTextures.file_for(name, BodyTextures.best_width(name, 8192)))
 	check("pintakartat löytyvät", files)
 	check("tarkkuuden yläraja", BodyTextures.best_width("Maa", 4096) == 4096 and BodyTextures.best_width("Uranus", 8192) == 2048)
+	# Maan 16k-kartta (Ultra) on tuotu pakattuna tekstuurina, ei purettavana WebP:nä.
+	var hi := BodyTextures.file_for("Maa", BodyTextures.best_width("Maa", 16384))
+	check("Maan 16k-kartta pakattuna", hi.ends_with("-16k.jpg") and BodyTextures.imported(hi) and BodyTextures.exists(hi)
+		and BodyTextures.best_width("Maa", 8192) == 8192)
+	var tex16: Texture2D = load(hi)
+	check("16k-kartta on näytönohjaimen pakkaama", tex16 != null and tex16.get_width() == 16384)
+	var loader := BodyTextures.new()
+	loader.threaded = false
+	var clouds := loader.get_texture(BodyTextures.DIR + "maa-pilvet-8k.webp")
+	check("pilvet ja yövalot 8k, yksikanavaisina", clouds != null and clouds.get_width() == 8192
+		and clouds.get_image().get_format() == Image.FORMAT_L8 and BodyTextures.exists(BodyTextures.DIR + "maa-yo-8k.webp"))
 	# Ohjaamonäkymä ja laatutasot
 	var cv: CockpitView = get_parent().ui.cockpit_view
 	check("ohjaamo luotu", cv != null and cv.cabin.screens.size() == 3 and cv.cabin.monitors.size() == 6 and cv.cabin.mini_screen != null and cv.space.bodies.size() == 16)
@@ -157,10 +168,10 @@ func _ready() -> void:
 	check("vapaa zoomaus rajoissa", cv.fov_target == cv.base_fov)
 	cv.reset_view()
 	cv.apply_quality(Settings.Quality.LOW)
-	check("Matala: 2k-kartat, ei SSAO:ta", cv.space.max_texture == 2048 and not cv.env.ssao_enabled)
+	check("Matala: 2k-kartat, ei yksityiskohtia eikä SSAO:ta", cv.space.max_texture == 2048 and cv.space.surface_detail == 0.0 and not cv.env.ssao_enabled)
 	if not Settings.is_compatibility():
 		cv.apply_quality(Settings.Quality.ULTRA)
-		check("Ultra: 8k, SSAO ja SSR", cv.space.max_texture == 8192 and cv.env.ssao_enabled and cv.env.ssr_enabled)
+		check("Ultra: 16k, pinnan yksityiskohdat, SSAO ja SSR", cv.space.max_texture == 16384 and cv.space.surface_detail == 1.0 and cv.env.ssao_enabled and cv.env.ssr_enabled)
 	cv.apply_quality(Settings.quality)
 	# Läpinäkymättömät avaruusvarjostimet kirjoittavat VERTEXin, jotta syvyysesikierros käyttää niiden DEPTHiä
 	# (muuten pinta piirtyy mustana laatutasoilla ilman SSAO:ta).

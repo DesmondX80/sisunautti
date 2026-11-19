@@ -680,8 +680,9 @@ func apply_quality(level: int) -> void:
 	exhaust.amount = [80, 200, 400, 800][level]
 	smoke.amount = [100, 250, 500, 900][level]
 	sparks.amount = [60, 150, 300, 600][level]
-	space.max_texture = [2048, 4096, 8192, 8192][level]
+	space.max_texture = [2048, 4096, 8192, 16384][level]
 	space.atmo_samples = [4, 6, 10, 16][level]
+	space.surface_detail = [0.0, 0.7, 1.0, 1.0][level]
 
 
 func _ecl_to_scene(v: Variant) -> Vector3:
