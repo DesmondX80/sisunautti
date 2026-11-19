@@ -203,10 +203,37 @@ func _ready() -> void:
 			containers += 1
 	check("ohjaamon säiliössä vain päänäkymä (muut SubViewportit piirtyisivät päälle)", containers == 1)
 	cv.toggle_rear()
-	check("kohdekamera takakameraksi", cv.is_rear() and cv.rear_button.text == "Kohdekamera"
+	check("kohdekamera takakameraksi", cv.is_rear() and cv.rear_button.text == "360°-kamera"
 		and cv.rear_view.world_3d == cv.viewport.find_world_3d())
+	check("ulkokamera ei näe ohjaamon lasia", cv.rear_cam.cull_mask & Cabin.INTERIOR_LAYER == 0
+		and cv.cabin.glass_material != null)
 	cv.toggle_rear()
 	check("takakamera kohdekameraksi", not cv.is_rear() and cv.rear_view.render_target_update_mode == SubViewport.UPDATE_DISABLED)
+	# 360°-kamera (#38): T kiertää kohde → taka → 360° → kohde, raahaus ja nuolet kääntävät, koko näytön tila.
+	cv.cycle_camera()
+	cv.cycle_camera()
+	var cam_cs: CockpitScreen = cv._camera_screen()
+	check("kolmas kamera 360°", cv.cam_mode == "360" and cam_cs.feed == "360" and cv.pan_full_button.visible
+		and cv.rear_button.text == "Kohdekamera")
+	cv.pan_bearing = 0.0
+	cv.pan_by(TAU + 0.5, 3.0)
+	check("360°: suuntima kiertää ja kallistus rajattu", is_equal_approx(cv.pan_bearing, 0.5) and cv.pan_tilt <= deg_to_rad(85.0) + 1e-6)
+	cv.pan_tilt = 0.0
+	cv.pan_bearing = PI
+	cv._update_pan(true)
+	var fwd := -(cv.rear_cam.global_transform.basis.z)
+	var frame := cv._pan_frame()
+	check("360°: suuntima 180° katsoo taaksepäin", fwd.dot(frame.z) > 0.999)
+	check("360°: lähellä kappaletta vakautettu (katto poispäin kappaleesta)", cv.space.nearest.is_empty() or cv.space.nearest_size < 0.08
+		or frame.y.dot(-(cv.space.nearest.root as Node3D).position.normalized()) > 0.999)
+	cv.toggle_pan_full()
+	check("360° koko näytölle", cv.pan_full and cv._pan_layer.visible and cv.rear_view.render_target_update_mode == SubViewport.UPDATE_ALWAYS
+		and cv.viewport.render_target_update_mode == SubViewport.UPDATE_DISABLED and cv.pan_full_button.text == "Ohjaamoon")
+	cv.cycle_camera()
+	check("kameran vaihto sulkee koko näytön", cv.cam_mode == "kohde" and not cv.pan_full and not cv._pan_layer.visible
+		and cv.viewport.render_target_update_mode == SubViewport.UPDATE_ALWAYS and cv.rear_view.size == Vector2i(768, 432))
+	cv.pan_bearing = 0.0
+	cv.pan_tilt = -0.15
 	cv.zoom_by(0.5)
 	cv.zoom_by(100.0)
 	check("vapaa zoomaus rajoissa", cv.fov_target == cv.base_fov)

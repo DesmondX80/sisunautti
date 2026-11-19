@@ -31,10 +31,27 @@ var smoke: GPUParticles3D
 var sparks: GPUParticles3D
 var tools: HBoxContainer
 var tower: LaunchTower
-## Takakamera: toinen kamera samassa 3D-maailmassa, kuva kohdekameranäytölle (toggle_rear).
+## Ulkokamera: toinen kamera samassa 3D-maailmassa, kuva kohdekameranäytölle. Tilat (cycle_camera, T):
+## "kohde" kohdekamera, "taka" takakamera ja "360" aluksen katolla kääntyvä kamera (#38), jonka voi avata
+## koko näytölle (toggle_pan_full).
 var rear_view: SubViewport
 var rear_cam: Camera3D
 var rear_button: Button
+var cam_mode := "kohde"
+const CAM_MODES := ["kohde", "taka", "360"]
+const CAM_NAMES := {"kohde": "Kohdekamera", "taka": "Takakamera", "360": "360°-kamera"}
+## 360°-kameran suuntima (rad, myötäpäivään keulasta), kallistus (rad) ja zoomauskerroin.
+var pan_bearing := 0.0
+var pan_tilt := -0.15
+var pan_zoom := 1.0
+var pan_full := false
+var pan_full_button: Button
+var _pan_layer: Control # koko näytön kuva ja tähtäin
+var _pan_rect: TextureRect
+var _pan_hud: Control
+var _pan_drag := false
+const PAN_FOV := 64.0
+const PAN_MOUNT := Vector3(0.0, 0.9, 0.2) # aluksen katolla ohjaamon takana
 var _throttle := 0.0 # tehovivun asento 0–1 (pehmennetty)
 ## Manuaaliohjaus (#30): aluksen asento näppäimillä 360°, kaasu ja jarrutus lennolla.
 var manual := false
@@ -102,6 +119,7 @@ func _ready() -> void:
 	_build_flare()
 	_build_overlay()
 	_build_rear()
+	_build_pan_layer()
 	_build_tools()
 	Settings.quality_changed.connect(apply_quality)
 	apply_quality(Settings.quality)
@@ -277,6 +295,7 @@ func _build_flare() -> void:
 	flare.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	flare.extra_cull_margin = 16384.0
 	flare.position = Vector3(0, 0, -1)
+	flare.layers = Cabin.INTERIOR_LAYER
 	camera.add_child(flare)
 
 
@@ -326,9 +345,13 @@ func _build_tools() -> void:
 	manual_button.tooltip_text = "Ohjaa alusta itse (M): W/S nokka, A/D kääntö, Q/E kallistus, Shift/Ctrl kaasu, X nollaa, B jarruta"
 	tools.add_child(manual_button)
 	_build_manual_hud()
-	rear_button = UiKit.button("Takakamera", toggle_rear)
-	rear_button.tooltip_text = "Vaihda kohdekameranäyttö takakameraksi ja takaisin (T)"
+	rear_button = UiKit.button("Takakamera", cycle_camera)
+	rear_button.tooltip_text = "Vaihda kameranäyttö: kohdekamera, takakamera ja 360°-kamera (T)"
 	tools.add_child(rear_button)
+	pan_full_button = UiKit.button("Koko näyttö", toggle_pan_full)
+	pan_full_button.tooltip_text = "360°-kamera koko näytölle ja takaisin ohjaamoon (F, Esc): raahaa kääntääksesi, rulla zoomaa"
+	pan_full_button.visible = false
+	tools.add_child(pan_full_button)
 
 
 func _build_manual_hud() -> void:
@@ -415,7 +438,57 @@ func _build_rear() -> void:
 	attr.auto_exposure_enabled = false
 	attr.exposure_multiplier = 0.8
 	rear_cam.attributes = attr
+	# Ohjaamon sisäosat (lasi, plasma, häikäisy) eivät näy ulkokameraan.
+	rear_cam.cull_mask = 0xFFFFF & ~Cabin.INTERIOR_LAYER
 	rear_view.add_child(rear_cam)
+
+
+## Koko näytön 360°-kamera: kuva ja tähtäin ohjaamonäkymän päällä (työkalurivin alla).
+func _build_pan_layer() -> void:
+	_pan_layer = Control.new()
+	_pan_layer.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	_pan_layer.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_pan_layer.visible = false
+	add_child(_pan_layer)
+	_pan_rect = TextureRect.new()
+	_pan_rect.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	_pan_rect.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_pan_rect.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	_pan_rect.stretch_mode = TextureRect.STRETCH_SCALE
+	var mat := ShaderMaterial.new()
+	mat.shader = load("res://shaders/rear_camera.gdshader")
+	_pan_rect.material = mat
+	_pan_layer.add_child(_pan_rect)
+	_pan_hud = Control.new()
+	_pan_hud.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	_pan_hud.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_pan_hud.draw.connect(_draw_pan_full)
+	_pan_layer.add_child(_pan_hud)
+
+
+func _draw_pan_full() -> void:
+	var sz := _pan_hud.size
+	var s := clampf(minf(sz.x / 1024.0, sz.y / 640.0), 0.6, 1.4)
+	# Yläpalkki näkymävalitsimen (Ohjaamo/Kartta) alle.
+	CockpitScreen.draw_pan_hud(_pan_hud, load(UiKit.FONT_BOLD), load(UiKit.FONT), sz, pan_vector(), s, 46.0)
+	var hint := "Raahaa kääntääksesi · nuolinäppäimet · rulla zoomaa · Esc ohjaamoon"
+	var fs := roundi(15 * s)
+	var mono: Font = load(UiKit.FONT)
+	var w := mono.get_string_size(hint, HORIZONTAL_ALIGNMENT_LEFT, -1, fs).x
+	if w < sz.x - 40.0:
+		_pan_hud.draw_rect(Rect2((sz.x - w) / 2.0 - 14.0, sz.y - 74.0 - fs - 6.0, w + 28.0, fs + 18.0), Color(0.01, 0.04, 0.09, 0.5))
+		_pan_hud.draw_string(mono, Vector2((sz.x - w) / 2.0, sz.y - 74.0), hint, HORIZONTAL_ALIGNMENT_LEFT, -1, fs, Color(CockpitScreen.MUTED, 0.9))
+
+
+## 360°-kameran suunta näytöille: (suuntima, kallistus, zoom).
+func pan_vector() -> Vector3:
+	return Vector3(pan_bearing, pan_tilt, pan_zoom)
+
+
+## Kääntää 360°-kameraa (rad); suuntima kiertää täyden ympyrän, kallistus ±85°.
+func pan_by(d_bearing: float, d_tilt: float) -> void:
+	pan_bearing = fposmod(pan_bearing + d_bearing, TAU)
+	pan_tilt = clampf(pan_tilt + d_tilt, -deg_to_rad(85.0), deg_to_rad(85.0))
 
 
 func _camera_screen() -> CockpitScreen:
@@ -426,25 +499,67 @@ func _camera_screen() -> CockpitScreen:
 
 
 func is_rear() -> bool:
-	var cs := _camera_screen()
-	return cs != null and cs.is_rear()
+	return cam_mode == "taka"
 
 
-## Vaihtaa kohdekameranäytön takakameraksi ja takaisin (painike ja T-näppäin).
+## Vaihtaa kohdekameranäytön takakameraksi ja takaisin.
 func toggle_rear() -> void:
+	set_cam_mode("kohde" if cam_mode == "taka" else "taka")
+
+
+## Seuraava kameratila (painike ja T-näppäin): kohde → taka → 360° → kohde.
+func cycle_camera() -> void:
+	set_cam_mode(CAM_MODES[(CAM_MODES.find(cam_mode) + 1) % CAM_MODES.size()])
+
+
+func set_cam_mode(mode: String) -> void:
 	var cs := _camera_screen()
-	if cs == null:
+	if cs == null or not CAM_MODES.has(mode):
 		return
-	var on := not cs.is_rear()
-	cs.set_rear(rear_view.get_texture() if on else null)
-	rear_view.render_target_update_mode = SubViewport.UPDATE_ONCE if on else SubViewport.UPDATE_DISABLED
+	cam_mode = mode
+	if mode != "360" and pan_full:
+		toggle_pan_full()
+	cs.set_feed(rear_view.get_texture() if mode != "kohde" else null, mode)
+	rear_cam.fov = PAN_FOV if mode == "360" else 62.0
+	rear_view.render_target_update_mode = SubViewport.UPDATE_ONCE if mode != "kohde" else SubViewport.UPDATE_DISABLED
 	if rear_button != null:
-		rear_button.text = "Kohdekamera" if on else "Takakamera"
+		rear_button.text = CAM_NAMES[CAM_MODES[(CAM_MODES.find(mode) + 1) % CAM_MODES.size()]]
+		pan_full_button.visible = mode == "360"
+
+
+## 360°-kamera koko näytölle ja takaisin: ohjaamonäkymää ei piirretä koko näytön tilassa.
+func toggle_pan_full() -> void:
+	if not pan_full and cam_mode != "360":
+		set_cam_mode("360")
+	pan_full = not pan_full
+	_pan_layer.visible = pan_full
+	_pan_drag = false
+	if pan_full:
+		zoom_out()
+		_pan_rect.texture = rear_view.get_texture()
+		_resize_pan_view()
+	else:
+		rear_view.size = Vector2i(768, 432)
+		rear_view.render_target_update_mode = SubViewport.UPDATE_ONCE
+	viewport.render_target_update_mode = SubViewport.UPDATE_DISABLED if pan_full else SubViewport.UPDATE_ALWAYS
+	pan_full_button.text = "Ohjaamoon" if pan_full else "Koko näyttö"
+
+
+func _resize_pan_view() -> void:
+	if not pan_full:
+		return
+	var px := Vector2i(maxi(64, roundi(size.x)), maxi(64, roundi(size.y)))
+	rear_view.size = px
+	rear_view.render_target_update_mode = SubViewport.UPDATE_ALWAYS
+	(_pan_rect.material as ShaderMaterial).set_shader_parameter("aspect", float(px.x) / float(px.y))
 
 
 # Takakamera aluksen perässä katsoo taaksepäin ja 50° alas (lattian suuntaan), jotta kiertoradalla ja lähdössä
 # planeetta näkyy; kuva päivitetään samaan tahtiin kuin näyttö.
 func _update_rear(screen_drawn: bool) -> void:
+	if cam_mode == "360":
+		_update_pan(screen_drawn)
+		return
 	if not is_rear():
 		return
 	var rear := ship.global_transform * Transform3D(Basis(Vector3.UP, PI) * Basis(Vector3.RIGHT, -REAR_TILT), Vector3(0.0, -0.3, 1.2))
@@ -463,6 +578,46 @@ func _update_rear(screen_drawn: bool) -> void:
 	rear_cam.global_transform = rear
 	if screen_drawn:
 		rear_view.render_target_update_mode = SubViewport.UPDATE_ONCE
+
+
+## 360°-kamera aluksen katolla: suuntima ja kallistus aluksen akseleiden suhteen (nuolinäppäimet kääntävät).
+func _update_pan(screen_drawn: bool) -> void:
+	var keys := is_visible_in_tree() and not (get_viewport().gui_get_focus_owner() is LineEdit)
+	if keys:
+		var dt := get_process_delta_time() * 1.2 / pan_zoom
+		var h := (1.0 if Input.is_key_pressed(KEY_RIGHT) else 0.0) - (1.0 if Input.is_key_pressed(KEY_LEFT) else 0.0)
+		var v := (1.0 if Input.is_key_pressed(KEY_UP) else 0.0) - (1.0 if Input.is_key_pressed(KEY_DOWN) else 0.0)
+		if h != 0.0 or v != 0.0:
+			pan_by(h * dt, v * dt)
+	rear_cam.fov = rad_to_deg(2.0 * atan(tan(deg_to_rad(PAN_FOV) / 2.0) / pan_zoom))
+	var b := Basis.from_euler(Vector3(pan_tilt, -pan_bearing, 0.0), EULER_ORDER_YXZ)
+	rear_cam.global_transform = Transform3D(_pan_frame() * b, ship.global_transform * PAN_MOUNT)
+	var cs := _camera_screen()
+	if cs != null:
+		cs.pan = pan_vector()
+	if pan_full:
+		_pan_hud.queue_redraw()
+	elif screen_drawn:
+		rear_view.render_target_update_mode = SubViewport.UPDATE_ONCE
+
+
+## 360°-kameran perusasento: kaukana aluksen akselit, lähellä kappaletta (kulmasäde yli muutaman asteen) vakautettu
+## paikalliseen pystysuuntaan kuin gimbaali: horisontti pysyy vaakasuorassa (myös pystyssä alustalla ja kallistettaessa),
+## ja suuntima 0° on keulan suunta vaakatasossa (pystyssä katon suunta).
+func _pan_frame() -> Basis:
+	var sb := ship.global_transform.basis.orthonormalized()
+	if space.nearest.is_empty():
+		return sb
+	var w := smoothstep(0.02, 0.08, space.nearest_size)
+	if w <= 0.0:
+		return sb
+	var up := -(space.nearest.root as Node3D).position.normalized()
+	var fwd := -sb.z - up * (-sb.z).dot(up)
+	if fwd.length() < 0.3:
+		fwd = sb.y - up * sb.y.dot(up)
+	fwd = fwd.normalized()
+	var level := Basis(up.cross(-fwd).normalized(), up, -fwd)
+	return Basis(sb.get_rotation_quaternion().slerp(level.get_rotation_quaternion(), w))
 
 
 ## Alin sallittu katseen pystykulma (#19): näkymän alareuna ei saa mennä ohjaamokuvan alareunan alle, jotta pilotin
@@ -573,6 +728,16 @@ func monitor_at(p: Vector2) -> int:
 	return -1
 
 
+## Kääntääkö raahaus kohdassa p 360°-kameraa (koko näyttö tai kameranäyttö 360°-tilassa).
+func _on_pan_screen(p: Vector2) -> bool:
+	if pan_full:
+		return true
+	if cam_mode != "360":
+		return false
+	var i := monitor_at(p)
+	return i >= 0 and (cabin.monitors[i].screen as CockpitScreen).kind == "camera"
+
+
 func _click(p: Vector2) -> void:
 	var i := monitor_at(p)
 	if i >= 0 and i != zoom_index:
@@ -588,14 +753,21 @@ func _gui_input(event: InputEvent) -> void:
 			_dragging = mb.pressed
 			if mb.pressed:
 				_press_moved = 0.0
-			elif _press_moved < 8.0:
+				_pan_drag = _on_pan_screen(mb.position)
+			elif _press_moved < 8.0 and not pan_full:
 				_click(mb.position)
 			accept_event()
 		elif mb.pressed and mb.button_index == MOUSE_BUTTON_WHEEL_UP:
-			zoom_by(0.85)
+			if pan_full:
+				pan_zoom = clampf(pan_zoom / 0.85, 1.0, 8.0)
+			else:
+				zoom_by(0.85)
 			accept_event()
 		elif mb.pressed and mb.button_index == MOUSE_BUTTON_WHEEL_DOWN:
-			zoom_by(1.0 / 0.85)
+			if pan_full:
+				pan_zoom = clampf(pan_zoom * 0.85, 1.0, 8.0)
+			else:
+				zoom_by(1.0 / 0.85)
 			accept_event()
 	elif event is InputEventScreenTouch:
 		var st := event as InputEventScreenTouch
@@ -603,16 +775,24 @@ func _gui_input(event: InputEvent) -> void:
 			_dragging = st.pressed
 			if st.pressed:
 				_press_moved = 0.0
-			elif _press_moved < 12.0:
+				_pan_drag = _on_pan_screen(st.position)
+			elif _press_moved < 12.0 and not pan_full:
 				_click(st.position)
 		accept_event()
 	elif event is InputEventMagnifyGesture:
-		zoom_by(1.0 / maxf(0.01, (event as InputEventMagnifyGesture).factor))
+		if pan_full:
+			pan_zoom = clampf(pan_zoom * (event as InputEventMagnifyGesture).factor, 1.0, 8.0)
+		else:
+			zoom_by(1.0 / maxf(0.01, (event as InputEventMagnifyGesture).factor))
 		accept_event()
 	elif (event is InputEventMouseMotion and _dragging) or event is InputEventScreenDrag:
 		var rel: Vector2 = event.relative
 		_press_moved += rel.length()
-		if _press_moved >= 8.0:
+		if _pan_drag:
+			# 360°-kamera kääntyy raahauksen mukana: koko näytöllä kuvakulman mukaan, ohjaamon näytöllä nopeammin.
+			var kp := (deg_to_rad(PAN_FOV) / pan_zoom / maxf(size.y, 1.0)) if pan_full else 0.012 * camera.fov / base_fov
+			pan_by(rel.x * kp, -rel.y * kp)
+		elif _press_moved >= 8.0:
 			# Raahaus kääntää katsetta; zoomattuna hitaammin.
 			var k := 0.005 * camera.fov / base_fov
 			yaw = clampf(yaw - rel.x * k, -2.6, 2.6)
@@ -625,12 +805,19 @@ func _gui_input(event: InputEvent) -> void:
 
 
 func _unhandled_key_input(event: InputEvent) -> void:
-	if is_visible_in_tree() and event.is_action_pressed("ui_cancel") and fov_target < base_fov - 0.5:
+	if is_visible_in_tree() and event.is_action_pressed("ui_cancel") and pan_full:
+		toggle_pan_full()
+		get_viewport().set_input_as_handled()
+	elif is_visible_in_tree() and event is InputEventKey and (event as InputEventKey).pressed and not (event as InputEventKey).echo \
+			and (event as InputEventKey).keycode == KEY_F:
+		toggle_pan_full()
+		get_viewport().set_input_as_handled()
+	elif is_visible_in_tree() and event.is_action_pressed("ui_cancel") and fov_target < base_fov - 0.5:
 		zoom_out()
 		get_viewport().set_input_as_handled()
 	elif is_visible_in_tree() and event is InputEventKey and (event as InputEventKey).pressed and not (event as InputEventKey).echo \
 			and (event as InputEventKey).keycode == KEY_T:
-		toggle_rear()
+		cycle_camera()
 		get_viewport().set_input_as_handled()
 	elif is_visible_in_tree() and event is InputEventKey and (event as InputEventKey).pressed and not (event as InputEventKey).echo \
 			and (event as InputEventKey).keycode == KEY_M and not Game.state.pad:
@@ -640,6 +827,7 @@ func _unhandled_key_input(event: InputEvent) -> void:
 
 # Pystykulma niin, että ohjaamon kuva täyttää näkymän (kapeassa ikkunassa katsetta käännetään sivuille).
 func _fit_fov() -> void:
+	_resize_pan_view()
 	if size.y <= 0.0:
 		return
 	var aspect := size.x / size.y

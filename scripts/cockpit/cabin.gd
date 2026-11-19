@@ -30,6 +30,8 @@ const MONITORS := [
 	["mini", [Vector2(660, 480), Vector2(727, 480), Vector2(727, 501), Vector2(660, 501)]],
 ]
 const SCREEN_WIDTH := 1024
+## Ohjaamon sisäosien näkyvyyskerros (lasi, plasma): ulkokamerat eivät näe sitä.
+const INTERIOR_LAYER := 4
 ## Ympäröivä 360°-panoraama (tasavälinen lieriöprojektio): 5824 × 2880 työpöydällä (sama pikselitiheys kuin
 ## etukuvassa), 4096 × 2048 selaimessa (muisti). Suurennettu käyttäjän kuvasta Real-ESRGANilla.
 const PANORAMA := "res://assets/cockpit/panoraama.webp"
@@ -156,6 +158,7 @@ func _build_image() -> void:
 	var g := QuadMesh.new()
 	g.size = size * 1.02
 	var gi := _mesh(g, glass_material, Vector3(0, 0, -1.02))
+	gi.layers = INTERIOR_LAYER
 	gi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 
 
@@ -196,6 +199,7 @@ func _build_plasma() -> void:
 	m.material_override = plasma_material
 	m.position = Vector3(0, 0, -1.5)
 	m.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	m.layers = INTERIOR_LAYER
 	plasma.add_child(m)
 	plasma.visible = false
 

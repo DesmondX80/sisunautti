@@ -2,7 +2,7 @@ extends TestCase
 ## Kuvakaappaukset ohjaamosta (vaatii ikkunan, ei mukana tools/run_tests.sh:ssa):
 ##   godot -- --cockpitshotstest=/polku/kuviin [--size=1600x900] [--quality=2] [--only=nimi] [--state=tallennus.json]
 ## --state: kuva annetusta tallennuksesta (pelaajan näkymä sellaisenaan ja katse alas), muut näkymät ohitetaan.
-## Näkymät: manuaaliohjaus (--only=manuaali), aloitusvalikko (--only=valikko), radio (--only=radio), takakamera (--only=taka), laukaisualusta päivällä, laukaisutorni (nousu ja yö, --only=torni), Max Q, kiertorata Maan päivä- ja yöpuolen yllä, Kuun ja Marsin pinta kiertoradalta (--only=kuupinta, --only=marspinta), Mars lähellä, Jupiterin
+## Näkymät: manuaaliohjaus (--only=manuaali), aloitusvalikko (--only=valikko), radio (--only=radio), takakamera (--only=taka), 360°-kamera (--only=360), laukaisualusta päivällä, laukaisutorni (nousu ja yö, --only=torni), Max Q, kiertorata Maan päivä- ja yöpuolen yllä, Kuun ja Marsin pinta kiertoradalta (--only=kuupinta, --only=marspinta), Mars lähellä, Jupiterin
 ## ilmajarrutus, Saturnus renkaineen, Aurinko kohti katsottaessa, planeetan varjo, zoomaus näyttöihin ja kaikki
 ## näytöt lähtölaskennassa, pitkällä lennolla ja kuun kiertoradalla (--only=naytot). Lopuksi mitataan ruutunopeus.
 
@@ -100,6 +100,22 @@ func drift_at(r: PackedFloat64Array, t: float) -> void:
 	G.load_game_from_state()
 
 
+## Hetki, jolloin Aurinko on korkealla laukaisupaikan yllä (ensimmäisen vuorokauden aikana).
+func pad_day() -> float:
+	var best := START
+	var best_day := -2.0
+	for i in 144:
+		var t := START + i * 600000.0
+		var L := Flight.launch_state(null, t)
+		var sun := Flight.scale(L.r, -1.0 / Flight.norm(L.r))
+		var up := Flight.scale(L.rel.r, 1.0 / Flight.norm(L.rel.r))
+		var d := Flight.dot(sun, up)
+		if d > best_day and d < 0.8:
+			best_day = d
+			best = t
+	return best
+
+
 ## Kiertoradan kulma, jossa alus on kappaleen ja Auringon välissä (päiväpuoli) tai takana (yöpuoli).
 func sun_angle(body: String, t: float, behind: bool) -> float:
 	var p: PackedFloat64Array = Flight.body_state(body, t).r
@@ -121,17 +137,7 @@ func _run() -> void:
 			await shot("tallennus-alas", 120)
 		return
 	# Laukaisualusta päivällä: haetaan hetki, jolloin Aurinko on korkealla laukaisupaikan yllä.
-	var best := START
-	var best_day := -2.0
-	for i in 144:
-		var t := START + i * 600000.0
-		var L := Flight.launch_state(null, t)
-		var sun := Flight.scale(L.r, -1.0 / Flight.norm(L.r))
-		var up := Flight.scale(L.rel.r, 1.0 / Flight.norm(L.rel.r))
-		var d := Flight.dot(sun, up)
-		if d > best_day and d < 0.8:
-			best_day = d
-			best = t
+	var best := pad_day()
 	G.fake_real_ms = best
 	G.new_game()
 	cv.reset_view()
@@ -295,6 +301,9 @@ func _run() -> void:
 	# Takakamera kohdekameranäytöllä (#24): alustalla, kiertoradalla ja lähdön jälkeen poistuva Maa.
 	if want("taka"):
 		await _rear_shots()
+	# 360°-kamera (#38): näytöllä ja koko näytöllä.
+	if want("360"):
+		await _pan_shots()
 	# Ruutunopeus: kiertorata Maan yllä, katse Maahan, 5 s.
 	orbit_at("Maa", t0, sun_angle("Maa", t0, false) + 0.3)
 	cv.reset_view()
@@ -400,6 +409,39 @@ func _moon_approach() -> void:
 	G.burn_at = -INF
 	G.anchor(arrive + 600000.0, 0)
 	await shot("kuu-kiertorata", 60)
+
+
+func _pan_shots() -> void:
+	var best := pad_day()
+	G.fake_real_ms = best
+	G.new_game()
+	cv.set_cam_mode("360")
+	cv.pan_bearing = deg_to_rad(20.0)
+	cv.pan_tilt = 0.0
+	cv.zoom_to(4)
+	await shot("360-alusta", 60)
+	cv.toggle_pan_full()
+	# Alustalla alus on pystyssä: suuntima 90° katsoo vaakasuoraan torniin päin.
+	cv.pan_bearing = deg_to_rad(90.0)
+	cv.pan_tilt = 0.0
+	await shot("360-alusta-koko", 40)
+	var t0 := START + 86400000.0
+	orbit_at("Maa", t0, sun_angle("Maa", t0, false) + 0.3)
+	cv.snap_attitude()
+	cv.pan_bearing = deg_to_rad(90.0)
+	cv.pan_tilt = -0.5
+	await shot("360-kiertorata-koko", 40)
+	cv.pan_bearing = deg_to_rad(180.0)
+	cv.pan_tilt = -0.75
+	cv.pan_zoom = 2.0
+	await shot("360-kiertorata-koko-taakse", 40)
+	cv.pan_zoom = 1.0
+	cv.toggle_pan_full()
+	cv.zoom_to(4)
+	await shot("360-kiertorata", 60)
+	cv.set_cam_mode("kohde")
+	cv.reset_view()
+	check("360° pois", cv.cam_mode == "kohde" and not cv.pan_full)
 
 
 func _rear_shots() -> void:

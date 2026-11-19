@@ -8,8 +8,8 @@ extends Control
 ##   "ship"     aluskaavio polttoaineineen ja moottorin liekkeineen sekä päänäytön 1 rivit (aika, päivä, kiihdytys)
 ##   "target"   tähtäin ja työntö sekä päänäytön 2 rivit (nopeus)
 ##   "systems"  järjestelmät: etäisyydet planeetoille, mittarit, kohteen hologrammi ja tilarivit
-##   "camera"   kohdekamera: kohteen pinta ja päänäytön 3 rivit (kohde, polttoaine); vaihdettavissa takakameraksi
-##              (set_rear), jolloin näytöllä on 3D-kuva aluksen takaa
+##   "camera"   kohdekamera: kohteen pinta ja päänäytön 3 rivit (kohde, polttoaine); vaihdettavissa takakameraksi tai
+##              360°-kameraksi (set_feed), jolloin näytöllä on 3D-kuva aluksen ulkopuolelta
 ##   "mini"     keskikonsolin pikkunäyttö: aikakiihdytys ja moottori
 
 const SIZE := Vector2(1024, 576)
@@ -40,7 +40,11 @@ var mono: Font
 var globe: ColorRect = null
 var globe_mat: ShaderMaterial = null
 var over: Control # päällyskerros pallon päällä
-var rear: TextureRect = null # takakameran kuva (kohdekameranäytöllä)
+var rear: TextureRect = null # ulkokameran kuva (kohdekameranäytöllä)
+## Ulkokameran tila: "" kohdekamera, "taka" takakamera, "360" kääntyvä kamera.
+var feed := ""
+## 360°-kameran suunta: x = suuntima (rad, myötäpäivään keulasta), y = kallistus (rad), z = zoomauskerroin.
+var pan := Vector3(0, 0, 1)
 var _globe_name := ""
 var _drawn_at := -100000
 
@@ -107,10 +111,12 @@ func set_globe(name: String, tex: Texture2D, color: Color) -> void:
 		globe_mat.set_shader_parameter("sun", name == "Aurinko")
 
 
-## Kohdekamera takakameraksi: tex on takakameran kuva (SubViewportin tekstuuri), null palauttaa kohdekameran.
-func set_rear(tex: Texture2D) -> void:
+## Kohdekamera ulkokameraksi: tex on kameran kuva (SubViewportin tekstuuri) ja mode "taka" tai "360";
+## null palauttaa kohdekameran.
+func set_feed(tex: Texture2D, mode: String = "taka") -> void:
 	if rear == null:
 		return
+	feed = mode if tex != null else ""
 	rear.texture = tex
 	rear.visible = tex != null
 	globe.visible = tex == null
@@ -489,6 +495,10 @@ func _draw_systems_over(c: CanvasItem) -> void:
 # --- Kohdekamera ---
 
 func _draw_camera(c: CanvasItem) -> void:
+	if feed == "360":
+		draw_pan_hud(c, font, mono, SIZE, pan, 1.0)
+		_feed_footer(c)
+		return
 	if is_rear():
 		_draw_rear(c)
 		return
@@ -521,11 +531,82 @@ func _draw_rear(c: CanvasItem) -> void:
 	var p := SIZE / 2.0 + Vector2(0, 20)
 	for d: Vector2 in [Vector2(-1, -1), Vector2(1, -1), Vector2(1, 1), Vector2(-1, 1)]:
 		c.draw_polyline(PackedVector2Array([p + d * Vector2(60, 26), p + d * Vector2(60, 40), p + d * Vector2(40, 40)]), Color(BRIGHT, 0.6), 2.0)
+	_feed_footer(c)
+
+
+## Ulkokameran alareunan palkki: kohde ja polttoaine.
+func _feed_footer(c: CanvasItem) -> void:
 	c.draw_rect(Rect2(10, SIZE.y - 96, SIZE.x - 20, 86), Color(0.01, 0.04, 0.09, 0.62))
 	_text(c, font, Vector2(30, SIZE.y - 56), title, 24, ACCENT, 420.0)
 	if not rows.is_empty():
 		_text(c, mono, Vector2(30, SIZE.y - 24), String(rows[0][0]), 22, FG, 420.0)
 	_fuel_bar(c, Rect2(500, SIZE.y - 50, SIZE.x - 530, 26))
+
+
+## 360°-kameran tähtäin (näytöllä ja koko näytön kuvassa): otsikko ja tallennusvalo, suuntimanauha ylhäällä
+## (KEULA 0°, PERÄ 180°), kallistusasteikko vasemmalla ja kulmamerkit keskellä. sz on piirtoalue, s tekstin ja
+## viivojen mittakaava, pan = (suuntima, kallistus, zoom) ja y0 yläpalkin yläreuna.
+static func draw_pan_hud(c: CanvasItem, font: Font, mono: Font, sz: Vector2, p_pan: Vector3, s: float, y0: float = 0.0) -> void:
+	var blink := fmod(Time.get_ticks_msec() / 1000.0, 1.6) < 0.8
+	var top := 64.0 * s
+	if y0 != 0.0: # näytöllä piirtomuunnos on jo asetettu
+		c.draw_set_transform(Vector2(0, y0))
+	c.draw_rect(Rect2(10 * s, 10 * s, sz.x - 20 * s, top), Color(0.01, 0.04, 0.09, 0.5))
+	c.draw_circle(Vector2(40, 42) * s, 9.0 * s, BAD if blink else Color(BAD, 0.3))
+	c.draw_string(font, Vector2(60, 52) * s, "360° KAMERA", HORIZONTAL_ALIGNMENT_LEFT, -1, roundi(28 * s), BRIGHT)
+	var bearing := fposmod(rad_to_deg(p_pan.x), 360.0)
+	var info := "%03d°  %+d°  %s×" % [roundi(bearing) % 360, roundi(rad_to_deg(p_pan.y)), Fmt.num(p_pan.z, 1)]
+	var fs := roundi(20 * s)
+	var iw := mono.get_string_size(info, HORIZONTAL_ALIGNMENT_LEFT, -1, fs).x
+	if sz.x - 30 * s - iw > 60 * s + font.get_string_size("360° KAMERA", HORIZONTAL_ALIGNMENT_LEFT, -1, roundi(28 * s)).x + 20 * s:
+		c.draw_string(mono, Vector2(sz.x - 30 * s - iw, 50 * s), info, HORIZONTAL_ALIGNMENT_LEFT, -1, fs, MUTED)
+	# Suuntimanauha: 10° välein viivat, 30° välein luvut, keskellä osoitin.
+	var cx := sz.x / 2.0
+	var y := top + 46.0 * s
+	var half_w := minf(sz.x / 2.0 - 30.0 * s, 340.0 * s)
+	var span := 70.0 / maxf(p_pan.z, 0.2) # nauhan puolileveys asteina
+	c.draw_rect(Rect2(cx - half_w, y - 26 * s, half_w * 2.0, 44 * s), Color(0.01, 0.04, 0.09, 0.35))
+	c.draw_line(Vector2(cx - half_w, y), Vector2(cx + half_w, y), Color(ACCENT, 0.45), 1.5 * s)
+	var d0 := int(floor((bearing - span) / 10.0)) * 10
+	var d := d0
+	while d <= bearing + span:
+		var x := cx + (d - bearing) / span * half_w
+		if absf(x - cx) <= half_w:
+			var a := 1.0 - absf(x - cx) / half_w * 0.7
+			var major := posmod(d, 30) == 0
+			c.draw_line(Vector2(x, y), Vector2(x, y - (12.0 if major else 6.0) * s), Color(ACCENT, 0.8 * a), 2.0 * s)
+			if major:
+				var dd := posmod(d, 360)
+				var lab := "KEULA" if dd == 0 else ("PERÄ" if dd == 180 else "%03d" % dd)
+				var lw := mono.get_string_size(lab, HORIZONTAL_ALIGNMENT_LEFT, -1, roundi(16 * s)).x
+				c.draw_string(mono, Vector2(x - lw / 2.0, y - 16 * s), lab, HORIZONTAL_ALIGNMENT_LEFT, -1, roundi(16 * s),
+					Color(GOOD if dd == 0 else (WARM if dd == 180 else BRIGHT), a))
+		d += 10
+	c.draw_colored_polygon(PackedVector2Array([Vector2(cx, y + 2 * s), Vector2(cx - 8 * s, y + 14 * s), Vector2(cx + 8 * s, y + 14 * s)]), BRIGHT)
+	if y0 != 0.0:
+		c.draw_set_transform(Vector2.ZERO)
+	top += y0
+	# Kallistusasteikko vasemmalla: 15° välein.
+	var mid := sz.y / 2.0
+	var lx := 34.0 * s
+	# Asteikko kuvan mittakaavassa: kuvan korkeus on 360°-kameran pystykuvakulma (64° / zoom).
+	var px_deg := sz.y / (64.0 / maxf(p_pan.z, 0.2))
+	var step := 5 if px_deg * 5.0 > 40.0 * s else (10 if px_deg * 10.0 > 40.0 * s else 15)
+	var el := rad_to_deg(p_pan.y)
+	for e in range(-90, 91, step):
+		var yy := mid - (e - el) * px_deg
+		if yy < top + 80 * s or yy > sz.y - 110 * s:
+			continue
+		var major := e % (step * 2) == 0 or e == 0
+		c.draw_line(Vector2(lx, yy), Vector2(lx + (18.0 if major else 10.0) * s, yy), Color(GOOD if e == 0 else ACCENT, 0.75), 2.0 * s)
+		if major:
+			c.draw_string(mono, Vector2(lx + 24 * s, yy + 6 * s), "%+d°" % e if e != 0 else "0°", HORIZONTAL_ALIGNMENT_LEFT, -1, roundi(15 * s), Color(BRIGHT, 0.8))
+	c.draw_colored_polygon(PackedVector2Array([Vector2(lx - 4 * s, mid), Vector2(lx - 16 * s, mid - 8 * s), Vector2(lx - 16 * s, mid + 8 * s)]), BRIGHT)
+	# Kulmamerkit ja piste keskellä.
+	var p := Vector2(cx, mid)
+	for q: Vector2 in [Vector2(-1, -1), Vector2(1, -1), Vector2(1, 1), Vector2(-1, 1)]:
+		c.draw_polyline(PackedVector2Array([p + q * Vector2(60, 26) * s, p + q * Vector2(60, 40) * s, p + q * Vector2(40, 40) * s]), Color(BRIGHT, 0.6), 2.0 * s)
+	c.draw_circle(p, 2.5 * s, Color(BRIGHT, 0.8))
 
 
 # --- Pikkunäyttö ---
