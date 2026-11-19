@@ -315,6 +315,7 @@ func _build_overlay() -> void:
 	overlay_mat.set_shader_parameter("image_size", Cabin.IMAGE_SIZE)
 	overlay_mat.set_shader_parameter("image_center", Cabin.CENTER)
 	overlay_mat.set_shader_parameter("focal", Cabin.FOCAL)
+	overlay_mat.set_shader_parameter("image_edge", atan(Cabin.CENTER.x / Cabin.FOCAL))
 	overlay_mat.set_shader_parameter("panorama", load(Cabin.panorama_path()))
 	overlay_mat.set_shader_parameter("lights_map", load("res://assets/cockpit/ohjaamo_valot.png"))
 	for i in cabin.monitors.size():

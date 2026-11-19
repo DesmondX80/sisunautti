@@ -36,6 +36,15 @@ func _ready() -> void:
 			only = arg.split("=")[1]
 		elif arg.begins_with("--state="):
 			state_path = arg.split("=")[1]
+		elif arg.begins_with("--pano-gain="): # panoraaman kirkkauden kokeilu
+			cv.overlay_mat.set_shader_parameter("pano_gain", float(arg.split("=")[1]))
+		elif arg.begins_with("--pano-tint="):
+			var tt := arg.split("=")[1].split(",")
+			cv.overlay_mat.set_shader_parameter("pano_tint", Vector3(float(tt[0]), float(tt[1]), float(tt[2])))
+		elif arg.begins_with("--frame="): # ikkunan kehyspilarin leveyden kokeilu (px)
+			cv.overlay_mat.set_shader_parameter("frame_width", float(arg.split("=")[1]))
+		elif arg.begins_with("--pano-edge="): # panoraaman sovituksen kokeilu (asteina)
+			cv.overlay_mat.set_shader_parameter("pano_edge", deg_to_rad(float(arg.split("=")[1])))
 	DirAccess.make_dir_recursive_absolute(dir)
 	get_window().content_scale_factor = 1.0
 	DisplayServer.window_set_size(win)
@@ -241,6 +250,13 @@ func _run() -> void:
 		cv.reset_view()
 		await shot("saturnus", 120)
 	# Zoomaus näyttöihin: keskinäyttö, tutka ja kohdekamera.
+	if only == "sivut":
+		orbit_at("Maa", t0, sun_angle("Maa", t0, false) + 0.3)
+		for v: Array in [["eteen", 0.0, 0.0], ["vasen", 0.9, 0.1], ["oikea", -0.8, 0.2], ["vasen-alas", 0.75, -0.35], ["oikea-alas", -0.75, -0.35]]:
+			cv.yaw = v[1]
+			cv.pitch = v[2]
+			await shot("katse-" + v[0], 20)
+		cv.reset_view()
 	if want("zoom"):
 		orbit_at("Maa", t0, sun_angle("Maa", t0, false) + 0.3)
 		await _frames(2)
