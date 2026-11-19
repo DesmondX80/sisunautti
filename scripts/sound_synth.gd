@@ -1,6 +1,6 @@
 class_name SoundSynth
 ## Pelin äänet syntetisoituna käynnistyksessä (ei äänitiedostoja): laukaisun jyrinä, moottorin poltto, ilmajarrutuksen
-## plasma ja ohjaamon humina silmukoina sekä käyttöliittymän napsautus, ilmoitusten kellosoinnut ja lähtölaskennan
+## plasma silmukoina sekä käyttöliittymän napsautus, ilmoitusten kellosoinnut ja lähtölaskennan
 ## piippaus. Näytteet 22 050 Hz, 16-bittinen mono. Silmukat ristihäivytetään saumattomiksi.
 
 const RATE := 22050
@@ -135,20 +135,6 @@ static func plasma() -> PackedFloat32Array:
 		pop *= 0.985
 		x[i] = band[i] * (0.4 + 0.6 * flutter[i]) + low[i] * 0.5 + (rng.randf() * 2.0 - 1.0) * pop * 0.5
 	return seamless(_normalize(x, 0.85), 0.3)
-
-
-## Ohjaamon taustahumina: sähköverkon kaltainen sävy yläsävelineen ja tuulettimen kohina.
-static func hum() -> PackedFloat32Array:
-	var n := int(4.0 * RATE)
-	var fan := _lowpass(_highpass(_noise(n, 41), 120.0), 900.0)
-	var x := PackedFloat32Array()
-	x.resize(n)
-	for i in n:
-		var t := float(i) / RATE
-		var am := 0.85 + 0.15 * sin(TAU * 0.25 * t)
-		x[i] = (sin(TAU * 55.0 * t) * 0.5 + sin(TAU * 110.0 * t) * 0.22 + sin(TAU * 165.0 * t) * 0.1 + sin(TAU * 440.0 * t) * 0.015) * am \
-			+ fan[i] * 0.35
-	return seamless(_normalize(x, 0.8), 0.25)
 
 
 ## Käyttöliittymän napsautus: lyhyt, pehmeä naksahdus.

@@ -27,9 +27,11 @@ kuva Kosmiset kalliot Carinan sumussa (NASA, ESA, CSA, STScI, [CC BY 4.0](https:
 
 ## Äänet
 
-Äänet syntetisoidaan käynnistyksessä (`scripts/sound_synth.gd`, noin 0,2 s; ei äänitiedostoja), ja `scripts/game_sound.gd`
+Äänet syntetisoidaan käynnistyksessä (`scripts/sound_synth.gd`, noin 0,2 s), paitsi ohjaamon taustaääni, joka on äänite
+`assets/sound/ohjaamo_tausta.ogg` (freesound_community: [Spaceship Ambient](https://pixabay.com/sound-effects/spaceship-ambient-27988/),
+Pixabayn sisältölisenssi; leikattu saumattomaksi 51 sekunnin silmukaksi). `scripts/game_sound.gd`
 soittaa ne pelin tilan mukaan: laukaisun jyrinä tärinän ja työnnön mukaan, moottorin pauhu poltoissa, ilmajarrutuksen
-plasman suhina ja rätinä, ohjaamon hiljainen taustahumina, painikkeiden napsautus, lähtölaskennan viiden viimeisen
+plasman suhina ja rätinä, ohjaamon hiljainen taustaääni, painikkeiden napsautus, lähtölaskennan viiden viimeisen
 sekunnin piippaukset sekä kellosoinnut ilmoituksista (kiertorata, lähtöpoltto, vaikutuspiiri, saapuminen, kartoitus).
 Voimakkuus ja mykistys ovat aloitusvalikon asetuksissa (`Settings.volume`, `Settings.muted`). Valikon ollessa auki
 pelin äänet hiljenevät.

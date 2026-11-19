@@ -1,11 +1,14 @@
 class_name GameSound
 extends Node
-## Pelin äänet: silmukat (laukaisun jyrinä, moottorin poltto, ilmajarrutuksen plasma, ohjaamon humina), joiden
+## Pelin äänet: silmukat (laukaisun jyrinä, moottorin poltto, ilmajarrutuksen plasma, ohjaamon taustaääni), joiden
 ## voimakkuus seuraa ohjaamon tilaa (CockpitState), sekä kertaäänet: painikkeiden napsautus, lähtölaskennan
 ## piippaukset ja ilmoitukset (kiertorata, lähtöpoltto, vaikutuspiiri, saapuminen, kartoitus). Äänet syntetisoidaan
-## käynnistyksessä (SoundSynth). Voimakkuus ja mykistys ovat Settingsissä (pääväylä). quiet: valikko auki.
+## käynnistyksessä (SoundSynth), paitsi ohjaamon taustaääni, joka on äänite (AMBIENT). Voimakkuus ja mykistys ovat
+## Settingsissä (pääväylä). quiet: valikko auki.
 
 const LOOPS := ["rumble", "burn", "plasma", "hum"]
+## Ohjaamon taustaääni: freesound_community, Spaceship Ambient (Pixabay), saumattomaksi silmukaksi leikattuna.
+const AMBIENT := "res://assets/sound/ohjaamo_tausta.ogg"
 
 var quiet := false
 var _loops := {} # nimi → AudioStreamPlayer
@@ -20,10 +23,10 @@ var _last_count := 99
 
 
 func _ready() -> void:
-	var make := {"rumble": SoundSynth.rumble, "burn": SoundSynth.burn, "plasma": SoundSynth.plasma, "hum": SoundSynth.hum}
+	var make := {"rumble": SoundSynth.rumble, "burn": SoundSynth.burn, "plasma": SoundSynth.plasma}
 	for name: String in LOOPS:
 		var p := AudioStreamPlayer.new()
-		p.stream = SoundSynth.to_wav(make[name].call(), true)
+		p.stream = ambient() if name == "hum" else SoundSynth.to_wav(make[name].call(), true)
 		p.volume_db = -80.0
 		add_child(p)
 		_loops[name] = p
@@ -45,15 +48,22 @@ func _ready() -> void:
 	_hook_buttons.call_deferred(get_tree().root)
 
 
+## Ohjaamon taustaääni silmukkana.
+static func ambient() -> AudioStreamOggVorbis:
+	var s: AudioStreamOggVorbis = (load(AMBIENT) as AudioStreamOggVorbis).duplicate()
+	s.loop = true
+	return s
+
+
 ## Silmukoiden tavoitetasot (0–1) ohjaamon tilasta: laukaisussa jyrinä tärinän ja työnnön mukaan, poltoissa
-## moottori, ilmajarrutuksessa plasma ja aina hiljainen humina.
+## moottori, ilmajarrutuksessa plasma ja aina hiljainen ohjaamon taustaääni.
 static func levels(s: Dictionary, pad: bool) -> Dictionary:
 	var shake := clampf(float(s.get("shake", 0.0)), 0.0, 1.0)
 	var thrust := clampf(float(s.get("thrust", 0.0)), 0.0, 1.0)
 	var aero := clampf(float(s.get("aero", 0.0)), 0.0, 1.0)
 	var launching := pad and float(s.get("tau", -INF)) >= -3.0
 	return {"rumble": clampf(shake * 0.8 + thrust * 0.5, 0.0, 1.0) if launching else shake * 0.4,
-		"burn": thrust * (0.55 if launching else 1.0), "plasma": aero, "hum": 0.22}
+		"burn": thrust * (0.55 if launching else 1.0), "plasma": aero, "hum": 0.35}
 
 
 func _process(delta: float) -> void:

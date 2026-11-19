@@ -6,7 +6,7 @@ extends TestCase
 
 func _ready() -> void:
 	var R := SoundSynth.RATE
-	var loops := {"rumble": SoundSynth.rumble(), "burn": SoundSynth.burn(), "plasma": SoundSynth.plasma(), "hum": SoundSynth.hum()}
+	var loops := {"rumble": SoundSynth.rumble(), "burn": SoundSynth.burn(), "plasma": SoundSynth.plasma()}
 	for name: String in loops:
 		var x: PackedFloat32Array = loops[name]
 		var peak := 0.0
@@ -23,8 +23,10 @@ func _ready() -> void:
 	check("kellosointi häipyy", c.size() > R and absf(c[c.size() - 1]) < 0.05)
 	var w := SoundSynth.to_wav(SoundSynth.click(), false)
 	check("napsautus WAV:ksi", w.data.size() == SoundSynth.click().size() * 2 and w.loop_mode == AudioStreamWAV.LOOP_DISABLED)
-	var lw := SoundSynth.to_wav(loops.hum, true)
-	check("silmukka WAV:ssa", lw.loop_mode == AudioStreamWAV.LOOP_FORWARD and lw.loop_end == loops.hum.size())
+	var lw := SoundSynth.to_wav(loops.burn, true)
+	check("silmukka WAV:ssa", lw.loop_mode == AudioStreamWAV.LOOP_FORWARD and lw.loop_end == loops.burn.size())
+	var amb := GameSound.ambient()
+	check("ohjaamon taustaääni silmukkana", amb != null and amb.loop and amb.get_length() > 40.0)
 	var launch := GameSound.levels({"shake": 1.0, "thrust": 1.0, "tau": 5.0}, true)
 	check("laukaisussa jyrinä", launch.rumble == 1.0 and launch.burn > 0.3)
 	var burn := GameSound.levels({"shake": 0.7, "thrust": 1.0, "aero": 0.0}, false)
