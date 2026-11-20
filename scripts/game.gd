@@ -685,6 +685,11 @@ const MANUAL_WARP := 1
 
 
 var _free_prev := {} # vapaan radan edellinen tarkistus: {t, vsp, orbit}
+## Nokan suunta (ekliptika) manuaaliohjauksessa ilmakehän nostovoimaa varten; tyhjä = nokka menosuuntaan (ohjaamo asettaa).
+var manual_nose := PackedFloat64Array()
+## Ilmakehälennon dynaaminen paine (Pa) ja lämpökuorma 0–1 (plasma, hehku) viimeisimmästä askeleesta.
+var atmo_q := 0.0
+var atmo_heat := 0.0
 
 
 ## Yhtäjaksoisen manuaalipolton Δv tähän mennessä (km/s; HUD).
@@ -780,7 +785,12 @@ func _burn_orbit(now: float, dv: PackedFloat64Array) -> void:
 ## leikkaavalla radalla aikakiihdytys rajataan, jotta törmäys ei hyppää yli.
 func _free_orbit_step(t: float) -> void:
 	var name: Variant = state.location
+	atmo_heat = 0.0
+	atmo_q = 0.0
 	if name == null or not Flight.is_free_orbit(state.orbit) or state.get("destroyed") != null:
+		return
+	if _air_step(name, t):
+		destroy_ship(("Alus syöksyi %s kaasukehään." if Flight.is_gas_giant(name) else "Alus syöksyi %s pintaan.") % Fmt.gen(name))
 		return
 	var s := Flight.parking_state(name, t, state.orbit)
 	var rel: Dictionary = s.rel
@@ -811,6 +821,44 @@ func _free_orbit_step(t: float) -> void:
 			changed.emit()
 	if shape.escape and rn > Flight.soi_of(name):
 		_leave_soi(name, t, s)
+
+
+## Lento ilmakehässä (#57): kun vapaa rata on ilmakehän ylärajan alapuolella, rata lasketaan numeerisesti edellisestä
+## tilasta (orbit.epoch) hetkeen t painovoiman, nostovoiman ja ilmanvastuksen mukaan, ja tila tallennetaan uudeksi
+## alkutilaksi. Nostovoima kääntää lentorataa kohti nokkaa (manual_nose) kuin lentokoneella, kun ilmaa on tarpeeksi.
+## Ilmakehässä kiihdytys enintään 10×. Palauttaa true, jos alus osui pintaan.
+func _air_step(name: String, t: float) -> bool:
+	if not Flight.has_air(name):
+		return false
+	var top: float = Flight.AIR[name][2]
+	var radius: float = Flight.orbit_of(name).radiusKm
+	var o: Dictionary = state.orbit
+	var r0 := PackedFloat64Array(o.rel.r)
+	var v0 := PackedFloat64Array(o.rel.v)
+	var t0: float = o.epoch
+	var now_rel: Dictionary = Flight.parking_state(name, t, o).rel
+	if Flight.norm(r0) - radius > top:
+		# Ilmakehän yläpuolella Keplerin rata; ilmakehään tultaessa numeerinen lento alkaa tästä hetkestä.
+		if Flight.norm(now_rel.r) - radius <= top:
+			state.orbit = {"epoch": t, "arg": o.arg, "rel": {"r": now_rel.r, "v": now_rel.v}}
+		return false
+	var nose := manual_nose if manual_nose.size() == 3 else PackedFloat64Array()
+	if t <= t0:
+		var ae0 := Flight.aero(name, r0, v0, nose)
+		atmo_q = ae0.q
+		atmo_heat = clampf((float(ae0.heat) - 2e7) / 3e8, 0.0, 1.0)
+		return false
+	if warp_index() > MANUAL_WARP:
+		_set_notice("Ilmakehässä kiihdytys enintään %s." % WARPS[MANUAL_WARP][1])
+		anchor(t, MANUAL_WARP)
+		changed.emit()
+	var f := Flight.fly_air(name, r0, v0, nose, (t - t0) / 1000.0)
+	state.orbit = {"epoch": t, "arg": atan2(f.r[1], f.r[0]), "rel": {"r": f.r, "v": f.v}}
+	var ae := Flight.aero(name, f.r, f.v, nose)
+	atmo_q = ae.q
+	# Plasma ja hehku lämpökuorman mukaan (ρv³; paluussa Maahan huippu noin 10⁸–10⁹ W/m²).
+	atmo_heat = clampf((float(ae.heat) - 2e7) / 3e8, 0.0, 1.0)
+	return f.hit
 
 
 ## Vapaan radan isoakselin puolikas (km) kappaleen name ympärillä (suljettu rata).

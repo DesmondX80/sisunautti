@@ -21,6 +21,10 @@ func _ready() -> void:
 	ui.name = "VoyageUI"
 	layer.add_child(ui)
 	var test := TestFlags.find(OS.get_cmdline_user_args())
+	# Työpöydällä peli käynnistyy koko näytön tilassa (ei testeissä, joissa ikkunan koko asetetaan; selaimessa koko
+	# näyttö vaatii käyttäjän painalluksen).
+	if test == "" and not OS.has_feature("web") and DisplayServer.get_name() != "headless":
+		DisplayServer.window_set_mode(DisplayServer.WINDOW_MODE_FULLSCREEN)
 	# Aloitusvalikko pelin päällä (ei testeissä); pelinäkymä piilotetaan, kun valikko on auki.
 	var menu_layer := CanvasLayer.new()
 	menu_layer.name = "Menu"

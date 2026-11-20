@@ -741,6 +741,73 @@ static func is_free_orbit(orbit: Variant) -> bool:
 	return orbit is Dictionary and orbit.get("rel") is Dictionary
 
 
+## Ilmakehät lentoa varten (#57): pinnan tiheys ρ₀ (kg/m³; kaasujättiläisillä 1 barin kohdalla), skaalakorkeus H (km)
+## ja yläraja (km), jonka yläpuolella ilmaa ei huomioida (aina pysäköintiradan alapuolella).
+const AIR := {
+	"Venus": [65.0, 15.9, 250.0], "Maa": [1.225, 8.5, 140.0], "Mars": [0.020, 11.1, 150.0], "Titan": [5.3, 40.0, 700.0],
+	"Jupiter": [0.16, 27.0, 1000.0], "Saturnus": [0.19, 59.5, 1500.0], "Uranus": [0.42, 27.7, 800.0], "Neptunus": [0.45, 19.7, 600.0],
+}
+## Alus ilmakehässä kuin avaruussukkula: siipipinta-ala / massa (m²/kg; 100 m², 20 t). Nostovoimakerroin
+## C_L = 1,2·sin 2α ja vastuskerroin C_D = 0,08 + 1,4·sin²α kohtauskulman α mukaan. Nostovoima rajataan 5 g:hen.
+const WING_LOADING := 0.005
+const LIFT_MAX := 0.049 # km/s²
+const AIR_STEP_S := 0.05
+
+
+static func has_air(name: String) -> bool:
+	return AIR.has(name)
+
+
+## Ilman tiheys (kg/m³) korkeudella alt_km; 0 ilmakehän yläpuolella ja ilmattomilla kappaleilla.
+static func air_density(name: String, alt_km: float) -> float:
+	if not AIR.has(name) or alt_km > float(AIR[name][2]):
+		return 0.0
+	return float(AIR[name][0]) * exp(-maxf(alt_km, 0.0) / float(AIR[name][1]))
+
+
+## Ilmakehän kiihtyvyys (km/s²) kappaleen suhteen tilassa (r, v), kun nokka osoittaa suuntaan nose (tyhjä = menosuuntaan):
+## {a: nostovoima + ilmanvastus, q: dynaaminen paine (Pa), alpha: kohtauskulma (rad), heat: lämpökuorma ρv³ (W/m²)}.
+## Nostovoima kääntää lentorataa kohti nokkaa kuten lentokoneella.
+static func aero(name: String, r: PackedFloat64Array, v: PackedFloat64Array, nose: PackedFloat64Array) -> Dictionary:
+	var rho := air_density(name, norm(r) - float(orbit_of(name).radiusKm))
+	var speed := norm(v)
+	if rho <= 0.0 or speed < 1e-9:
+		return {"a": vec(0, 0, 0), "q": 0.0, "alpha": 0.0, "heat": 0.0}
+	var vh := scale(v, 1.0 / speed)
+	var n := vh if nose.size() != 3 or norm(nose) < 1e-9 else scale(nose, 1.0 / norm(nose))
+	var c := clampf(dot(n, vh), -1.0, 1.0)
+	var alpha := acos(c)
+	var q := 0.5 * rho * pow(speed * 1000.0, 2.0)
+	var k := q * WING_LOADING / 1000.0 # km/s² kerrointa kohti
+	var a := scale(vh, -k * (0.08 + 1.4 * sin(alpha) * sin(alpha)))
+	var perp := sub(n, scale(vh, c))
+	var pn := norm(perp)
+	if pn > 1e-9:
+		var lift := clampf(k * 1.2 * sin(2.0 * alpha), -LIFT_MAX, LIFT_MAX)
+		a = add(a, scale(perp, lift / pn))
+	return {"a": a, "q": q, "alpha": alpha, "heat": rho * pow(speed * 1000.0, 3.0)}
+
+
+## Lento ilmakehässä ajasta 0 ajan dt_s (s) eteenpäin: painovoima, nostovoima ja ilmanvastus askelin AIR_STEP_S
+## (puoli-implisiittinen Euler). Pysähtyy pintaan. Palauttaa {r, v, hit}.
+static func fly_air(name: String, r: PackedFloat64Array, v: PackedFloat64Array, nose: PackedFloat64Array, dt_s: float) -> Dictionary:
+	var o := orbit_of(name)
+	var mu: float = o.mu
+	var radius: float = o.radiusKm
+	var steps := clampi(ceili(dt_s / AIR_STEP_S), 1, 20000)
+	var h := dt_s / steps
+	var rr := r
+	var vv := v
+	for i in steps:
+		var rn := norm(rr)
+		var g := scale(rr, -mu / (rn * rn * rn))
+		vv = add(vv, scale(add(g, aero(name, rr, vv, nose).a), h))
+		rr = add(rr, scale(vv, h))
+		if norm(rr) <= radius:
+			return {"r": rr, "v": vv, "hit": true}
+	return {"r": rr, "v": vv, "hit": false}
+
+
 ## Kaasujättiläinen (ei kiinteää pintaa: törmäys pilvien yläreunaan on syöksy kaasukehään).
 static func is_gas_giant(name: String) -> bool:
 	return name in ["Jupiter", "Saturnus", "Uranus", "Neptunus"]

@@ -331,6 +331,20 @@ func _run() -> void:
 		cv.manual_throttle = 1.0
 		await shot("manuaali-syoksy", 40)
 		cv.toggle_manual()
+		# Ilmakehälento Marsissa 12 km:n korkeudessa: nokka hieman menosuunnan yläpuolella (#57).
+		orbit_at("Mars", t0, sun_angle("Mars", t0, false) + 0.2)
+		var rm: Dictionary = Flight.parking_state("Mars", G.sim_now(), G.state.orbit).rel
+		var rmr: PackedFloat64Array = Flight.scale(rm.r, (3389.5 + 12.0) / Flight.norm(rm.r))
+		var rmv: PackedFloat64Array = Flight.scale(rm.v, 0.9 / Flight.norm(rm.v))
+		G.state.orbit = {"epoch": G.sim_now(), "arg": 0.0, "rel": {"r": rmr, "v": rmv}}
+		cv.snap_attitude()
+		await _frames(3)
+		cv.toggle_manual()
+		var up_m := Space.to_scene(rmr).normalized()
+		cv.ship.basis = Basis.looking_at(Space.to_scene(rmv).normalized().rotated(Space.to_scene(Flight.cross(rmr, rmv)).normalized(), 0.12), up_m)
+		cv.manual_throttle = 0.5
+		await shot("manuaali-mars-ilmakeha", 30)
+		cv.toggle_manual()
 	# Radiopaneeli (#31).
 	if want("radio"):
 		var radio: Radio = get_parent().radio

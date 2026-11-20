@@ -28,6 +28,7 @@ func _ready() -> void:
 	_manual_orbit(orbit_save)
 	_manual_all_bodies(orbit_save)
 	_manual_sound_and_fuel(orbit_save)
+	_air_flight(orbit_save)
 	_web_save()
 	G.fake_real_ms = -1.0
 	DirAccess.remove_absolute(G.TEST_SAVE_PATH)
@@ -441,4 +442,39 @@ func _manual_sound_and_fuel(orbit_save: String) -> void:
 		and float(GameSound.levels(CockpitState.make(), false).burn) == 0.0)
 	G.manual_thrust(dir, 0.0, 0.0)
 	check("nollapolttoa ei kirjata", not String(G.state.log[-1].text).begins_with("Manuaalipoltto"))
+	_restore(orbit_save)
+
+
+## Lento ilmakehässä (#57): 60 km:ssä laskeva alus nousee, kun nokka nostetaan 15° menosuunnan yläpuolelle
+## (nostovoima), mutta ilman nostovoimaa se jatkaa putoamista. Ilmakehässä kiihdytys enintään 10×.
+func _air_flight(orbit_save: String) -> void:
+	var results := {}
+	for mode: String in ["nokka ylös", "nokka menosuuntaan"]:
+		_restore(orbit_save)
+		var r := PackedFloat64Array([6371.0 + 60.0, 0.0, 0.0])
+		var v := PackedFloat64Array([-0.4, 7.0, 0.0])
+		G.state.orbit = {"epoch": G.sim_now(), "arg": 0.0, "rel": {"r": r, "v": v}}
+		G.set_warp(3)
+		var heat := 0.0
+		var q := 0.0
+		for i in 300: # 30 s
+			var rel: Dictionary = Flight.parking_state("Maa", G.sim_now(), G.state.orbit).rel
+			var vh := Flight.scale(rel.v, 1.0 / Flight.norm(rel.v))
+			var up := Flight.scale(rel.r, 1.0 / Flight.norm(rel.r))
+			G.manual_nose = Flight.add(Flight.scale(vh, cos(0.26)), Flight.scale(up, sin(0.26))) if mode == "nokka ylös" else PackedFloat64Array()
+			G.fake_real_ms += 100.0
+			G.tick()
+			heat = maxf(heat, G.atmo_heat)
+			q = maxf(q, G.atmo_q)
+			if G.state.get("destroyed") != null:
+				break
+		var rel2: Dictionary = Flight.parking_state("Maa", G.sim_now(), G.state.orbit).rel
+		results[mode] = {"vsp": CockpitState.vertical_speed(rel2.r, rel2.v), "alt": Flight.norm(rel2.r) - 6371.0, "warp": G.warp_index(),
+			"heat": heat, "q": q}
+	G.manual_nose = PackedFloat64Array()
+	var a: Dictionary = results["nokka ylös"]
+	var b: Dictionary = results["nokka menosuuntaan"]
+	check("ilmakehässä nokka ylös: alus nousee (pystynopeus %s km/s)" % Fmt.num(a.vsp, 2), float(a.vsp) > 0.0)
+	check("ilman nostovoimaa alus putoaa (%s km)" % Fmt.num(b.alt, 1), float(b.vsp) < 0.0 and float(b.alt) < float(a.alt))
+	check("ilmakehässä kiihdytys enintään 10×, plasma ja ilmanpaine", int(a.warp) <= G.MANUAL_WARP and float(a.q) > 1000.0 and float(a.heat) > 0.0)
 	_restore(orbit_save)

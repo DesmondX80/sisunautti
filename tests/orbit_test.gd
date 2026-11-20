@@ -28,6 +28,7 @@ func _ready() -> void:
 	_injection_and_orbits()
 	_aerobrake()
 	_free_orbit()
+	_air()
 	finish()
 
 
@@ -427,3 +428,26 @@ func _free_orbit() -> void:
 	check("vapaa rata alkaa tallennetusta tilasta ja säilyttää energian", close(a.rel.r, PackedFloat64Array([7000.0, 0, 0]), 1e-6)
 		and absf(e0 - e1) < 1e-6 and absf(float(b.rel.r[2])) > 1.0)
 	check("vaikutuspiirit: Maa ja Kuu", Flight.soi_of("Maa") > 900000.0 and Flight.soi_of("Kuu") > 60000.0 and Flight.soi_of("Kuu") < 70000.0)
+
+
+## Ilmakehälento (#57): tiheys korkeuden mukaan, nostovoima vain ilmakehässä ja kohti nokkaa, ilmanvastus hidastaa.
+func _air() -> void:
+	check("ilman tiheys: Maa merenpinnalla 1,225, 8,5 km:n välein e-kertaisesti ohuempi, yläpuolella 0",
+		absf(Flight.air_density("Maa", 0.0) - 1.225) < 1e-9 and absf(Flight.air_density("Maa", 8.5) * exp(1.0) - 1.225) < 1e-9
+		and Flight.air_density("Maa", 200.0) == 0.0 and Flight.air_density("Kuu", 1.0) == 0.0 and Flight.air_density("Mars", 0.0) < 0.03)
+	var r := PackedFloat64Array([6371.0 + 30.0, 0.0, 0.0])
+	var v := PackedFloat64Array([0.0, 2.0, 0.0])
+	var up_nose := PackedFloat64Array([0.26, 0.97, 0.0]) # nokka 15° menosuunnan yläpuolella
+	var a0: Dictionary = Flight.aero("Maa", r, v, PackedFloat64Array())
+	var a1: Dictionary = Flight.aero("Maa", r, v, up_nose)
+	check("nokka menosuuntaan: vain ilmanvastus", a0.a[0] == 0.0 and a0.a[1] < 0.0 and absf(float(a0.alpha)) < 1e-9)
+	check("nokka ylös: nostovoima ylöspäin ja rajattu 5 g:hen", a1.a[0] > 0.0 and a1.a[0] <= Flight.LIFT_MAX + 1e-12
+		and absf(rad_to_deg(float(a1.alpha)) - 15.0) < 0.5)
+	var m: Dictionary = Flight.aero("Mars", PackedFloat64Array([3389.5 + 30.0, 0, 0]), v, up_nose)
+	var k: Dictionary = Flight.aero("Kuu", PackedFloat64Array([1737.4 + 1.0, 0, 0]), v, up_nose)
+	check("Marsin ohuessa ilmassa nostovoima heikompi, Kuussa ei ilmaa", m.a[0] > 0.0 and m.a[0] < a1.a[0] and k.a[0] == 0.0 and k.q == 0.0)
+	# Liukulento 30 km:ssä: nokka ylös kääntää lentoradan nousuun, nokka menosuuntaan ei.
+	var fly_up: Dictionary = Flight.fly_air("Maa", r, v, up_nose, 20.0)
+	var fly_flat: Dictionary = Flight.fly_air("Maa", r, v, PackedFloat64Array(), 20.0)
+	check("nokka ylös: alus nousee kuin lentokone", fly_up.r[0] > r[0] + 0.5 and fly_up.v[0] > 0.0)
+	check("ilman nostovoimaa alus putoaa ja hidastuu", fly_flat.r[0] < r[0] and Flight.norm(fly_flat.v) < 2.0)

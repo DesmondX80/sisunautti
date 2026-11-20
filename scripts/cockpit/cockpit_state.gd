@@ -64,10 +64,12 @@ static func make() -> Dictionary:
 		var speed_rows: Array
 		if name != null:
 			var rel: Dictionary = ship.rel
+			var alt := Flight.norm(rel.r) - float(Flight.orbit_of(name).radiusKm)
 			# Korkeus pinnasta ja pystynopeus (+ ylös, − kohti pintaa), #57.
 			speed_rows = [["%s km/s" % Fmt.num(Flight.norm(rel.v), 2), 44],
-				["korkeus %s km" % Fmt.num(Flight.norm(rel.r) - float(Flight.orbit_of(name).radiusKm)), 28],
+				["korkeus %s km" % Fmt.num(alt, 1 if alt < 100.0 else 0), 28],
 				["pystynopeus %s km/s" % signed(vertical_speed(rel.r, rel.v), 2), 26, MUTED]]
+			_air_sky(base, name, ship, rel, alt)
 		else:
 			speed_rows = [["%s km/s" % Fmt.num(Flight.norm(ship.v), 2), 44], ["Auringon suhteen", 28, MUTED]]
 		var status := ""
@@ -187,3 +189,25 @@ static func vertical_speed(r: PackedFloat64Array, v: PackedFloat64Array) -> floa
 static func signed(v: float, digits: int) -> String:
 	var t := Fmt.num(v, digits)
 	return t if t.begins_with(Fmt.MINUS) or t == Fmt.num(0.0, digits) else "+" + t
+
+
+## Ilmakehän taivaan väri (päivällä), kun sitä ei ole (Maa: oletussininen).
+const SKY_COLORS := {"Venus": Color("#e8cf8f"), "Mars": Color("#d9a877"), "Titan": Color("#d99a4e"), "Jupiter": Color("#d8c3a0"),
+	"Saturnus": Color("#e6d6a8"), "Uranus": Color("#a8e0e8"), "Neptunus": Color("#6f8fe0")}
+
+
+## Ilmakehälento (#57): taivas kirkastuu ilman tiheyden ja päivän mukaan, ja suuressa nopeudessa ilma kuumenee
+## plasmaksi (Game.atmo_heat) ja ohjaamo tärisee dynaamisen paineen mukaan.
+static func _air_sky(base: Dictionary, name: String, ship: Dictionary, rel: Dictionary, alt: float) -> void:
+	if not Flight.has_air(name) or alt > float(Flight.AIR[name][2]):
+		return
+	var up := Flight.scale(rel.r, 1.0 / Flight.norm(rel.r))
+	var sun_dir := Flight.scale(ship.r, -1.0 / Flight.norm(ship.r))
+	var day := clampf((Flight.dot(sun_dir, up) + 0.1) / 0.3, 0.0, 1.0)
+	var thick := clampf(pow(float(Flight.AIR[name][0]) / 1.225, 0.25), 0.35, 1.0)
+	var sky := day * thick * exp(-maxf(alt, 0.0) / (1.65 * float(Flight.AIR[name][1])))
+	if sky > float(base.sky):
+		base.sky = sky
+		base.sky_color = SKY_COLORS.get(name)
+	base.aero = maxf(float(base.aero), Game.atmo_heat)
+	base.shake = maxf(float(base.shake), maxf(Game.atmo_heat * 0.6, clampf(Game.atmo_q / 60000.0, 0.0, 0.35)))

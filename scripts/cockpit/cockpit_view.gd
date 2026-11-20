@@ -424,6 +424,7 @@ func toggle_manual() -> void:
 	_braking = false
 	_ang_vel = Vector3.ZERO
 	_stick = Vector3.ZERO
+	Game.manual_nose = PackedFloat64Array()
 	Game.manual_thrust(PackedFloat64Array([1.0, 0.0, 0.0]), 0.0, 0.0)
 	manual_button.text = "Automaattiohjaus" if manual else "Manuaaliohjaus"
 	_manual_hud.visible = manual
@@ -466,6 +467,7 @@ func _manual_step(s: Dictionary, delta: float) -> void:
 	var h: Variant = s.get("heading") if s.get("heading") != null else (rel.v if rel is Dictionary else null)
 	var n := -ship.basis.z
 	var nose := PackedFloat64Array([n.x, -n.z, n.y]) # scene → ekliptika (Space.to_scene käänteisenä)
+	Game.manual_nose = nose
 	var dir := nose
 	var power := manual_throttle
 	if braking and h != null:
@@ -498,11 +500,15 @@ static func course_text(nose: PackedFloat64Array, heading: Variant, rel: Variant
 		parts.append("korkeus %s km" % Fmt.num(alt))
 		parts.append("pystynopeus %s km/s" % CockpitState.signed(CockpitState.vertical_speed(rel.r, rel.v), 2))
 		var sh := Flight.orbit_shape(loc, rel.r, rel.v)
-		if sh.escape:
+		if Game.atmo_q > 0.0:
+			# Ilmakehässä rata ei ole kartioleikkaus: näytetään ilmanpaine ja kohtauskulma.
+			var ae := Flight.aero(loc, rel.r, rel.v, nose)
+			parts.append("ILMAKEHÄ q %s kPa · kohtauskulma %d°" % [Fmt.num(Game.atmo_q / 1000.0, 1), roundi(rad_to_deg(ae.alpha))])
+		elif sh.escape:
 			parts.append("PAKORATA v∞ %s" % Fmt.dv(sh.vinf))
 		else:
 			parts.append("rata %s–%s km" % [Fmt.num(maxf(float(sh.peri), 0.0)), Fmt.num(sh.apo)])
-		if float(sh.peri) < 0.0:
+		if float(sh.peri) < 0.0 and Game.atmo_q <= 0.0:
 			parts.append("⚠ RATA LEIKKAA PINNAN")
 	return "   ".join(parts)
 
