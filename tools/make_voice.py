@@ -1,8 +1,10 @@
 """Lennonjohdon puheäänet: kaikki repliikit samalla Kokoro-TTS-äänellä (am_michael, Apache 2.0), radiosuodatettuina.
 
 Lähtölaskennan luvut, laukaisu, tornin ohitus, Max Q, vaiheen erotus, toisen vaiheen sytytys sekä lennon vaiheiden
-kuulutukset. Lennonjohto kutsuu alusta tunnuksella AA-1 radioaakkosin ("Alpha Alpha One") ja nimellä Taivaantuli, jonka
-suomalainen ääntämys annetaan äänneasuna (NAME), koska englantilainen ääni sanoisi muuten "tey-vaan-tšə-li". Lennon vaiheiden kuulutuksissa Quindar-piippaukset (2525 Hz alussa, 2475 Hz lopussa) kuten Apollossa.
+kuulutukset. Lennonjohto kutsuu alusta tunnuksella AA-1 radioaakkosin ("Alpha Alpha One"). Aluksen nimeä
+Taivaantuli ei sanota: englantilainen ääni ei saa sitä kuulostamaan suomelta (kokeiltu äänneasuja ja suomenkielistä
+Piper-ääntä nimelle). Lennon vaiheiden kuulutuksissa Quindar-piippaukset (2525 Hz alussa, 2475 Hz lopussa) kuten
+Apollossa.
 Tulos: assets/sound/voice/<nimi>.ogg (22 050 Hz mono Vorbis).
 
 Ajo (malli ~330 Mt, lataa https://github.com/thewh1teagle/kokoro-onnx/releases/tag/model-files-v1.0):
@@ -22,36 +24,23 @@ RATE = 22050
 OUT = Path(__file__).resolve().parent.parent / "assets" / "sound" / "voice"
 # Luvut ilman välimerkkiä: "Six." ääntyy Kokorolla epäselvästi.
 NUMBERS = ["one", "two", "three", "four", "five", "six", "seven", "eight", "nine", "ten"]
-# Aluksen nimi Taivaantuli äänneasuna (Kokoron misaki-foneemit): pääpaino 1. tavulla, sivupaino vaan- ja tu-tavuilla,
-# jotta pitkä aa ei lyhene lauseen sisällä (tarkistettu suomenkielisellä Whisperillä: "Taivaan tuli").
-NAME = "tˈaɪvˌaːntˌuli"
-CALL = "Alpha Alpha One {name}"
-# nimi → (teksti, Quindar-piippaukset); {name} on aluksen nimi äänneasuna.
+# Aluksen kutsutunnus AA-1 radioaakkosin.
+CALL = "Alpha Alpha One"
+# nimi → (teksti, Quindar-piippaukset)
 LINES = {f"count{i + 1}": (w, False) for i, w in enumerate(NUMBERS)}
 LINES |= {
     "liftoff": (f"And liftoff! We have liftoff of {CALL}.", False),
-    "tower": ("{name}, tower cleared.", False),
+    "tower": (f"{CALL}, tower cleared.", False),
     "maxq": ("Vehicle is passing through max Q.", False),
     "staging": ("Main engine cutoff. Booster separation confirmed.", False),
     "stage2": ("Second stage ignition.", False),
     "orbit": (f"{CALL}, orbit insertion confirmed.", True),
-    "depart": ("{name}, departure burn confirmed. You are on your way.", True),
-    "soi": ("{name}, entering sphere of influence.", True),
-    "arrive": ("{name}, arrival confirmed.", True),
-    "capture": ("{name}, capture burn complete. Orbit confirmed.", True),
-    "flyby": ("{name}, no capture. Continuing on flyby trajectory.", True),
+    "depart": (f"{CALL}, departure burn confirmed. You are on your way.", True),
+    "soi": (f"{CALL}, entering sphere of influence.", True),
+    "arrive": (f"{CALL}, arrival confirmed.", True),
+    "capture": (f"{CALL}, capture burn complete. Orbit confirmed.", True),
+    "flyby": (f"{CALL}, no capture. Continuing on flyby trajectory.", True),
 }
-
-
-def phonemes(tts: Kokoro, text: str) -> str:
-    """Teksti foneemeiksi; {name} korvataan aluksen nimen äänneasulla."""
-    parts = text.split("{name}")
-    out = [tts.tokenizer.phonemize(p, "en-us").strip() if p.strip() else "" for p in parts]
-    # Välimerkki nimen perässä (esim. pilkku) kiinni nimeen.
-    joined = out[0]
-    for p in out[1:]:
-        joined = (joined + " " if joined else "") + NAME + ("" if p[:1] in ",.!?" else " ") + p
-    return joined.strip()
 
 
 def trim(x: np.ndarray, rate: int) -> np.ndarray:
@@ -81,7 +70,7 @@ def main() -> None:
     OUT.mkdir(parents=True, exist_ok=True)
     gap = np.zeros(int(0.12 * RATE))
     for name, (text, quindar) in LINES.items():
-        x, rate = tts.create(phonemes(tts, text), voice=VOICE, speed=1.0, is_phonemes=True)
+        x, rate = tts.create(text, voice=VOICE, speed=1.0, lang="en-us")
         x = resample_poly(trim(np.asarray(x, dtype=np.float64), rate), RATE, rate)
         x = radio(x) * 0.8
         if quindar:

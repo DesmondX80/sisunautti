@@ -2,7 +2,7 @@ class_name GameSound
 extends Node
 ## Pelin äänet: silmukat (laukaisun jyrinä, moottorin poltto, ilmajarrutuksen plasma, ohjaamon taustahumina), joiden
 ## voimakkuus seuraa ohjaamon tilaa (CockpitState), painikkeiden napsautus ja lennonjohdon puhe. Puhe on yhtä ja
-## samaa ääntä (tools/make_voice.py), ja se kutsuu alusta tunnuksella "Alpha Alpha One Taivaantuli" (AA-1):
+## samaa ääntä (tools/make_voice.py), ja se kutsuu alusta tunnuksella "Alpha Alpha One" (AA-1):
 ## lähtölaskenta kymmenestä, "liftoff", tornin ohitus, Max Q, vaiheen erotus 2:30 ja toisen vaiheen sytytys sekä
 ## lennon vaiheiden kuulutukset Quindar-piippauksin (kiertorata, lähtöpoltto, vaikutuspiiri, saapuminen, jarrutus
 ## kiertoradalle tai ohilento). Repliikit soivat jonossa, eivät päällekkäin. Kartoituksen
