@@ -41,8 +41,13 @@ func _ready() -> void:
 		elif arg.begins_with("--pano-tint="):
 			var tt := arg.split("=")[1].split(",")
 			cv.overlay_mat.set_shader_parameter("pano_tint", Vector3(float(tt[0]), float(tt[1]), float(tt[2])))
-		elif arg.begins_with("--frame="): # ikkunan kehyspilarin leveyden kokeilu (px)
-			cv.overlay_mat.set_shader_parameter("frame_width", float(arg.split("=")[1]))
+		elif arg.begins_with("--pano-side="): # panoraaman jatkokohta sivukuvan reunalla (asteina)
+			cv.overlay_mat.set_shader_parameter("pano_side", deg_to_rad(float(arg.split("=")[1])))
+		elif arg.begins_with("--pano-side-left="):
+			cv.overlay_mat.set_shader_parameter("pano_side_left", deg_to_rad(float(arg.split("=")[1])))
+		elif arg.begins_with("--side-tint="):
+			var st := arg.split("=")[1].split(",")
+			cv.overlay_mat.set_shader_parameter("side_tint", Vector3(float(st[0]), float(st[1]), float(st[2])))
 		elif arg.begins_with("--pano-edge="): # panoraaman sovituksen kokeilu (asteina)
 			cv.overlay_mat.set_shader_parameter("pano_edge", deg_to_rad(float(arg.split("=")[1])))
 	DirAccess.make_dir_recursive_absolute(dir)
@@ -252,7 +257,8 @@ func _run() -> void:
 	# Zoomaus näyttöihin: keskinäyttö, tutka ja kohdekamera.
 	if only == "sivut":
 		orbit_at("Maa", t0, sun_angle("Maa", t0, false) + 0.3)
-		for v: Array in [["eteen", 0.0, 0.0], ["vasen", 0.9, 0.1], ["oikea", -0.8, 0.2], ["vasen-alas", 0.75, -0.35], ["oikea-alas", -0.75, -0.35]]:
+		for v: Array in [["eteen", 0.0, 0.0], ["vasen", 0.9, 0.1], ["oikea", -0.8, 0.2], ["vasen-alas", 0.75, -0.35], ["oikea-alas", -0.75, -0.35],
+				["oikea-reuna", -1.25, 0.05], ["vasen-reuna", 1.25, 0.05], ["oikea-ylos", -0.8, 0.55], ["vasen-ylos", 0.8, 0.55]]:
 			cv.yaw = v[1]
 			cv.pitch = v[2]
 			await shot("katse-" + v[0], 20)

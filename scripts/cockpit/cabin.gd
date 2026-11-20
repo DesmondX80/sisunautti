@@ -30,6 +30,22 @@ const MONITORS := [
 	["mini", [Vector2(660, 480), Vector2(727, 480), Vector2(727, 501), Vector2(660, 501)]],
 ]
 const SCREEN_WIDTH := 1024
+## Sivukuva: ohjaamon oikea sivu (assets/cockpit/ohjaamo_sivu.png, tehty skriptillä tools/make_cockpit_side.py)
+## omana kuvatasonaan; vasen sivu on sama kuva peilattuna. Suunta ja polttoväli on sovitettu niin, että kuvan
+## näytön kulmat osuvat etukuvan kohdekameranäytön kulmiin (katse 47,2° oikealle ja 5,1° ylös).
+const SIDE_IMAGE := "res://assets/cockpit/ohjaamo_sivu.png"
+const SIDE_SIZE := Vector2(848, 1264)
+const SIDE_FOCAL := 1101.1
+const SIDE_CENTER := Vector2(424.0, 632.0)
+## Kuvatason kierto (pitch, yaw, roll; järjestys YXZ).
+const SIDE_EULER := Vector3(0.08947, -0.82307, 0.00914)
+## Vasen sivu katkaistaan ennen kuvan ovea (px), ja panoraama jatkuu sen pylväästä.
+const SIDE_CUT_LEFT := 720.0
+## Sivukuvan ikkunan ääriviiva (pikselit), sama kuin kuvan alfakanavassa.
+const SIDE_WINDOW := [Vector2(0, 257), Vector2(100, 268), Vector2(200, 283), Vector2(300, 301), Vector2(350, 312),
+	Vector2(368, 321), Vector2(378, 334), Vector2(400, 344), Vector2(418, 357), Vector2(427, 374), Vector2(426, 520),
+	Vector2(418, 580), Vector2(402, 636), Vector2(382, 682), Vector2(362, 703), Vector2(336, 711), Vector2(300, 707),
+	Vector2(200, 704), Vector2(100, 702), Vector2(40, 699), Vector2(28, 690), Vector2(0, 682)]
 ## Ohjaamon sisäosien näkyvyyskerros (lasi, plasma): ulkokamerat eivät näe sitä.
 const INTERIOR_LAYER := 4
 ## Ympäröivä 360°-panoraama (tasavälinen lieriöprojektio): 5824 × 2880 työpöydällä (sama pikselitiheys kuin
@@ -122,10 +138,36 @@ static func parallelogram(q: Array) -> PackedVector3Array:
 	return out
 
 
-## Näkyykö suunta d (aluksen koordinaateissa, silmästä) ohjaamon ikkunasta (panoraamassa ei ole ikkunoita).
+static func side_basis() -> Basis:
+	return Basis.from_euler(SIDE_EULER)
+
+
+## Sivukuvan pikselisarakkeen x suunta (rad keskeltä sivulle) kuvan keskikorkeudella; oletuksena ulkoreuna.
+static func side_edge(x: float = SIDE_SIZE.x) -> float:
+	var d := side_basis() * Vector3((x - SIDE_CENTER.x) / SIDE_FOCAL, 0.0, -1.0)
+	return atan2(d.x, -d.z)
+
+
+## Suunta (ohjaamon koordinaateissa) sivukuvan pikseliksi; vasen puoli peilataan. Vector2(-1, -1), jos suunta ei
+## osu sivukuvaan.
+static func side_point(d: Vector3) -> Vector2:
+	var l := side_basis().inverse() * Vector3(absf(d.x), d.y, d.z)
+	if l.z >= -1e-6:
+		return Vector2(-1, -1)
+	var p := SIDE_CENTER + Vector2(l.x, -l.y) / -l.z * SIDE_FOCAL
+	if p.x < 0.0 or p.y < 0.0 or p.x > (SIDE_CUT_LEFT if d.x < 0.0 else SIDE_SIZE.x) or p.y > SIDE_SIZE.y:
+		return Vector2(-1, -1)
+	return p
+
+
+## Näkyykö suunta d (aluksen koordinaateissa, silmästä) ohjaamon ikkunasta: etukuvassa sen ikkunasta, muualla
+## sivukuvan ikkunasta (panoraamassa ei ole ikkunoita).
 static func through_window(d: Vector3) -> bool:
 	var p := image_point(d)
-	return p.x >= 0.0 and Geometry2D.is_point_in_polygon(p, PackedVector2Array(WINDOW))
+	if p.x >= 0.0 and p.x <= IMAGE_SIZE.x and p.y >= 0.0 and p.y <= IMAGE_SIZE.y:
+		return Geometry2D.is_point_in_polygon(p, PackedVector2Array(WINDOW))
+	var q := side_point(d)
+	return q.x >= 0.0 and Geometry2D.is_point_in_polygon(q, PackedVector2Array(SIDE_WINDOW))
 
 
 # --- Rakenne ---

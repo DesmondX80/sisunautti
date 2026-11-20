@@ -85,19 +85,43 @@ uniform vec3 pano_tint = vec3(0.88, 0.95, 1.08); // viileämpi ja tummempi kuin 
 uniform float pano_gain = 0.72;
 uniform float seam = 70.0; // häivytyksen leveys etukuvan reunalla (px)
 // Panoraaman kojelauta on leveämpi kuin etukuvan: panoraaman suunta pano_edge (rad keskeltä) asetetaan etukuvan
-// reunalle image_edge, jolloin panoraaman kojelauta jää etukuvan taakse ja sen sivukonsolit jatkavat etukuvan
-// konsoleita. Sivuilla ja takana kulmat puristuvat tasaisesti, suoraan taakse kuva on ennallaan.
+// reunalle image_edge, jolloin panoraaman kojelauta jää etukuvan taakse. Sivukuvien ulkoreunalla side_edge
+// panoraama jatkuu suunnasta pano_side (sivukuvan oven kohdalta). Taakse kuva on ennallaan.
 uniform float pano_edge = 1.152; // 66°
-// Ikkuna ulottuu etukuvan sivureunoihin: reunoilla ikkunan peittää kehyspilari (leveys px), jottei avaruus katkea
-// sumeasti seinään.
-uniform float frame_width = 56.0;
 uniform float image_edge = 0.829;
+uniform float side_edge = 1.192; // 68,3°
+uniform float pano_side = 1.38; // 79°
+// Vasen sivu (peilattu kuva) katkaistaan ennen kuvan ovea kohdassa side_cut_left (px), ja panoraama jatkuu
+// pylväästä.
+uniform float side_cut_left = 720.0;
+uniform float side_edge_left = 1.096; // 62,8°
+uniform float pano_side_left = 1.54; // 88°
+
+// Sivukuvat: ohjaamon oikea sivu (ikkunan viisto pilari, sivukonsoli, seinä ja ovi) omana kuvatasonaan, jonka
+// kanta side_basis on sovitettu etukuvaan (kuvan näyttö osuu etukuvan näyttöön). Vasen sivu on sama kuva
+// peilattuna. Etukuva peittää sivukuvan, ja sivukuvan reunat häivytetään panoraamaan.
+uniform sampler2D side_image : source_color, filter_linear_mipmap;
+uniform vec2 side_size = vec2(848.0, 1264.0);
+uniform vec2 side_center = vec2(424.0, 632.0);
+uniform float side_focal = 1101.0;
+uniform mat3 side_basis;
+uniform float side_seam = 60.0; // häivytys panoraamaan (px)
+uniform vec3 side_tint = vec3(1.0);
 
 vec3 panorama_color(vec3 d) {
 	d = normalize(d);
 	float lv = atan(d.x, -d.z);
 	float a = abs(lv);
-	float lp = a < image_edge ? a * pano_edge / image_edge : pano_edge + (a - image_edge) * (PI - pano_edge) / (PI - image_edge);
+	float se = lv < 0.0 ? side_edge_left : side_edge;
+	float ps = lv < 0.0 ? pano_side_left : pano_side;
+	float lp;
+	if (a < image_edge) {
+		lp = a * pano_edge / image_edge;
+	} else if (a < se) {
+		lp = pano_edge + (a - image_edge) * (ps - pano_edge) / (se - image_edge);
+	} else {
+		lp = ps + (a - se) * (PI - ps) / (PI - se);
+	}
 	float lon = sign(lv) * lp + pano_yaw;
 	float lat = asin(clamp(d.y, -1.0, 1.0)) + pano_pitch;
 	vec2 uv = vec2(lon / TAU + 0.5, 0.5 - lat / PI);
@@ -113,11 +137,35 @@ vec3 panorama_color(vec3 d) {
 	return c * pano_tint * pano_gain;
 }
 
+// Sivukuvan väri (premultiplied, a = peitto) ja paino w (0 kuvan ulkopuolella, häivytys reunoilla).
+vec4 side_color(vec3 d, out float w) {
+	w = 0.0;
+	vec3 m = vec3(abs(d.x), d.y, d.z);
+	vec3 l = transpose(side_basis) * m;
+	if (l.z > -1e-4) {
+		return vec4(0.0);
+	}
+	vec2 p = side_center + vec2(l.x, -l.y) / -l.z * side_focal;
+	float right = d.x < 0.0 ? side_cut_left : side_size.x;
+	if (p.x < 0.0 || p.y < 0.0 || p.x > right || p.y > side_size.y) {
+		return vec4(0.0);
+	}
+	vec2 uv = p / side_size;
+	vec4 c = textureGrad(side_image, uv, dFdx(uv), dFdy(uv));
+	float e = min(min(p.x, right - p.x), min(p.y, side_size.y - p.y));
+	w = smoothstep(0.0, side_seam, e);
+	return vec4(c.rgb * side_tint * c.a, c.a);
+}
+
 void fragment() {
 	vec2 ndc = UV * 2.0 - 1.0;
 	vec3 d = cam_basis * vec3(ndc.x * tan_half * aspect, -ndc.y * tan_half, -1.0);
 	vec3 pano = panorama_color(d);
-	vec4 col = vec4(pano, 1.0);
+	// Takana panoraama, sen päällä sivukuva (ikkunan kohdalla läpinäkyvä), päällimmäisenä etukuva.
+	float ws;
+	vec4 side = side_color(d, ws);
+	vec4 back = mix(vec4(pano, 1.0), side, ws); // premultiplied
+	vec4 col = back;
 	if (d.z < -1e-4) {
 		vec2 p = image_center + vec2(d.x, -d.y) / -d.z * focal;
 		vec2 iuv = p / image_size;
@@ -134,33 +182,10 @@ void fragment() {
 			else if (screen_uv(homography5, p, suv)) { c = vec4(screen_color(screen5, suv), 1.0); }
 			float e = min(min(p.x, image_size.x - p.x), min(p.y, image_size.y - p.y));
 			float w = smoothstep(0.0, seam, e);
-			// Ikkunan kohdalla ei häivytetä: ikkuna päättyy sivureunoilla terävään kehyspilariin (panoraaman seinän
-			// sävyinen metalli, viistetty valoreuna ja varjo ikkunan puolella). Muu kuva häivytetään panoraamaan.
-			float ex = min(p.x, image_size.x - p.x);
-			float px = fwidth(p.x) + 1e-4;
-			float pil = 1.0 - smoothstep(frame_width - px, frame_width + px, ex);
-			float t = clamp(ex / frame_width, 0.0, 1.0);
-			// Tumma metallirunko (kuten etukuvan ikkunakehys): pystysuuntainen sävy, paneelisaumat ja niitit.
-			vec3 metal = mix(vec3(0.045, 0.05, 0.06), vec3(0.1, 0.11, 0.125), smoothstep(0.15, 0.85, t));
-			metal *= 0.92 + 0.08 * sin(p.y * 0.21) * sin(p.y * 0.047);
-			float panel = smoothstep(0.6, 0.0, abs(fract(p.y / 46.0) - 0.5) * 46.0 - 21.5);
-			metal *= 1.0 - 0.35 * panel;
-			float rivet = smoothstep(2.2, 1.2, length(vec2(ex - frame_width * 0.45, (fract(p.y / 23.0) - 0.5) * 23.0)));
-			metal += vec3(0.12, 0.13, 0.15) * rivet;
-			// Viistetty valoreuna ikkunan puolella ja tumma sauma lasia vasten.
-			float bevel = exp(-pow((frame_width - 4.0 - ex) / 2.2, 2.0));
-			metal += vec3(0.28, 0.4, 0.55) * bevel * 0.55;
-			metal *= 1.0 - 0.7 * exp(-pow((frame_width - ex) / 1.0, 2.0));
-			// Ulkoreunalla runko jatkuu panoraaman seinään.
-			metal = mix(pano * 0.75, metal, smoothstep(0.0, 14.0, ex));
-			float shade = (1.0 - pil) * 0.45 * exp(-max(ex - frame_width, 0.0) / 9.0);
-			vec3 opaque = mix(pano, c.rgb, w);
-			float win = 1.0 - c.a;
-			float a_out = c.a + win * max(pil, shade);
-			vec3 win_rgb = mix(vec3(0.0), metal, pil / max(max(pil, shade), 1e-4));
-			col = vec4((c.a * opaque + win * max(pil, shade) * win_rgb) / max(a_out, 1e-4), a_out);
+			col = mix(back, vec4(c.rgb * c.a, c.a), w);
 		}
 	}
+	col.rgb /= max(col.a, 1e-4);
 	col.rgb += glow * col.rgb;
 	COLOR = col;
 }

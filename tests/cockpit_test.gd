@@ -178,6 +178,24 @@ func _ready() -> void:
 	check("ikkunasta näkyy eteen, ei alas eikä taakse", Cabin.through_window(Vector3(0, 0.2, -1).normalized())
 		and Cabin.through_window(Vector3(-0.5, 0.3, -1).normalized()) and not Cabin.through_window(Vector3(0, -0.5, -1).normalized())
 		and not Cabin.through_window(Vector3(0, 0.1, 1).normalized()))
+	# Sivukuva (#40): kuvan näyttö osuu etukuvan kohdekameranäyttöön, vasen puoli on peilikuva, ja sivukuvan
+	# ikkunan ja pilarin raja on etukuvan reunan kohdalla.
+	var side_err := 0.0
+	var side_mon := [Vector2(41.7, 731.7), Vector2(276.7, 748.3), Vector2(269.3, 911.7), Vector2(33.3, 885)]
+	for i in 4:
+		side_err = maxf(side_err, Cabin.side_point(Cabin.image_ray(Cabin.MONITORS[4][1][i])).distance_to(side_mon[i]))
+	var dr := Vector3(0.9, 0.1, -0.6).normalized()
+	var dl := Vector3(-dr.x, dr.y, dr.z)
+	check("sivukuva sovitettu etukuvaan (näyttö %.1f px)" % side_err, side_err < 6.0)
+	check("vasen sivu peilattu ja katkaistu ennen ovea", Cabin.side_point(dl) == Cabin.side_point(dr) and Cabin.side_point(dr).x > 0.0
+		and Cabin.side_point(Vector3(1.0, 0.0, -0.45)).x > Cabin.SIDE_CUT_LEFT and Cabin.side_point(Vector3(-1.0, 0.0, -0.45)).x < 0.0
+		and Cabin.side_point(Vector3(0, 0, 1)).x < 0.0)
+	check("sivukuvan reunat", absf(rad_to_deg(Cabin.side_edge()) - 68.3) < 0.5 and Cabin.side_edge(Cabin.SIDE_CUT_LEFT) < Cabin.side_edge()
+		and Cabin.side_edge(Cabin.SIDE_CENTER.x) > atan(Cabin.CENTER.x / Cabin.FOCAL) - 0.02)
+	# Sivukuvan ikkuna päättyy pilariin etukuvan reunan kohdalla: reunan takana Aurinko ei näy ikkunasta.
+	var past := Vector3(sin(0.845), 0.2, -cos(0.845)).normalized()
+	check("etukuvan reunan takana sivukuvan pilari", Cabin.side_point(past).x > 0.0 and not Cabin.through_window(past)
+		and not Cabin.through_window(Vector3(-past.x, past.y, past.z)) and Cabin.through_window(Vector3(sin(0.8), 0.2, -cos(0.8)).normalized()))
 	check("panoraamat löytyvät", ResourceLoader.exists(Cabin.PANORAMA) and Cabin.panorama_path() == Cabin.PANORAMA_HIRES)
 	cv.reset_view()
 	check("katse ei laske ohjaamokuvan alareunan alle (kädet lähtevät näkymän alareunasta)",
