@@ -40,9 +40,12 @@ poltoissa, ilmajarrutuksen plasman suhina ja rätinä, painikkeiden napsautus se
 joka alkaa vasta, kun alus on noussut kiertoradalle.
 
 Lennonjohdon puhe (`assets/sound/voice/`) on kokonaan samaa ääntä: lähtölaskenta kymmenestä ("ten, nine… one"),
-"And liftoff! We have liftoff.", "Tower cleared.", Max Q, kantoraketin erotus 2:30 ("Main engine cutoff. Booster
-separation confirmed.") ja toisen vaiheen sytytys sekä lennon vaiheiden kuulutukset Apollo-lentojen
-Quindar-piippauksin (kiertorata, lähtöpoltto, vaikutuspiiri, saapuminen, jarrutus kiertoradalle tai ohilento).
+"And liftoff! We have liftoff of Alpha Alpha One Taivaantuli.", "Taivaantuli, tower cleared.", Max Q, kantoraketin
+erotus 2:30 ("Main engine cutoff. Booster separation confirmed.") ja toisen vaiheen sytytys sekä lennon vaiheiden
+kuulutukset Apollo-lentojen Quindar-piippauksin (kiertorata, lähtöpoltto, vaikutuspiiri, saapuminen, jarrutus
+kiertoradalle tai ohilento). Lennonjohto kutsuu alusta sen tunnuksella **AA-1 Taivaantuli** (AA = AvaruusAlus):
+tunnus radioaakkosin "Alpha Alpha One" ja nimi suomalaisittain äännettynä (äänneasu `NAME` tiedostossa
+`tools/make_voice.py`).
 Repliikit soivat jonossa eivätkä päällekkäin, ja aikaa kiihdytettäessä ohitetut jäävät pois. Puhe on tehty
 puhesynteesillä [Kokoro](https://huggingface.co/hexgrad/Kokoro-82M) (ääni `am_michael`, Apache 2.0) ja
 radiosuodatettu (`tools/make_voice.py`, ohjeet tiedoston alussa).

@@ -2,9 +2,10 @@ class_name GameSound
 extends Node
 ## Pelin äänet: silmukat (laukaisun jyrinä, moottorin poltto, ilmajarrutuksen plasma, ohjaamon taustahumina), joiden
 ## voimakkuus seuraa ohjaamon tilaa (CockpitState), painikkeiden napsautus ja lennonjohdon puhe. Puhe on yhtä ja
-## samaa ääntä (tools/make_voice.py): lähtölaskenta kymmenestä, "liftoff", tornin ohitus, Max Q, vaiheen erotus
-## 2:30 ja toisen vaiheen sytytys sekä lennon vaiheiden kuulutukset Quindar-piippauksin (kiertorata, lähtöpoltto,
-## vaikutuspiiri, saapuminen, jarrutus kiertoradalle). Repliikit soivat jonossa, eivät päällekkäin. Kartoituksen
+## samaa ääntä (tools/make_voice.py), ja se kutsuu alusta tunnuksella "Alpha Alpha One Taivaantuli" (AA-1):
+## lähtölaskenta kymmenestä, "liftoff", tornin ohitus, Max Q, vaiheen erotus 2:30 ja toisen vaiheen sytytys sekä
+## lennon vaiheiden kuulutukset Quindar-piippauksin (kiertorata, lähtöpoltto, vaikutuspiiri, saapuminen, jarrutus
+## kiertoradalle tai ohilento). Repliikit soivat jonossa, eivät päällekkäin. Kartoituksen
 ## valmistuminen kuittaa pelkällä Quindar-piippauksella. Muut äänet syntetisoidaan käynnistyksessä (SoundSynth).
 ## Voimakkuus ja mykistys ovat Settingsissä (pääväylä). quiet: valikko auki.
 
@@ -20,7 +21,7 @@ const LAUNCH_LINES := [[-10.0, "count10"], [-9.0, "count9"], [-8.0, "count8"], [
 	[-5.0, "count5"], [-4.0, "count4"], [-3.0, "count3"], [-2.0, "count2"], [-1.0, "count1"], [0.0, "liftoff"],
 	[9.0, "tower"], [66.0, "maxq"], [150.0, "staging"], [158.0, "stage2"]]
 ## Jonossa odottanut repliikki jätetään soittamatta, kun se on vanhentunut (ms).
-const QUEUE_MAX_MS := 6000
+const QUEUE_MAX_MS := 8000
 
 var quiet := false
 var _loops := {} # nimi → AudioStreamPlayer

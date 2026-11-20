@@ -77,7 +77,7 @@ func _ready() -> void:
 	var voices := true
 	for name: String in GameSound.VOICES:
 		var v: AudioStream = load(GameSound.VOICE_DIR + name + ".ogg")
-		var most := 1.0 if name.begins_with("count") else 4.5
+		var most := 1.0 if name.begins_with("count") else 6.0
 		voices = voices and v != null and v.get_length() > 0.3 and v.get_length() < most
 	check("lennonjohdon repliikit (luvut alle sekunnin)", voices)
 	check("kuulutus soi", sound.announce("arrive"))
