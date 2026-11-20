@@ -42,8 +42,26 @@ func _ready() -> void:
 	s.set_speed_unit("jotain")
 	check("tuntematon yksikkö → km/s", s.speed_unit == "kms")
 	check("ikkunan otsikko", ProjectSettings.get_setting("application/config/name") == "Sisunautti")
-	check("versio", ProjectSettings.get_setting("application/config/version") == "1.25.0")
+	check("versio", ProjectSettings.get_setting("application/config/version") == "1.26.0")
+	# Vientiasetusten versiot (Windows, macOS) samat kuin pelin versio.
+	var version: String = ProjectSettings.get_setting("application/config/version")
+	var presets := ConfigFile.new()
+	presets.load("res://export_presets.cfg")
+	var mac := "preset.%d.options" % _preset_index(presets, "macOS")
+	check("vientiasetusten versiot", presets.get_value("preset.0.options", "application/product_version") == version + ".0"
+		and presets.get_value(mac, "application/short_version") == version
+		and presets.get_value(mac, "application/version") == version)
+	check("macOS universaali ja ETC2/ASTC", presets.get_value(mac, "binary_format/architecture") == "universal"
+		and presets.get_value(mac, "texture_format/etc2_astc") == true
+		and ProjectSettings.get_setting("rendering/textures/vram_compression/import_etc2_astc") == true)
 	DirAccess.remove_absolute(path)
 	s.path = original_path
 	s.load_settings()
 	finish()
+
+
+func _preset_index(presets: ConfigFile, preset_name: String) -> int:
+	for section in presets.get_sections():
+		if presets.get_value(section, "name", "") == preset_name:
+			return int(section.get_slice(".", 1))
+	return -1

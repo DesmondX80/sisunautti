@@ -1,11 +1,16 @@
 # Sisunautti
 
-Avaruuslentopeli selaimessa ja työpöydällä (Windows, Linux), tehty Godot 4.7:llä. Lähdetään laukaisualustalta Maan pinnalta kiertoradalle ja sieltä planeetoille ja niiden
+Avaruuslentopeli selaimessa ja työpöydällä (Windows, Linux, macOS), tehty Godot 4.7:llä. Lähdetään laukaisualustalta Maan pinnalta kiertoradalle ja sieltä planeetoille ja niiden
 kuille. Radat, laukaisuikkunat ja polttoaineen kulutus (Δv) lasketaan oikeilla taivaanmekaniikan kaavoilla, ja
 lentoa seurataan 3D-ohjaamosta.
 
 - Peli selaimessa: https://desmondx80.github.io/sisunautti/
-- Työpöytäversiot: [julkaisut](https://github.com/DesmondX80/sisunautti/releases) (Sisunautti-windows.zip, Sisunautti-linux.zip)
+- Työpöytäversiot: [julkaisut](https://github.com/DesmondX80/sisunautti/releases) (Sisunautti-windows.zip, Sisunautti-linux.zip,
+  Sisunautti-macos.zip)
+  - macOS (Apple Silicon ja Intel, macOS 11 tai uudempi Apple Siliconilla, 10.15 Intelillä): pura zip ja siirrä
+    Sisunautti.app Ohjelmat-kansioon. Sovellusta ei ole allekirjoitettu Applen kehittäjätilillä, joten ensimmäisellä
+    avauskerralla macOS estää sen. Avaa Järjestelmäasetukset → Tietosuoja ja suojaus, ja valitse Sisunautin kohdalla
+    *Avaa silti*. Vaihtoehtoisesti Päätteessä: `xattr -dr com.apple.quarantine /Applications/Sisunautti.app`.
 
 Peli syntyi OmaAvaruus-sovelluksen ([DesmondX80/omaavaruus](https://github.com/DesmondX80/omaavaruus)) Avaruuslento-osiona
 ja eriytettiin omaksi pelikseen. Tallennetut pelit jatkuvat: molemmat sivut ovat samassa alkuperässä
@@ -149,6 +154,7 @@ Vientipohjat (export templates) asennetaan editorista: *Editor → Manage Export
 ```bash
 godot --headless --export-release "Windows Desktop" export/windows/Sisunautti.exe
 godot --headless --export-release "Linux" export/linux/Sisunautti.x86_64
+godot --headless --export-release "macOS" export/macos/Sisunautti.zip
 godot --headless --export-release "Web" export/web/index.html   # web_nothreads-pohja, ei vaadi COOP/COEP-otsakkeita
 ```
 
@@ -215,8 +221,8 @@ Ohjaamon pintakartat ovat hakemistossa `assets/textures/` (tasavälinen lieriöp
 
 ## Julkaisu
 
-GitHub-julkaisu (`gh release create vX.Y.Z`) käynnistää `release.yml`:n, joka vie Windows- ja Linux-versiot ja
-liittää ne julkaisuun (Sisunautti-windows.zip, Sisunautti-linux.zip) sekä käynnistää `main`-haarasta `pages.yml`:n,
+GitHub-julkaisu (`gh release create vX.Y.Z`) käynnistää `release.yml`:n, joka vie Windows-, Linux- ja macOS-versiot ja
+liittää ne julkaisuun (Sisunautti-windows.zip, Sisunautti-linux.zip, Sisunautti-macos.zip) sekä käynnistää `main`-haarasta `pages.yml`:n,
 joka vie selainversion (Compatibility, `web_nothreads`-pohja) GitHub Pagesiin. Pagesiin kopioidaan myös `tools/web/sw.js`,
 joka korvaa vanhan selainversion service workerin ja poistaa sen. `ci.yml` ajaa ikkunattomat testit jokaisesta
 pushista.

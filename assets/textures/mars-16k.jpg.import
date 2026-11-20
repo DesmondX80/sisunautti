@@ -4,15 +4,16 @@ importer="texture"
 type="CompressedTexture2D"
 uid="uid://ctscqlywoinel"
 path.s3tc="res://.godot/imported/mars-16k.jpg-aea21e3b1f7b63b5123ed461a321aa57.s3tc.ctex"
+path.etc2="res://.godot/imported/mars-16k.jpg-aea21e3b1f7b63b5123ed461a321aa57.etc2.ctex"
 metadata={
-"imported_formats": ["s3tc_bptc"],
+"imported_formats": ["s3tc_bptc", "etc2_astc"],
 "vram_texture": true
 }
 
 [deps]
 
 source_file="res://assets/textures/mars-16k.jpg"
-dest_files=["res://.godot/imported/mars-16k.jpg-aea21e3b1f7b63b5123ed461a321aa57.s3tc.ctex"]
+dest_files=["res://.godot/imported/mars-16k.jpg-aea21e3b1f7b63b5123ed461a321aa57.s3tc.ctex", "res://.godot/imported/mars-16k.jpg-aea21e3b1f7b63b5123ed461a321aa57.etc2.ctex"]
 
 [params]
 

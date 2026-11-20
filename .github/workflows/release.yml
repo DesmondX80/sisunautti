@@ -1,4 +1,5 @@
-# Työpöytäversiot GitHub-julkaisun liitteiksi: Windows (Sisunautti-windows.zip) ja Linux (Sisunautti-linux.zip).
+# Työpöytäversiot GitHub-julkaisun liitteiksi: Windows (Sisunautti-windows.zip), Linux (Sisunautti-linux.zip) ja
+# macOS (Sisunautti-macos.zip, universaali, ad hoc -allekirjoitus ilman Applen kehittäjätiliä).
 name: Julkaisu
 
 on:
@@ -30,7 +31,7 @@ jobs:
           path: |
             ~/godot
             ~/.local/share/godot/export_templates
-          key: godot-${{ env.GODOT_VERSION }}-desktop
+          key: godot-${{ env.GODOT_VERSION }}-desktop-macos
 
       - name: Lataa Godot ja työpöytäpohjat
         if: steps.cache.outputs.cache-hit != 'true'
@@ -41,16 +42,19 @@ jobs:
           unzip -q godot.zip -d ~/godot
           mv ~/godot/Godot_v${GODOT_VERSION}-stable_linux.x86_64 ~/godot/godot
           curl -sL -o templates.tpz $base/Godot_v${GODOT_VERSION}-stable_export_templates.tpz
-          unzip -q -j templates.tpz templates/windows_release_x86_64.exe templates/linux_release.x86_64 templates/version.txt \
+          unzip -q -j templates.tpz templates/windows_release_x86_64.exe templates/linux_release.x86_64 templates/macos.zip \
+            templates/version.txt \
             -d ~/.local/share/godot/export_templates/${GODOT_VERSION}.stable
           rm godot.zip templates.tpz
 
-      - name: Vie Windows- ja Linux-versiot
+      - name: Vie Windows-, Linux- ja macOS-versiot
         run: |
-          mkdir -p export/windows export/linux
+          mkdir -p export/windows export/linux export/macos
           ~/godot/godot --headless --import || true
           ~/godot/godot --headless --export-release "Windows Desktop" export/windows/Sisunautti.exe
           ~/godot/godot --headless --export-release "Linux" export/linux/Sisunautti.x86_64
+          ~/godot/godot --headless --export-release "macOS" export/macos/Sisunautti.zip
+          mv export/macos/Sisunautti.zip export/Sisunautti-macos.zip
           chmod +x export/linux/Sisunautti.x86_64
           (cd export/windows && zip -q ../Sisunautti-windows.zip Sisunautti.exe)
           (cd export/linux && zip -q ../Sisunautti-linux.zip Sisunautti.x86_64)
@@ -60,7 +64,8 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           TAG: ${{ github.event.release.tag_name || inputs.tag }}
-        run: gh release upload "$TAG" export/Sisunautti-windows.zip export/Sisunautti-linux.zip --clobber
+        run: gh release upload "$TAG" export/Sisunautti-windows.zip export/Sisunautti-linux.zip \
+          export/Sisunautti-macos.zip --clobber
 
   pages:
     # Selainversio Pagesiin main-haarasta (ympäristö sallii käyttöönoton vain mainista).
