@@ -292,6 +292,49 @@ func _manual_orbit(orbit_save: String) -> void:
 	_burn(dh, 0.5)
 	var d1: Dictionary = Flight.departure_state(G.state.drift, G.sim_now())
 	check("manuaalipoltto Auringon kiertoradalla", G.can_manual_burn() and absf(Flight.norm(d1.v) - Flight.norm(d0.v) - 0.5) < 0.02)
+	# Nopeusmittari: myötäsuuntainen kaasu kasvattaa nopeutta, jarrutus (vastasuuntaan) pienentää.
+	_restore(orbit_save)
+	G.set_warp(0)
+	rel = Flight.parking_state("Maa", G.sim_now(), G.state.orbit).rel
+	var v0 := Flight.norm(rel.v)
+	pro = Flight.scale(rel.v, 1.0 / v0)
+	_burn(pro, 0.3)
+	var v1 := Flight.norm(Flight.parking_state("Maa", G.sim_now(), G.state.orbit).rel.v)
+	_burn(Flight.scale(pro, -1.0), 0.6)
+	var v2 := Flight.norm(Flight.parking_state("Maa", G.sim_now(), G.state.orbit).rel.v)
+	check("kaasu kasvattaa nopeutta ja jarrutus pienentää (%s → %s → %s)" % [Fmt.num(v0, 2), Fmt.num(v1, 2), Fmt.num(v2, 2)],
+		absf(v1 - v0 - 0.3) < 0.02 and absf(v2 - v0 + 0.3) < 0.03)
+	# Polton aikana kiihdytys enintään 10×, ja Δv lasketaan simulaation ajasta.
+	_restore(orbit_save)
+	G.set_warp(3)
+	var f0: float = G.state.fuel
+	G.manual_thrust(pro, 1.0, 0.1)
+	G.manual_thrust(pro, 0.0, 0.0)
+	check("polton aikana kiihdytys 10×", G.warp_index() == G.MANUAL_WARP and absf(f0 - float(G.state.fuel) - float(G.MANUAL_ACCEL) * 1.0) < 1e-9)
+	# Marsin kiertoradalla nokka kohti Marsia ja täysi kaasu 10×:llä: alus laskeutuu ja törmää pintaan.
+	_restore(orbit_save)
+	G.state.location = "Mars"
+	G.state.orbit = {"epoch": G.sim_now(), "arg": 0.0}
+	G.set_warp(1)
+	var mars_alt := func() -> float:
+		return Flight.norm(Flight.parking_state("Mars", G.sim_now(), G.state.orbit).rel.r) - float(Flight.orbit_of("Mars").radiusKm)
+	var a0: float = mars_alt.call()
+	for i in 600: # 10 s oikeaa aikaa
+		var rm: Dictionary = Flight.parking_state("Mars", G.sim_now(), G.state.orbit).rel
+		G.manual_thrust(Flight.scale(rm.r, -1.0 / Flight.norm(rm.r)), 1.0, 1.0 / 60.0)
+		G.fake_real_ms += 1000.0 / 60.0
+		G.tick()
+	G.manual_thrust(pro, 0.0, 0.0)
+	var a1: float = mars_alt.call()
+	var mars_hit := false
+	for i in 1200:
+		G.fake_real_ms += 100.0
+		G.tick()
+		if G.state.get("destroyed") != null:
+			mars_hit = true
+			break
+	check("Marsia kohti poltettaessa korkeus laskee (%s → %s km) ja alus törmää" % [Fmt.num(a0), Fmt.num(a1)], a1 < a0 - 20.0 and mars_hit
+		and String(G.state.destroyed.text).contains("Marsin"))
 	# Nokka kohti Maata ja kaasua: perikeskus pinnan alle ja törmäys.
 	_restore(orbit_save)
 	G.set_warp(0)

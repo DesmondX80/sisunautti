@@ -64,8 +64,10 @@ static func make() -> Dictionary:
 		var speed_rows: Array
 		if name != null:
 			var rel: Dictionary = ship.rel
-			speed_rows = [["%s km/s" % Fmt.num(Flight.norm(rel.v), 2), 44], ["%s km/h" % Fmt.num(Flight.norm(rel.v) * 3600.0), 28, MUTED],
-				["%s %s km" % [name, Fmt.num(Flight.norm(rel.r) - float(Flight.orbit_of(name).radiusKm))], 26, MUTED]]
+			# Korkeus pinnasta ja pystynopeus (+ ylös, − kohti pintaa), #57.
+			speed_rows = [["%s km/s" % Fmt.num(Flight.norm(rel.v), 2), 44],
+				["korkeus %s km" % Fmt.num(Flight.norm(rel.r) - float(Flight.orbit_of(name).radiusKm)), 28],
+				["pystynopeus %s km/s" % signed(vertical_speed(rel.r, rel.v), 2), 26, MUTED]]
 		else:
 			speed_rows = [["%s km/s" % Fmt.num(Flight.norm(ship.v), 2), 44], ["Auringon suhteen", 28, MUTED]]
 		var status := ""
@@ -174,3 +176,14 @@ static func body_frame(rel_r: PackedFloat64Array, rel_v: PackedFloat64Array, rad
 	var nose := Flight.add(Flight.scale(e1, cos(phi)), Flight.scale(e2, sin(phi)))
 	var up := Flight.add(Flight.scale(e1, -sin(phi)), Flight.scale(e2, cos(phi)))
 	return {"nose": nose, "up": up, "weight": smoothstep(3.0 * DEG, 20.0 * DEG, rho), "rho": rho}
+
+
+## Pystynopeus (km/s): nopeuden komponentti poispäin kappaleesta (negatiivinen kohti pintaa).
+static func vertical_speed(r: PackedFloat64Array, v: PackedFloat64Array) -> float:
+	return Flight.dot(r, v) / maxf(Flight.norm(r), 1e-9)
+
+
+## Luku etumerkillä: "+0,12" tai "−0,40".
+static func signed(v: float, digits: int) -> String:
+	var t := Fmt.num(v, digits)
+	return t if t.begins_with(Fmt.MINUS) or t == Fmt.num(0.0, digits) else "+" + t

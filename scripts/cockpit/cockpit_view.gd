@@ -473,8 +473,13 @@ func _manual_step(s: Dictionary, delta: float) -> void:
 		power = 1.0
 	var ok := Game.manual_thrust(dir, power, delta)
 	var state := "POLTTO" if ok else ("ei polttoa nyt" if power > 0.0 and not Game.can_manual_burn() else "valmius")
-	_manual_label.text = "MANUAALIOHJAUS   kaasu %d %%%s   %s   polttoaine %s\n%s" % [roundi(manual_throttle * 100.0),
-		"  · JARRUTUS" if braking else "", state, Fmt.dv(float(Game.state.fuel)), course_text(nose, h, rel)]
+	var speed := ""
+	if h != null:
+		speed = "   nopeus %s" % Fmt.dv(Flight.norm(h))
+	var burned := Game.manual_burned()
+	_manual_label.text = "MANUAALIOHJAUS   kaasu %d %%%s   %s%s%s   polttoaine %s\n%s" % [roundi(manual_throttle * 100.0),
+		"  · JARRUTUS" if braking else "", state, speed, "   poltettu Δv %s" % Fmt.dv(burned) if burned > 0.0 else "",
+		Fmt.dv(float(Game.state.fuel)), course_text(nose, h, rel)]
 
 
 ## Kurssirivi: nokan kulma menosuunnasta ja kiertoradalla radan muoto (perikeskus ja apokeskus pinnasta tai
@@ -486,6 +491,9 @@ static func course_text(nose: PackedFloat64Array, heading: Variant, rel: Variant
 		parts.append("nokka %d° menosuunnasta" % roundi(rad_to_deg(acos(c))))
 	var loc: Variant = Game.state.get("location")
 	if loc != null and rel is Dictionary:
+		var alt := Flight.norm(rel.r) - float(Flight.orbit_of(loc).radiusKm)
+		parts.append("korkeus %s km" % Fmt.num(alt))
+		parts.append("pystynopeus %s km/s" % CockpitState.signed(CockpitState.vertical_speed(rel.r, rel.v), 2))
 		var sh := Flight.orbit_shape(loc, rel.r, rel.v)
 		if sh.escape:
 			parts.append("PAKORATA v∞ %s" % Fmt.dv(sh.vinf))
