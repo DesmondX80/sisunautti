@@ -66,7 +66,7 @@ static func build(cam: Basis, ship: Basis, fov: float, view: Vector2, up: Vector
 			return null
 		return project(cam, fov, view, d)
 	var first := int(ceil((pitch - SPAN_DEG) / STEP_DEG)) * STEP_DEG
-	for e in range(maxi(first, -90), mini(int(pitch + SPAN_DEG), 90) + 1, STEP_DEG):
+	for e in range(maxi(first, -85), mini(int(pitch + SPAN_DEG), 85) + 1, STEP_DEG):
 		var half := deg_to_rad(HORIZON_HALF_DEG if e == 0 else HALF_WIDTH_DEG)
 		var el := deg_to_rad(e)
 		# Viivan keskellä aukko (horisontissa ei), negatiiviset katkoviivoina.

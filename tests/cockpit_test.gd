@@ -366,4 +366,35 @@ func _ready() -> void:
 		and CockpitScreen.warp_label(31557600.0) == "1 v/s" and CockpitScreen.warp_label(50.0) == "50×")
 	G.fake_real_ms = -1.0
 	DirAccess.remove_absolute(G.TEST_SAVE_PATH)
+	# Korkeudenvakain ohjaamon silmukassa (#58 palaute): 200 km:n radalta 30 km:iin ilman kaasua 10×-kiihdytyksellä.
+	var G2: Node = Game
+	G2.state.pad = false
+	G2.state.ascent = null
+	G2.state.flight = null
+	G2.state.plan = null
+	G2.state.drift = null
+	G2.state.survey = null
+	G2.state.location = "Maa"
+	G2.state.fuel = 14.0
+	var r0 := PackedFloat64Array([6571.0, 0.0, 0.0])
+	G2.state.orbit = {"epoch": G2.sim_now(), "arg": 0.0, "rel": {"r": r0, "v": PackedFloat64Array([0.0, sqrt(398600.4 / 6571.0), 0.0])}}
+	if not cv.manual:
+		cv.toggle_manual()
+	cv.set_alt_hold(true, 30.0)
+	var min_alt := INF
+	for i in 3000: # 300 s oikeaa aikaa, enintään 10× → noin 50 min simulaatiota
+		G2.set_warp(1)
+		G2.fake_real_ms += 100.0
+		G2.tick()
+		if G2.state.get("destroyed") != null:
+			break
+		cv._manual_step(CockpitState.make(), 0.1)
+		var a: Variant = cv.current_alt()
+		if a != null:
+			min_alt = minf(min_alt, float(a))
+	var end_alt: Variant = cv.current_alt()
+	check("vakain laskeutuu radalta 30 km:iin ohjaamossa (loppu %s km, alin %s km, polttoaine %s km/s)" % [
+		Fmt.num(float(end_alt) if end_alt != null else -1.0, 1), Fmt.num(min_alt, 1), Fmt.num(float(G2.state.fuel), 2)],
+		G2.state.get("destroyed") == null and end_alt != null and absf(float(end_alt) - 30.0) < 1.0 and min_alt > 25.0 and cv.alt_hold)
+	cv.toggle_manual()
 	finish()

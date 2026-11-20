@@ -683,6 +683,7 @@ var manual_throttle := 0.0
 var _manual_dv := PackedFloat64Array([0.0, 0.0, 0.0]) # polttamatta jäänyt nopeuden muutos (km/s)
 var _manual_total := 0.0 # yhtäjaksoisen polton Δv lokikirjaan
 var _manual_at := 0.0
+var _manual_sim := 0.0 # polttamatta jääneen nopeuden muutoksen simulaatioaika (s)
 var _manual_cost := 0.0 # polttamatta jääneen nopeuden muutoksen polttoainekulu (km/s)
 ## Manuaalikaasun kiihtyvyys (km/s²) täydellä kaasulla (#58: maailman tehokkain alus): 10 g, jolloin 10 %:n kaasu
 ## kumoaa Maan painovoiman. Ionialus kiihtyy tyhjiössä omalla työnnöllään.
@@ -742,8 +743,11 @@ func manual_thrust(dir: PackedFloat64Array, throttle: float, dt_s: float) -> boo
 	_manual_dv = Flight.add(_manual_dv, Flight.scale(dir, dv))
 	_manual_cost += dv * factor
 	_manual_at += dt_s
-	if _manual_at >= 0.5:
-		_flush_manual(false)
+	_manual_sim += sim_dt
+	# Rataan simulaatioajan puolen sekunnin välein (aikakiihdytyksellä tiheämmin, jotta korkeudenvakaimen säätö ei
+	# saa työntöä viiveellä), käyttöliittymän päivitys enintään puolen sekunnin välein.
+	if _manual_sim >= 0.5 or _manual_at >= 0.5:
+		_flush_manual(false, _manual_at >= 0.5)
 	return true
 
 
@@ -754,7 +758,7 @@ func manual_accel() -> float:
 	return ion if ion > 0.0 and atmo_q <= 0.0 else MANUAL_ACCEL
 
 
-func _flush_manual(done: bool) -> void:
+func _flush_manual(done: bool, notify: bool = true) -> void:
 	var dv := Flight.norm(_manual_dv)
 	if dv > 1e-9 and can_manual_burn():
 		var now := sim_now()
@@ -767,10 +771,13 @@ func _flush_manual(done: bool) -> void:
 			var d := Flight.departure_state(state.drift, now)
 			state.drift = {"r": d.r, "v": Flight.add(d.v, _manual_dv), "t": now}
 		_manual_total += dv
-		changed.emit()
+		if notify or done:
+			changed.emit()
 	_manual_dv = PackedFloat64Array([0.0, 0.0, 0.0])
 	_manual_cost = 0.0
-	_manual_at = 0.0
+	_manual_sim = 0.0
+	if notify or done:
+		_manual_at = 0.0
 	if done and _manual_total > 0.0:
 		# Alle 0,01 km/s (pyöristyy nollaan) ei kirjata lokikirjaan.
 		if _manual_total >= 0.005:

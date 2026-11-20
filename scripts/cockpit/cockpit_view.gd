@@ -77,6 +77,8 @@ var ladder: HudLadder
 var ladder_on := true
 var alt_hold := false
 var alt_target := 0.0
+var _hold_sign := 1 # vakaimen pystytyönnön suunta avaruudessa
+var _hold_auto := false # vakain käyttää automaattikaasua
 var _turn := 0.0 # sivuttaisohjaus vakaimen ollessa päällä −1…1 (pehmennetty)
 var _ladder_button: Button
 var _hold_button: Button
@@ -504,6 +506,8 @@ func set_alt_hold(on: bool, target_km: float = NAN) -> void:
 		alt_target = maxf(0.0, roundf((float(alt) if is_nan(target_km) else target_km) * 10.0) / 10.0)
 		_ang_vel = Vector3.ZERO
 	_turn = 0.0
+	_hold_sign = 1
+	_hold_auto = false
 	_sync_aid_buttons()
 
 
@@ -561,8 +565,9 @@ func _manual_step(s: Dictionary, delta: float) -> void:
 		set_alt_hold(false)
 		if input.x != 0.0:
 			Game.show_notice("Korkeudenvakain pois: ohjaat nokkaa itse.")
+	var hold_power := -1.0
 	if alt_hold:
-		_hold_step(rel, input.y, delta)
+		hold_power = _hold_step(rel, input.y, delta)
 	else:
 		_ang_vel = turn_rate(_ang_vel, input, delta)
 		if _ang_vel != Vector3.ZERO:
@@ -580,7 +585,7 @@ func _manual_step(s: Dictionary, delta: float) -> void:
 	var nose := PackedFloat64Array([n.x, -n.z, n.y]) # scene → ekliptika (Space.to_scene käänteisenä)
 	Game.manual_nose = nose
 	var dir := nose
-	var power := manual_throttle
+	var power := manual_throttle if hold_power < 0.0 else hold_power
 	if braking and h != null:
 		dir = Flight.scale(h, -1.0 / maxf(Flight.norm(h), 1e-9))
 		power = 1.0
@@ -593,7 +598,7 @@ func _manual_step(s: Dictionary, delta: float) -> void:
 	if h != null:
 		speed = "   nopeus %s" % (Fmt.speed(Flight.norm(h), Settings.speed_unit) if rel is Dictionary else Fmt.dv(Flight.norm(h)))
 	if alt_hold:
-		speed += "   VAKAIN %s km" % Fmt.num(alt_target, 1)
+		speed += "   VAKAIN %s km%s" % [Fmt.num(alt_target, 1), " · AUTOMAATTIKAASU" if _hold_auto else ""]
 	if _unit_button.text != ("km/h" if Settings.speed_unit == "kmh" else "km/s"):
 		_sync_aid_buttons()
 	var burned := Game.manual_burned()
@@ -602,22 +607,36 @@ func _manual_step(s: Dictionary, delta: float) -> void:
 		Fmt.dv(float(Game.state.fuel)), course_text(nose, h, rel)]
 
 
-## Korkeudenvakaimen ohjaus: nokka käännetään vakaimen laskemaan suuntaan (Autopilot.nose) enintään ohjauksen
-## suurimmalla kääntymisnopeudella, siivet vaakaan ja kaarrossa kallistus kääntösuuntaan. A/D kaartaa.
-func _hold_step(rel: Dictionary, yaw_input: float, delta: float) -> void:
+## Korkeudenvakaimen ohjaus (Autopilot.control): nokka käännetään vakaimen suuntaan enintään ohjauksen suurimmalla
+## kääntymisnopeudella, siivet vaakaan ja kaarrossa kallistus kääntösuuntaan (A/D kaartaa). Palauttaa kaasun 0–1:
+## ilmakehässä pelaajan kaasu (tai enemmän automaattikaasulla), avaruudessa automaattikaasu. Työntö vain, kun nokka
+## osoittaa jo lähes vakaimen suuntaan (Autopilot.alignment).
+func _hold_step(rel: Dictionary, yaw_input: float, delta: float) -> float:
 	var loc: String = Game.state.location
 	_turn = move_toward(_turn, yaw_input, delta * 1.5)
-	var thrust := manual_throttle * Game.manual_accel()
-	var n := Autopilot.nose(loc, rel.r, rel.v, alt_target, thrust, _turn)
-	var up := _ecl_to_scene(Flight.scale(rel.r, 1.0 / Flight.norm(rel.r))).normalized()
+	var accel := Game.manual_accel()
+	var c := Autopilot.control(loc, rel.r, rel.v, alt_target, manual_throttle * accel, accel, _turn, _hold_sign)
+	_hold_sign = c.sign
+	_hold_auto = c.auto
+	var up_e := Flight.scale(rel.r, 1.0 / Flight.norm(rel.r))
+	var up := _ecl_to_scene(up_e).normalized()
+	var n := _ecl_to_scene(c.nose).normalized()
+	# Pystysuoraan osoittaessa (laskeutuja) näkymän yläreuna menosuuntaan.
+	var ref := up
+	if absf(n.dot(up)) > 0.95:
+		var fwd := Autopilot.frame(up_e, rel.v).vhat as PackedFloat64Array
+		ref = _ecl_to_scene(fwd).normalized() * (1.0 if n.dot(up) < 0.0 else -1.0)
 	# Nokka (ikkunan keskikohta) vakaimen suuntaan, kaarteessa kallistus; aluksen kanta on AIM_RAISE alempana.
-	var want := Basis.looking_at(_ecl_to_scene(n).normalized(), up) * Basis(Vector3(0, 0, 1), _turn * 0.5) \
+	var want := Basis.looking_at(n, ref) * Basis(Vector3(0, 0, 1), _turn * 0.5) \
 		* Basis(Vector3.RIGHT, -CockpitState.AIM_RAISE)
 	var q0 := ship.basis.get_rotation_quaternion()
 	var q1 := want.get_rotation_quaternion()
 	var ang := q0.angle_to(q1)
 	ship.basis = Basis(q0.slerp(q1, 1.0 if ang < 1e-5 else minf(1.0, MANUAL_RATE * delta / ang)))
 	_ang_vel = Vector3.ZERO
+	var b := boresight()
+	var actual := PackedFloat64Array([b.x, -b.z, b.y])
+	return clampf(float(c.thrust) / maxf(accel, 1e-12), 0.0, 1.0) * Autopilot.alignment(actual, c.nose)
 
 
 ## Horisonttiristikko manuaaliohjauksessa kappaleen lähellä (ei zoomattuna eikä 360°-kameran ollessa koko näytöllä).

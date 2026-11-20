@@ -366,6 +366,16 @@ func _run() -> void:
 		await shot("lentoavut-vakain", 40)
 		Settings.speed_unit = "kms"
 		cv.toggle_manual()
+		# Vakain laskeutuu 200 km:n radalta: avaruudessa nokka alas ja automaattikaasu.
+		orbit_at("Maa", t0, sun_angle("Maa", t0, false) + 0.3)
+		cv.snap_attitude()
+		await _frames(3)
+		cv.toggle_manual()
+		cv.set_alt_hold(true, 30.0)
+		for i in 60:
+			cv._manual_step(CockpitState.make(), 0.1)
+		await shot("lentoavut-laskeutuminen", 30)
+		cv.toggle_manual()
 	# Radiopaneeli (#31).
 	if want("radio"):
 		var radio: Radio = get_parent().radio
