@@ -373,7 +373,7 @@ func _run() -> void:
 		cv.stick_input = Vector3.ZERO
 		Settings.speed_unit = "kms"
 		cv.toggle_manual()
-		# Vakain laskeutuu 200 km:n radalta: avaruudessa nokka alas ja automaattikaasu.
+		# Vakain laskeutuu 200 km:n radalta: avaruudessa nokka vaakatasossa, pystytyöntö ohjausraketeilla.
 		orbit_at("Maa", t0, sun_angle("Maa", t0, false) + 0.3)
 		cv.snap_attitude()
 		await _frames(3)

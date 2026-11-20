@@ -81,6 +81,7 @@ var alt_target := 0.0
 var stick_input := Vector3.ZERO
 var _hold_sign := 1 # vakaimen pystytyönnön suunta avaruudessa
 var _hold_auto := false # vakain käyttää automaattikaasua
+var _hold_dir := PackedFloat64Array() # vakaimen työnnön suunta (ekliptika); avaruudessa mukana pystytyöntö
 var _turn := 0.0 # sivuttaisohjaus vakaimen ollessa päällä −1…1 (pehmennetty)
 var _ladder_button: Button
 var _hold_button: Button
@@ -592,7 +593,7 @@ func _manual_step(s: Dictionary, delta: float) -> void:
 	Game.manual_nose = nose
 	var rf := ship.basis * (Basis(Vector3.RIGHT, CockpitState.AIM_RAISE) * Vector3.UP)
 	Game.manual_roof = PackedFloat64Array([rf.x, -rf.z, rf.y])
-	var dir := nose
+	var dir := nose if hold_power < 0.0 or _hold_dir.size() != 3 else _hold_dir
 	var power := manual_throttle if hold_power < 0.0 else hold_power
 	if braking and h != null:
 		dir = Flight.scale(h, -1.0 / maxf(Flight.norm(h), 1e-9))
@@ -617,8 +618,9 @@ func _manual_step(s: Dictionary, delta: float) -> void:
 
 ## Korkeudenvakaimen ohjaus (Autopilot.control): nokka käännetään vakaimen suuntaan enintään ohjauksen suurimmalla
 ## kääntymisnopeudella, siivet vaakaan ja kaarrossa kallistus kääntösuuntaan (A/D kaartaa). Palauttaa kaasun 0–1:
-## ilmakehässä pelaajan kaasu (tai enemmän automaattikaasulla), avaruudessa automaattikaasu. Työntö vain, kun nokka
-## osoittaa jo lähes vakaimen suuntaan (Autopilot.alignment).
+## ilmakehässä pelaajan kaasu (tai enemmän automaattikaasulla), avaruudessa pelaajan kaasu ja ohjausrakettien
+## pystytyöntö (suunta _hold_dir). Ilmakehässä työntö vain, kun nokka osoittaa jo lähes vakaimen suuntaan
+## (Autopilot.alignment); avaruudessa pystytyöntö ei riipu nokan asennosta.
 func _hold_step(rel: Dictionary, yaw_input: float, delta: float) -> float:
 	var loc: String = Game.state.location
 	_turn = move_toward(_turn, yaw_input, delta * 1.5)
@@ -626,18 +628,15 @@ func _hold_step(rel: Dictionary, yaw_input: float, delta: float) -> float:
 	var c := Autopilot.control(loc, rel.r, rel.v, alt_target, manual_throttle * accel, accel, _turn, _hold_sign)
 	_hold_sign = c.sign
 	_hold_auto = c.auto
+	_hold_dir = c.dir
 	var up_e := Flight.scale(rel.r, 1.0 / Flight.norm(rel.r))
 	var up := _ecl_to_scene(up_e).normalized()
 	var n := _ecl_to_scene(c.nose).normalized()
-	# Pystysuoraan osoittaessa (laskeutuja) näkymän yläreuna menosuuntaan.
+	# Siipien taso vakaimen mukaan: avaruudessa vaakana, ilmakehän kaarrossa kallistus kääntösuuntaan.
 	var ref := up
 	var roof: PackedFloat64Array = c.roof
 	if roof.size() == 3:
-		# Ilmakehässä siipien taso vakaimen mukaan: kaarrossa kallistus kääntösuuntaan (koordinoitu kaarto).
 		ref = _ecl_to_scene(roof).normalized()
-	elif absf(n.dot(up)) > 0.95:
-		var fwd := Autopilot.frame(up_e, rel.v).vhat as PackedFloat64Array
-		ref = _ecl_to_scene(fwd).normalized() * (1.0 if n.dot(up) < 0.0 else -1.0)
 	# Nokka (ikkunan keskikohta) vakaimen suuntaan, kaarteessa kallistus; aluksen kanta on AIM_RAISE alempana.
 	var want := Basis.looking_at(n, ref) * Basis(Vector3.RIGHT, -CockpitState.AIM_RAISE)
 	var q0 := ship.basis.get_rotation_quaternion()
@@ -647,7 +646,8 @@ func _hold_step(rel: Dictionary, yaw_input: float, delta: float) -> float:
 	_ang_vel = Vector3.ZERO
 	var b := boresight()
 	var actual := PackedFloat64Array([b.x, -b.z, b.y])
-	return clampf(float(c.thrust) / maxf(accel, 1e-12), 0.0, 1.0) * Autopilot.alignment(actual, c.nose)
+	var power := clampf(float(c.thrust) / maxf(accel, 1e-12), 0.0, 1.0)
+	return power * Autopilot.alignment(actual, c.nose) if c.air else power
 
 
 ## Horisonttiristikko manuaaliohjauksessa kappaleen lähellä (ei zoomattuna eikä 360°-kameran ollessa koko näytöllä).

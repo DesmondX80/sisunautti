@@ -4,9 +4,9 @@ class_name Autopilot
 ## - Ilmakehässä (dynaaminen paine vähintään Q_AIR) nokka käännetään pystytasossa: kohtauskulma haetaan puolitushaulla
 ##   niin, että painovoima, nostovoima, ilmanvastus ja nokan suuntainen työntö antavat juuri sen pystykiihtyvyyden.
 ##   Jos pelaajan kaasu ei riitä nousuun, automaattikaasu lisää työntöä.
-## - Avaruudessa ja ohuessa yläilmakehässä nostovoimaa ei ole: nokka osoittaa suoraan ylös tai alas kuten laskeutujalla,
-##   ja automaattikaasu antaa tarvittavan pystytyönnön. Suunta vaihtuu vasta selvällä marginaalilla (SIGN_BAND),
-##   jottei alus käänny edestakaisin.
+## - Avaruudessa ja ohuessa yläilmakehässä nostovoimaa ei ole: nokka pysyy vaakatasossa menosuuntaan siivet vaakana
+##   kuten lentokoneella, ja ohjausraketit antavat tarvittavan pystytyönnön ylös tai alas (automaattikaasu). Pelaajan
+##   kaasu polttaa nokan suuntaan. Pystytyönnön suunta vaihtuu vasta selvällä marginaalilla (SIGN_BAND).
 
 ## Pystynopeuden vahvistus korkeuden erosta (1/s), jarrutusprofiilin hidastuvuus (km/s²) ja suurin tavoiteltu
 ## pystynopeus (km/s) avaruudessa ja ilmakehässä.
@@ -38,8 +38,9 @@ static func vs_command(err: float, limit: float) -> float:
 ## pinnasta, pelaajan kaasun työntö thrust ja suurin työntö thrust_max (km/s²). turn −1…1 kallistaa ilmakehässä
 ## alusta (vasemmalle +) koordinoituun kaartoon: nostovoima kääntyy sivulle ja kaartaa lentorataa, ja kohtauskulmaa
 ## kasvatetaan niin, että korkeus pysyy. prev_sign on edellisen pystytyönnön suunta.
-## Palauttaa {nose: nokan suunta (ekliptika), roof: katon suunta (ilmakehässä, muuten tyhjä), thrust: työntö (km/s²),
-## sign, auto: automaattikaasu käytössä, air}.
+## Palauttaa {nose: nokan suunta (ekliptika), roof: katon suunta, thrust: työntö (km/s²), dir: työnnön suunta
+## (ilmakehässä nokka, avaruudessa nokan suuntaisen kaasun ja pystytyönnön summa), sign, auto: automaattikaasu
+## käytössä, air}.
 static func control(name: String, r: PackedFloat64Array, v: PackedFloat64Array, target_km: float, thrust: float,
 		thrust_max: float, turn: float = 0.0, prev_sign: int = 1) -> Dictionary:
 	var rn := Flight.norm(r)
@@ -62,8 +63,14 @@ static func control(name: String, r: PackedFloat64Array, v: PackedFloat64Array, 
 			sign = -1
 		elif sign < 0 and need > SIGN_BAND:
 			sign = 1
-		return {"nose": Flight.scale(up, float(sign)), "roof": PackedFloat64Array(), "thrust": clampf(need * sign, 0.0, thrust_max),
-			"sign": sign, "auto": true, "air": false}
+		# Nokka vaakatasossa menosuuntaan (pelkkä vaakasuunta, jotta pystynopeus ei kallista nokkaa).
+		var fwd: PackedFloat64Array = frame(up, Flight.sub(v, Flight.scale(up, vs))).vhat
+		var main := minf(thrust, thrust_max)
+		var vert := clampf(need * float(sign), 0.0, sqrt(maxf(thrust_max * thrust_max - main * main, 0.0)))
+		var vec := Flight.add(Flight.scale(fwd, main), Flight.scale(up, vert * float(sign)))
+		var mag := Flight.norm(vec)
+		return {"nose": fwd, "roof": up, "thrust": mag, "dir": Flight.scale(vec, 1.0 / mag) if mag > 1e-12 else fwd,
+			"sign": sign, "auto": vert > 0.0, "air": false}
 	var fr := frame(up, v)
 	var vhat: PackedFloat64Array = fr.vhat
 	var p: PackedFloat64Array = fr.p
@@ -92,10 +99,12 @@ static func control(name: String, r: PackedFloat64Array, v: PackedFloat64Array, 
 		out.auto = hi_t > thrust + 1e-9
 		out.nose = _dir(vhat, pb, ALPHA_MAX)
 		out.roof = _roof(vhat, pb, ALPHA_MAX)
+		out.dir = out.nose
 		return out
 	if float(accel_up.call(ALPHA_MIN, thrust)) > 0.0:
 		out.nose = _dir(vhat, pb, ALPHA_MIN)
 		out.roof = _roof(vhat, pb, ALPHA_MIN)
+		out.dir = out.nose
 		return out
 	var lo := ALPHA_MIN
 	var hi := ALPHA_MAX
@@ -107,6 +116,7 @@ static func control(name: String, r: PackedFloat64Array, v: PackedFloat64Array, 
 			lo = mid
 	out.nose = _dir(vhat, pb, (lo + hi) / 2.0)
 	out.roof = _roof(vhat, pb, (lo + hi) / 2.0)
+	out.dir = out.nose
 	return out
 
 

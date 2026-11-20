@@ -2,7 +2,8 @@ extends TestCase
 ## Korkeudenvakain (#58): suljetun silmukan lento Flight.fly_air-mallilla eri kappaleilla kuten ohjaamossa: nokka
 ## kääntyy vakaimen suuntaan enintään 0,6 rad/s, työntö nokan suuntaan vain linjassa (Autopilot.alignment) ja
 ## nopeuden muutos radalle puolen sekunnin sysäyksinä. 10 %:n kaasu (1 g) riittää ilmakehässä vaakalentoon, ja
-## kiertoradalta vakain laskeutuu tavoitekorkeuteen automaattikaasulla.
+## kiertoradalta vakain laskeutuu tavoitekorkeuteen automaattikaasulla nokka vaakatasossa (ohjausrakettien
+## pystytyöntö, ei nokan nostoa pystyyn).
 ##   godot --headless -- --autopilottest
 
 const ACCEL := 0.098
@@ -32,6 +33,9 @@ func _ready() -> void:
 		check("%s: %s km → %s km, ero %s km, pystynopeus %s m/s, suunnanvaihtoja %d, polttoaine %s km/s" % [c[0], Fmt.num(c[1]),
 			Fmt.num(c[2]), Fmt.num(res.err, 2), Fmt.num(res.vs * 1000.0, 1), res.flips, Fmt.num(res.fuel, 2)],
 			not res.hit and absf(res.err) < 0.3 and absf(res.vs) < 0.02 and res.flips <= 4)
+		if c[3] == 0.0:
+			check("%s %s km → %s km: nokka vaakatasossa (enintään %d°)" % [c[0], Fmt.num(c[1]), Fmt.num(c[2]),
+				roundi(rad_to_deg(res.pitch))], res.pitch < deg_to_rad(1.0))
 	var free := fly("Maa", 10.0, 10.0, 0.25, THROTTLE_10, 60.0, false)
 	check("ilman vakainta (nokka menosuuntaan) alus vajoaa", free.hit or free.err < -1.0)
 	var turn := fly("Maa", 10.0, 10.0, 0.25, THROTTLE_10, 60.0, true, 1.0)
@@ -42,8 +46,10 @@ func _ready() -> void:
 	var orbit_r := PackedFloat64Array([6371.0 + 200.0, 0.0, 0.0])
 	var orbit_v := PackedFloat64Array([0.0, sqrt(398600.4 / 6571.0), 0.0])
 	var c0 := Autopilot.control("Maa", orbit_r, orbit_v, 30.0, 0.0, ACCEL)
-	check("avaruudessa vakain osoittaa alas ja käyttää automaattikaasua", c0.auto and not c0.air and c0.nose[0] < -0.99
-		and float(c0.thrust) > 0.0)
+	check("avaruudessa nokka vaakatasossa menosuuntaan, pystytyöntö alas automaattikaasulla", c0.auto and not c0.air
+		and absf(c0.nose[0]) < 1e-6 and c0.nose[1] > 0.99 and c0.roof[0] > 0.99 and c0.dir[0] < -0.99 and float(c0.thrust) > 0.0)
+	var c1 := Autopilot.control("Maa", orbit_r, orbit_v, 200.0, ACCEL * 0.5, ACCEL)
+	check("avaruudessa pelaajan kaasu nokan suuntaan", absf(c1.dir[1] - 1.0) < 0.01 and absf(float(c1.thrust) - ACCEL * 0.5) < 0.002)
 	check("kääntyessä ei polteta väärään suuntaan", Autopilot.alignment(PackedFloat64Array([1, 0, 0]), PackedFloat64Array([0, 1, 0])) == 0.0
 		and Autopilot.alignment(PackedFloat64Array([1, 0, 0]), PackedFloat64Array([1, 0, 0])) == 1.0)
 	check("pystynopeuden tavoite: lähellä suora, kaukana jarrutusprofiili", absf(Autopilot.vs_command(0.5, 1.0) - 0.05) < 1e-9
@@ -65,6 +71,8 @@ func fly(name: String, alt: float, target: float, speed: float, thrust: float, d
 	var nose_v := Flight.scale(v, 1.0 / Flight.norm(v))
 	var sign := 1
 	var flips := 0
+	var max_pitch := 0.0 # nokan suurin kulma vaakatasosta avaruudessa (rad)
+	var thrust_dir := PackedFloat64Array()
 	var roof := PackedFloat64Array()
 	var pending := PackedFloat64Array([0.0, 0.0, 0.0])
 	var pending_t := 0.0
@@ -84,10 +92,18 @@ func fly(name: String, alt: float, target: float, speed: float, thrust: float, d
 			roof = PackedFloat64Array()
 			if cr.size() == 3:
 				roof = Flight.sub(cr, Flight.scale(nose_v, Flight.dot(cr, nose_v)))
-			power = float(c.thrust) * Autopilot.alignment(nose_v, want)
+			if c.air:
+				power = float(c.thrust) * Autopilot.alignment(nose_v, want)
+				thrust_dir = nose_v
+			else:
+				power = float(c.thrust)
+				thrust_dir = c.dir
+				var up_now := Flight.scale(r, 1.0 / Flight.norm(r))
+				max_pitch = maxf(max_pitch, absf(asin(clampf(Flight.dot(want, up_now), -1.0, 1.0))))
 		else:
 			nose_v = Flight.scale(v, 1.0 / Flight.norm(v))
-		pending = Flight.add(pending, Flight.scale(nose_v, power * dt))
+			thrust_dir = nose_v
+		pending = Flight.add(pending, Flight.scale(thrust_dir, power * dt))
 		fuel += power * dt
 		pending_t += dt
 		if pending_t >= 0.5:
@@ -98,13 +114,15 @@ func fly(name: String, alt: float, target: float, speed: float, thrust: float, d
 		r = f.r
 		v = f.v
 		if f.hit:
-			return {"err": -alt, "vs": 0.0, "speed": Flight.norm(v), "hit": true, "turned": 0.0, "flips": flips, "fuel": fuel}
+			return {"err": -alt, "vs": 0.0, "speed": Flight.norm(v), "hit": true, "turned": 0.0, "flips": flips, "fuel": fuel,
+				"pitch": max_pitch}
 		t += dt
 	var up := Flight.scale(r, 1.0 / Flight.norm(r))
 	var vh := Flight.sub(v, Flight.scale(up, Flight.dot(v, up)))
 	var cs := clampf(Flight.dot(vh, v0) / (Flight.norm(vh) * Flight.norm(v0)), -1.0, 1.0)
 	return {"err": Flight.norm(r) - radius - target, "vs": Flight.dot(v, up), "speed": Flight.norm(v), "hit": false,
-		"turned": rad_to_deg(acos(cs)), "left": Flight.dot(Flight.cross(v0, vh), up) > 0.0, "flips": flips, "fuel": fuel}
+		"turned": rad_to_deg(acos(cs)), "left": Flight.dot(Flight.cross(v0, vh), up) > 0.0, "flips": flips, "fuel": fuel,
+		"pitch": max_pitch}
 
 
 ## Yksikkövektori a käännettynä kohti b:tä enintään kulman max_angle (rad).
