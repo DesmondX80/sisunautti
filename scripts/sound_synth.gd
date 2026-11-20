@@ -1,6 +1,6 @@
 class_name SoundSynth
 ## Pelin äänet syntetisoituna käynnistyksessä (ei äänitiedostoja): laukaisun jyrinä, moottorin poltto, ilmajarrutuksen
-## plasma silmukoina sekä käyttöliittymän napsautus, ilmoitusten kellosoinnut ja lähtölaskennan
+## plasma ja ohjaamon taustahumina silmukoina sekä käyttöliittymän napsautus, ilmoitusten kellosoinnut ja lähtölaskennan
 ## piippaus. Näytteet 22 050 Hz, 16-bittinen mono. Silmukat ristihäivytetään saumattomiksi.
 
 const RATE := 22050
@@ -135,6 +135,32 @@ static func plasma() -> PackedFloat32Array:
 		pop *= 0.985
 		x[i] = band[i] * (0.4 + 0.6 * flutter[i]) + low[i] * 0.5 + (rng.randf() * 2.0 - 1.0) * pop * 0.5
 	return seamless(_normalize(x, 0.85), 0.3)
+
+
+## Ohjaamon taustahumina: vaimea ja tasainen, ilman sykettä tai aaltoilua. Matalaksi suodatettu kohina kuin
+## ilmanvaihdossa ja hiljainen laitteiden perussävel; sävelet tekevät kokonaisia jaksoja 4 s:n silmukassa.
+static func hum() -> PackedFloat32Array:
+	var n := int(4.0 * RATE)
+	# Kohina suodatetaan kahdesti peräkkäin ja jälkimmäinen kierros otetaan: suodin on silloin jaksollisessa tilassa,
+	# ja silmukka on saumaton ilman ristihäivytystä (joka notkauttaisi kohinan tehoa saumassa).
+	var noise := _noise(n, 41)
+	noise.append_array(noise)
+	var air := _lowpass(_lowpass(_highpass(noise, 50.0), 420.0), 420.0).slice(n)
+	var x := PackedFloat32Array()
+	x.resize(n)
+	var air_k := 1.0 / maxf(1e-6, _peak(air))
+	for i in n:
+		var t := float(i) / RATE
+		x[i] = air[i] * air_k * 0.45 + sin(TAU * 56.0 * t) * 0.22 + sin(TAU * 112.0 * t) * 0.08 \
+			+ sin(TAU * 168.0 * t) * 0.03
+	return _normalize(x, 0.8)
+
+
+static func _peak(x: PackedFloat32Array) -> float:
+	var m := 0.0
+	for v in x:
+		m = maxf(m, absf(v))
+	return m
 
 
 ## Käyttöliittymän napsautus: lyhyt, pehmeä naksahdus.

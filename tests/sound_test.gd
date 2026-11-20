@@ -6,7 +6,8 @@ extends TestCase
 
 func _ready() -> void:
 	var R := SoundSynth.RATE
-	var loops := {"rumble": SoundSynth.rumble(), "burn": SoundSynth.burn(), "plasma": SoundSynth.plasma()}
+	var loops := {"rumble": SoundSynth.rumble(), "burn": SoundSynth.burn(), "plasma": SoundSynth.plasma(),
+		"hum": SoundSynth.hum()}
 	for name: String in loops:
 		var x: PackedFloat32Array = loops[name]
 		var peak := 0.0
@@ -26,14 +27,33 @@ func _ready() -> void:
 	check("napsautus WAV:ksi", w.data.size() == SoundSynth.click().size() * 2 and w.loop_mode == AudioStreamWAV.LOOP_DISABLED)
 	var lw := SoundSynth.to_wav(loops.burn, true)
 	check("silmukka WAV:ssa", lw.loop_mode == AudioStreamWAV.LOOP_FORWARD and lw.loop_end == loops.burn.size())
-	var amb := GameSound.ambient()
-	check("ohjaamon taustaääni silmukkana", amb != null and amb.loop and amb.get_length() > 40.0)
+	# Humina tasainen: 0,25 s:n jaksojen tehot vaihtelevat alle 1,3 dB (kohinan luonnollinen vaihtelu).
+	var hum: PackedFloat32Array = loops.hum
+	var lo := INF
+	var hi := 0.0
+	var win := R / 4
+	for k in hum.size() / win:
+		var e := 0.0
+		for i in range(k * win, (k + 1) * win):
+			e += hum[i] * hum[i]
+		lo = minf(lo, e)
+		hi = maxf(hi, e)
+	check("taustahumina tasainen", hi / lo < 1.35)
 	var launch := GameSound.levels({"shake": 1.0, "thrust": 1.0, "tau": 5.0}, true)
 	check("laukaisussa jyrinä", launch.rumble == 1.0 and launch.burn > 0.3)
 	var burn := GameSound.levels({"shake": 0.7, "thrust": 1.0, "aero": 0.0}, false)
 	check("poltossa moottori", burn.burn == 1.0 and burn.rumble < 0.5 and burn.plasma == 0.0)
 	check("ilmajarrutuksessa plasma", GameSound.levels({"aero": 0.9}, false).plasma == 0.9)
-	check("humina aina", GameSound.levels({}, false).hum > 0.0)
+	check("humina laukaisun jälkeen", GameSound.levels({}, false).hum > 0.0)
+	check("ei huminaa alustalla eikä nousussa", GameSound.levels({"tau": 100.0}, true).hum == 0.0)
+	# Laukaisun repliikit: lähtölaskenta, liftoff, torni ja vaiheen erotus 2:30; aikaa kiihdytettäessä ohitetut pois.
+	check("lähtölaskenta kymmenestä", GameSound.launch_line(-10.5, -9.95) == "count10")
+	check("viimeinen luku", GameSound.launch_line(-1.05, -0.98) == "count1")
+	check("liftoff", GameSound.launch_line(-0.05, 0.02) == "liftoff")
+	check("tower cleared", GameSound.launch_line(8.95, 9.02) == "tower")
+	check("kantoraketin erotus 2:30", GameSound.launch_line(149.95, 150.03) == "staging")
+	check("ei repliikkiä välissä", GameSound.launch_line(20.0, 20.07) == "")
+	check("ohitettu repliikki ei soi", GameSound.launch_line(100.0, 160.0) == "")
 	# Radio: viisi kanavaa, joiden tiedostot löytyvät; viritys, seuraava kappale ja sammutus.
 	var files := true
 	for ch: Array in Radio.CHANNELS:
@@ -54,8 +74,12 @@ func _ready() -> void:
 	check("radiokohina", SoundSynth.radio_static().size() > SoundSynth.RATE / 3)
 	var sound: GameSound = get_parent().sound
 	check("äänisolmu pääscenessä", sound != null and not sound.quiet)
-	var callout: AudioStream = load(GameSound.CALLOUT)
-	check("vaiheen kuulutus 2–4 s", callout != null and callout.get_length() > 2.0 and callout.get_length() < 4.0)
-	check("kuulutus soi", sound.announce("orbit"))
-	check("ei päällekkäistä kuulutusta", not sound.announce("capture"))
+	var voices := true
+	for name: String in GameSound.VOICES:
+		var v: AudioStream = load(GameSound.VOICE_DIR + name + ".ogg")
+		var most := 1.0 if name.begins_with("count") else 4.5
+		voices = voices and v != null and v.get_length() > 0.3 and v.get_length() < most
+	check("lennonjohdon repliikit (luvut alle sekunnin)", voices)
+	check("kuulutus soi", sound.announce("arrive"))
+	check("toinen kuulutus jonoon, ei päälle", sound.announce("capture") and sound.queued() == 1)
 	finish()

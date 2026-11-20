@@ -29,15 +29,18 @@ kuva Kosmiset kalliot Carinan sumussa (NASA, ESA, CSA, STScI, [CC BY 4.0](https:
 
 ## Äänet
 
-Äänet syntetisoidaan käynnistyksessä (`scripts/sound_synth.gd`, noin 0,2 s), paitsi ohjaamon taustaääni, joka on äänite
-`assets/sound/ohjaamo_tausta.ogg` (freesound_community: [Spaceship Ambient](https://pixabay.com/sound-effects/spaceship-ambient-27988/),
-Pixabayn sisältölisenssi; leikattu saumattomaksi 51 sekunnin silmukaksi). `scripts/game_sound.gd`
-soittaa ne pelin tilan mukaan: laukaisun jyrinä tärinän ja työnnön mukaan, moottorin pauhu poltoissa, ilmajarrutuksen
-plasman suhina ja rätinä, ohjaamon hiljainen taustaääni, painikkeiden napsautus, lähtölaskennan viiden viimeisen
-sekunnin piippaukset. Lennon vaiheen vaihtuessa (kiertorata, lähtöpoltto, vaikutuspiiri, saapuminen, jarrutus
-kiertoradalle) kuuluu NASAn radiokuulutus `assets/sound/vaihe_kuulutus.ogg`: Apollo-lentojen Quindar-piippaus
-(2525 Hz), lennonjohdon "Stage separation confirmed" ja loppupiippaus (2475 Hz). Kuulutus on leikattu NASAn
-IM-2-laukaisun lähetyksestä ([NASA Image and Video Library](https://images.nasa.gov/details/KSC-20250226-AU-ILW01-0004-SpaceX_CLPS_IM-2_Live_Launch_Coverage_Program-1_LOS-2), public domain).
+Äänet syntetisoidaan käynnistyksessä (`scripts/sound_synth.gd`, noin 0,2 s), paitsi lennonjohdon puhe.
+`scripts/game_sound.gd` soittaa ne pelin tilan mukaan: laukaisun jyrinä tärinän ja työnnön mukaan, moottorin pauhu
+poltoissa, ilmajarrutuksen plasman suhina ja rätinä, painikkeiden napsautus sekä ohjaamon vaimea, tasainen taustahumina,
+joka alkaa vasta, kun alus on noussut kiertoradalle.
+
+Lennonjohdon puhe (`assets/sound/voice/`) on kokonaan samaa ääntä: lähtölaskenta kymmenestä ("ten, nine… one"),
+"And liftoff! We have liftoff.", "Tower cleared.", Max Q, kantoraketin erotus 2:30 ("Main engine cutoff. Booster
+separation confirmed.") ja toisen vaiheen sytytys sekä lennon vaiheiden kuulutukset Apollo-lentojen
+Quindar-piippauksin (kiertorata, lähtöpoltto, vaikutuspiiri, saapuminen, jarrutus kiertoradalle tai ohilento).
+Repliikit soivat jonossa eivätkä päällekkäin, ja aikaa kiihdytettäessä ohitetut jäävät pois. Puhe on tehty
+puhesynteesillä [Kokoro](https://huggingface.co/hexgrad/Kokoro-82M) (ääni `am_michael`, Apache 2.0) ja
+radiosuodatettu (`tools/make_voice.py`, ohjeet tiedoston alussa).
 Kartoituksen valmistuminen kuittaa pelkällä Quindar-piippauksella.
 Voimakkuus ja mykistys ovat aloitusvalikon asetuksissa (`Settings.volume`, `Settings.muted`). Valikon ollessa auki
 pelin äänet hiljenevät.
