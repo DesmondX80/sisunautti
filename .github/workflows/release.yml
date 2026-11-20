@@ -64,8 +64,9 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           TAG: ${{ github.event.release.tag_name || inputs.tag }}
-        run: gh release upload "$TAG" export/Sisunautti-windows.zip export/Sisunautti-linux.zip \
-          export/Sisunautti-macos.zip --clobber
+        run: |
+          gh release upload "$TAG" export/Sisunautti-windows.zip export/Sisunautti-linux.zip \
+            export/Sisunautti-macos.zip --clobber
 
   pages:
     # Selainversio Pagesiin main-haarasta (ympäristö sallii käyttöönoton vain mainista).
