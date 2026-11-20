@@ -741,9 +741,16 @@ static func is_free_orbit(orbit: Variant) -> bool:
 	return orbit is Dictionary and orbit.get("rel") is Dictionary
 
 
-## Kappaleen vaikutuspiirin säde (km): kuulla emoplaneetan suhteen, planeetoilla Auringon suhteen.
+## Kaasujättiläinen (ei kiinteää pintaa: törmäys pilvien yläreunaan on syöksy kaasukehään).
+static func is_gas_giant(name: String) -> bool:
+	return name in ["Jupiter", "Saturnus", "Uranus", "Neptunus"]
+
+
+## Kappaleen vaikutuspiirin säde (km): kuulla emoplaneetan suhteen, planeetoilla Auringon suhteen. Vähintään kolme
+## kertaa pysäköintiradan apokeskus, koska pienten kuiden (Phobos) laskennallinen vaikutuspiiri on niiden rataa pienempi.
 static func soi_of(name: String) -> float:
-	return moon_soi(name) if is_moon(name) else float(body(name).soiKm)
+	var soi := moon_soi(name) if is_moon(name) else float(body(name).soiKm)
+	return maxf(soi, 3.0 * float(orbit_of(name).apoKm))
 
 
 ## Radan muoto kappaleen name ympärillä tilasta (r, v) kappaleen suhteen: perikeskuksen ja apokeskuksen korkeus

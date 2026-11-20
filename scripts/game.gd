@@ -684,6 +684,9 @@ const MANUAL_ACCEL := 0.0196
 const MANUAL_WARP := 1
 
 
+var _free_prev := {} # vapaan radan edellinen tarkistus: {t, vsp, orbit}
+
+
 ## Yhtäjaksoisen manuaalipolton Δv tähän mennessä (km/s; HUD).
 func manual_burned() -> float:
 	return _manual_total + Flight.norm(_manual_dv)
@@ -746,8 +749,10 @@ func _flush_manual(done: bool) -> void:
 	_manual_dv = PackedFloat64Array([0.0, 0.0, 0.0])
 	_manual_at = 0.0
 	if done and _manual_total > 0.0:
-		log_event(sim_now(), "Manuaalipoltto: Δv %s" % Fmt.dv(_manual_total))
-		course_burn.emit(_manual_total)
+		# Alle 0,01 km/s (pyöristyy nollaan) ei kirjata lokikirjaan.
+		if _manual_total >= 0.005:
+			log_event(sim_now(), "Manuaalipoltto: Δv %s" % Fmt.dv(_manual_total))
+			course_burn.emit(_manual_total)
 		_manual_total = 0.0
 		save_game()
 
@@ -780,16 +785,38 @@ func _free_orbit_step(t: float) -> void:
 	var s := Flight.parking_state(name, t, state.orbit)
 	var rel: Dictionary = s.rel
 	var rn := Flight.norm(rel.r)
-	if rn <= float(Flight.orbit_of(name).radiusKm):
-		destroy_ship("Alus syöksyi %s pintaan." % Fmt.gen(name))
-		return
 	var shape := Flight.orbit_shape(name, rel.r, rel.v)
-	if float(shape.peri) < 0.0 and warp_index() > 2:
-		_set_notice("Kiihdytys pienennettiin (%s): rata leikkaa %s pinnan." % [WARPS[2][1], Fmt.gen(name)])
-		anchor(t, 2)
-		changed.emit()
+	var vsp := Flight.dot(rel.r, rel.v) / rn
+	# Pintaa leikkaavalla radalla perikeskuksen ohitus edellisen tarkistuksen jälkeen (laskeva → nouseva tai koko
+	# kierros) tarkoittaa, että alus on kulkenut pinnan läpi yhden ruudun aikana (suuri kiihdytys, pieni kuu).
+	var passed := false
+	if float(shape.peri) < 0.0 and _free_prev.get("orbit") == state.orbit:
+		var dt_s := (t - float(_free_prev.t)) / 1000.0
+		var period := INF if shape.escape else TAU * sqrt(pow(_semi_major(name, rel), 3.0) / float(Flight.orbit_of(name).mu))
+		passed = (float(_free_prev.vsp) < 0.0 and vsp >= 0.0) or dt_s >= period
+	_free_prev = {"t": t, "vsp": vsp, "orbit": state.orbit}
+	if rn <= float(Flight.orbit_of(name).radiusKm) or passed:
+		destroy_ship(("Alus syöksyi %s kaasukehään." if Flight.is_gas_giant(name) else "Alus syöksyi %s pintaan.") % Fmt.gen(name))
+		return
+	if float(shape.peri) < 0.0 and warp_index() > 0 and vsp < 0.0:
+		# Törmäykseen arvioitu aika (s): korkeus / laskunopeus. Kiihdytys pienenee portaittain kuten muiden tapahtumien
+		# lähestyessä (WARP_LEAD), jotta pudotus näkyy.
+		var eta := (rn - float(Flight.orbit_of(name).radiusKm)) / -vsp
+		var i := warp_index()
+		while i > 0 and float(WARPS[i][0]) * WARP_LEAD / 1000.0 > eta:
+			i -= 1
+		if i < warp_index():
+			_set_notice("Kiihdytys pienennettiin (%s): %s pinta lähestyy." % [WARPS[i][1], Fmt.gen(name)])
+			anchor(t, i)
+			changed.emit()
 	if shape.escape and rn > Flight.soi_of(name):
 		_leave_soi(name, t, s)
+
+
+## Vapaan radan isoakselin puolikas (km) kappaleen name ympärillä (suljettu rata).
+func _semi_major(name: String, rel: Dictionary) -> float:
+	var mu: float = Flight.orbit_of(name).mu
+	return 1.0 / (2.0 / Flight.norm(rel.r) - Flight.dot(rel.v, rel.v) / mu)
 
 
 func _leave_soi(name: String, t: float, s: Dictionary) -> void:

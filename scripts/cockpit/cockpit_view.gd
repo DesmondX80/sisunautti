@@ -472,7 +472,10 @@ func _manual_step(s: Dictionary, delta: float) -> void:
 		dir = Flight.scale(h, -1.0 / maxf(Flight.norm(h), 1e-9))
 		power = 1.0
 	var ok := Game.manual_thrust(dir, power, delta)
-	var state := "POLTTO" if ok else ("ei polttoa nyt" if power > 0.0 and not Game.can_manual_burn() else "valmius")
+	var state := "POLTTO" if ok else "valmius"
+	if not ok and power > 0.0:
+		state = "POLTTOAINE LOPPU" if float(Game.state.fuel) <= 0.0 else "ei polttoa nyt"
+	state += "   työntö %d %%" % roundi(Game.manual_throttle * 100.0)
 	var speed := ""
 	if h != null:
 		speed = "   nopeus %s" % Fmt.dv(Flight.norm(h))

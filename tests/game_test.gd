@@ -26,6 +26,8 @@ func _ready() -> void:
 	_flyby_without_fuel(orbit_save)
 	_aerobrake(orbit_save)
 	_manual_orbit(orbit_save)
+	_manual_all_bodies(orbit_save)
+	_manual_sound_and_fuel(orbit_save)
 	_web_save()
 	G.fake_real_ms = -1.0
 	DirAccess.remove_absolute(G.TEST_SAVE_PATH)
@@ -344,7 +346,7 @@ func _manual_orbit(orbit_save: String) -> void:
 	check("poltto kohti planeettaa laskee perikeskuksen pinnan alle", float(Flight.orbit_shape("Maa", rel2.r, rel2.v).peri) < 0.0)
 	G.set_warp(5)
 	G.tick()
-	check("pintaa leikkaavalla radalla kiihdytys rajataan", G.warp_index() <= 2)
+	check("pinnan lähestyessä kiihdytys rajataan", G.warp_index() <= 2)
 	var crashed := false
 	for i in 3000:
 		G.fake_real_ms += 100.0
@@ -353,4 +355,90 @@ func _manual_orbit(orbit_save: String) -> void:
 			crashed = true
 			break
 	check("alus törmää Maan pintaan", crashed and String(G.state.destroyed.text).contains("pintaan"))
+	_restore(orbit_save)
+
+
+## Kaikki planeetat ja kuut (#57): kiertoradalla nokka kohti kappaletta ja täysi kaasu 10×:llä vie aluksen
+## matalammalle kuin ilman kaasua, ja kun kaasua pidetään, kunnes rata leikkaa pinnan, alus törmää.
+func _manual_all_bodies(orbit_save: String) -> void:
+	var bodies: Array[String] = []
+	for n: String in Planets.NAMES:
+		bodies.append(n)
+	for n: String in Flight.MOONS:
+		bodies.append(n)
+	var bad: PackedStringArray = []
+	var crashed: PackedStringArray = []
+	for name: String in bodies:
+		_restore(orbit_save)
+		G.state.location = name
+		G.state.lowOrbit = null
+		# Soikealla radalla (kaasujättiläiset) aloitetaan apokeskuksesta: perikeskuksessa kohti planeettaa suunnattu
+		# poltto lisää energiaa mutta ei pyörimismäärää, joten rata pyöristyy ja perikeskus nousee (oikea fysiikka).
+		var ob: Dictionary = Flight.orbit_of(name)
+		var half := Flight.orbit_period(name) * 500.0 if float(ob.apoKm) > float(ob.periKm) * 1.5 else 0.0
+		var o0 := {"epoch": G.sim_now() - half, "arg": 0.0}
+		G.state.orbit = o0
+		G.state.fuel = 14.0
+		G.set_warp(1)
+		var R: float = Flight.orbit_of(name).radiusKm
+		var t0: float = G.sim_now()
+		var burns := 0
+		while burns < 6000 and G.state.get("destroyed") == null and G.state.location == name:
+			var rel: Dictionary = Flight.parking_state(name, G.sim_now(), G.state.orbit).rel
+			if Flight.is_free_orbit(G.state.orbit) and float(Flight.orbit_shape(name, rel.r, rel.v).peri) < 0.0:
+				break
+			# Kohti kappaletta; soikealla radalla 10 s jälkeen jarrutus (menosuuntaa vastaan), koska Jupiterin
+			# painovoimakuopassa pelkkä poltto kohti planeettaa venyttää radan pakoradaksi ennen kuin se leikkaa pinnan.
+			var d := Flight.scale(rel.r, -1.0 / Flight.norm(rel.r))
+			if half > 0.0 and burns >= 600:
+				d = Flight.scale(rel.v, -1.0 / Flight.norm(rel.v))
+			G.manual_thrust(d, 1.0, 1.0 / 60.0)
+			G.fake_real_ms += 1000.0 / 60.0
+			G.tick()
+			burns += 1
+			if burns == 600 and G.state.get("destroyed") == null:
+				# 10 s kaasua: korkeus ja pystynopeus pienemmät kuin samalla hetkellä ilman kaasua.
+				var now: float = G.sim_now()
+				var r1: Dictionary = Flight.parking_state(name, now, G.state.orbit).rel
+				var r0: Dictionary = Flight.parking_state(name, now, o0).rel
+				if not (Flight.norm(r1.r) < Flight.norm(r0.r) and CockpitState.vertical_speed(r1.r, r1.v) < CockpitState.vertical_speed(r0.r, r0.v)):
+					bad.append(name)
+		G.manual_thrust(PackedFloat64Array([1, 0, 0]), 0.0, 0.0)
+		if G.state.get("destroyed") == null and G.state.location == name:
+			for i in 80000:
+				# Pelaaja nostaa kiihdytyksen; peli pienentää sen pinnan lähestyessä.
+				if G.warp_index() < 3:
+					G.set_warp(3)
+				G.fake_real_ms += 100.0
+				G.tick()
+				if G.state.get("destroyed") != null or G.state.location != name:
+					break
+		if G.state.get("destroyed") != null and String(G.state.destroyed.text).contains(Fmt.gen(name)):
+			crashed.append(name)
+
+	check("kaikilla kohteilla kaasu kohti pintaa laskee korkeutta%s" % (": " + ", ".join(bad) if not bad.is_empty() else ""), bad.is_empty())
+	check("törmäys kaikkiin kohteisiin (%d/%d: %s)" % [crashed.size(), bodies.size(), ", ".join(crashed)], crashed.size() == bodies.size())
+	_restore(orbit_save)
+
+
+## Moottoriääni ja Työntö seuraavat kaasun prosentteja, nollalla hiljaista; tyhjällä tankilla ei polttoa (#57).
+func _manual_sound_and_fuel(orbit_save: String) -> void:
+	_restore(orbit_save)
+	G.set_warp(0)
+	var dir := PackedFloat64Array([1.0, 0.0, 0.0])
+	var ok := true
+	for p: float in [0.25, 0.6, 1.0]:
+		G.manual_thrust(dir, p, 0.1)
+		var cs := CockpitState.make()
+		var lv := GameSound.levels(cs, false)
+		ok = ok and absf(float(cs.thrust) - p) < 1e-6 and absf(float(lv.burn) - p) < 1e-6
+	G.manual_thrust(dir, 0.0, 0.0)
+	var quiet := GameSound.levels(CockpitState.make(), false)
+	check("polttoääni ja työntö kaasun mukaan, nollalla hiljaista", ok and float(quiet.burn) == 0.0)
+	G.state.fuel = 0.0
+	var burned: bool = G.manual_thrust(dir, 1.0, 0.5)
+	check("tyhjällä tankilla ei polttoa eikä polttoääntä", not burned and G.manual_throttle == 0.0
+		and float(GameSound.levels(CockpitState.make(), false).burn) == 0.0)
+	G.manual_thrust(dir, 0.0, 0.0)
+	check("nollapolttoa ei kirjata", not String(G.state.log[-1].text).begins_with("Manuaalipoltto"))
 	_restore(orbit_save)
