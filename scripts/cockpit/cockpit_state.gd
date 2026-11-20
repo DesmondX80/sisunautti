@@ -66,9 +66,11 @@ static func make() -> Dictionary:
 			var rel: Dictionary = ship.rel
 			var alt := Flight.norm(rel.r) - float(Flight.orbit_of(name).radiusKm)
 			# Korkeus pinnasta ja pystynopeus (+ ylös, − kohti pintaa), #57.
-			speed_rows = [["%s km/s" % Fmt.num(Flight.norm(rel.v), 2), 44],
+			# Yksikkö km/s tai km/h asetuksen mukaan (#58).
+			var unit := Settings.speed_unit
+			speed_rows = [[Fmt.speed(Flight.norm(rel.v), unit), 44],
 				["korkeus %s km" % Fmt.num(alt, 1 if alt < 100.0 else 0), 28],
-				["pystynopeus %s km/s" % signed(vertical_speed(rel.r, rel.v), 2), 26, MUTED]]
+				["pystynopeus %s" % Fmt.speed(vertical_speed(rel.r, rel.v), unit, true), 26, MUTED]]
 			_air_sky(base, name, ship, rel, alt)
 		else:
 			speed_rows = [["%s km/s" % Fmt.num(Flight.norm(ship.v), 2), 44], ["Auringon suhteen", 28, MUTED]]

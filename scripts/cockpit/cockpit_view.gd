@@ -72,6 +72,17 @@ const MANUAL_ANG_ACCEL := 0.25
 const MANUAL_DAMP := 0.4
 var _ang_vel := Vector3.ZERO # kääntymisnopeus aluksen akseleilla (x nokka, y kääntö, z kallistus; rad/s)
 var _stick := Vector3.ZERO # sauvan asento −1…1 (pehmennetty)
+## Horisonttiristikko ja korkeudenvakain (#58): vakain lukitsee korkeuden (km pinnasta) ja kääntää nokkaa itse.
+var ladder: HudLadder
+var ladder_on := true
+var alt_hold := false
+var alt_target := 0.0
+var _turn := 0.0 # sivuttaisohjaus vakaimen ollessa päällä −1…1 (pehmennetty)
+var _ladder_button: Button
+var _hold_button: Button
+var _unit_button: Button
+var _alt_edit: LineEdit
+var _hint: Label
 var _steer := Vector2.ZERO # ohjainsauvan poikkeama (px) aluksen kääntymisen mukaan
 const REAR_TILT := 0.87 # 50°
 var overlay: ColorRect # ohjaamon kuva ja näytöt 3D-näkymän päällä
@@ -337,6 +348,9 @@ func _build_overlay() -> void:
 		overlay_mat.set_shader_parameter("homography%d" % i, cabin.monitors[i].homography)
 	overlay.material = overlay_mat
 	add_child(overlay)
+	ladder = HudLadder.new()
+	ladder.visible = false
+	add_child(ladder)
 
 
 ## Kerroksen kamera: kanta aluksen koordinaateissa, kuvakulma ja kuvasuhde.
@@ -405,9 +419,37 @@ func _build_manual_hud() -> void:
 	brake.button_up.connect(func() -> void: _braking = false)
 	row.add_child(brake)
 	v.add_child(row)
-	var hint := UiKit.label("W/S nokka · A/D kääntö · Q/E kallistus · Shift/Ctrl kaasu · X nollaa · B jarruta · M lopeta", "MutedLabel", false)
-	hint.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	v.add_child(hint)
+	# Lentoavut (#58): ristikko, korkeudenvakain ja nopeuden yksikkö.
+	var aids := HFlowContainer.new()
+	aids.add_theme_constant_override("h_separation", 6)
+	aids.add_theme_constant_override("v_separation", 6)
+	_ladder_button = UiKit.button("Ristikko päällä", toggle_ladder)
+	_ladder_button.tooltip_text = "Horisonttiristikko ja nousukulma-asteikko päälle tai pois (G)"
+	aids.add_child(_ladder_button)
+	_hold_button = UiKit.button("Lukitse korkeus", func() -> void: set_alt_hold(not alt_hold))
+	_hold_button.tooltip_text = "Korkeudenvakain: lukitsee nykyisen korkeuden (L), PgUp/PgDn ±1 km, W/S kytkee pois"
+	aids.add_child(_hold_button)
+	aids.add_child(UiKit.button("−1 km", func() -> void: adjust_alt(-1.0)))
+	aids.add_child(UiKit.button("+1 km", func() -> void: adjust_alt(1.0)))
+	_alt_edit = LineEdit.new()
+	_alt_edit.placeholder_text = "korkeus km"
+	_alt_edit.custom_minimum_size.x = 110.0
+	_alt_edit.tooltip_text = "Kirjoita tavoitekorkeus (km) ja paina Enter"
+	_alt_edit.text_submitted.connect(func(text: String) -> void:
+		var km := text.strip_edges().replace(",", ".").replace(" ", "").replace(Fmt.NBSP, "")
+		if km.is_valid_float():
+			set_alt_hold(true, maxf(0.0, km.to_float()))
+		_alt_edit.text = ""
+		_alt_edit.release_focus())
+	aids.add_child(_alt_edit)
+	_unit_button = UiKit.button("km/s", toggle_speed_unit)
+	_unit_button.tooltip_text = "Nopeus kappaleen suhteen yksikössä km/s tai km/h (U)"
+	aids.add_child(_unit_button)
+	v.add_child(aids)
+	_sync_aid_buttons()
+	_hint = UiKit.label("W/S nokka · A/D kääntö · Q/E kallistus · Shift/Ctrl kaasu · X nollaa · B jarruta · G ristikko · L korkeudenvakain · U yksikkö · M lopeta", "MutedLabel", false)
+	_hint.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	v.add_child(_hint)
 	_fit_manual_hud()
 	resized.connect(_fit_manual_hud)
 
@@ -415,6 +457,8 @@ func _build_manual_hud() -> void:
 ## Manuaaliohjauksen paneelin leveys näkymän mukaan (enintään 620 px, reunoilla 12 px tilaa).
 func _fit_manual_hud() -> void:
 	_manual_hud.custom_minimum_size.x = clampf(size.x - 24.0, 200.0, 620.0)
+	# Kapeassa näkymässä (puhelin) näppäinohje piiloon, jotta ohjaamo näkyy.
+	_hint.visible = size.x >= 700.0
 
 
 ## Manuaaliohjaus päälle ja pois: pois kytkettäessä kaasu nollataan ja asento palaa automaattiseksi.
@@ -424,10 +468,69 @@ func toggle_manual() -> void:
 	_braking = false
 	_ang_vel = Vector3.ZERO
 	_stick = Vector3.ZERO
+	alt_hold = false
+	_turn = 0.0
+	_sync_aid_buttons()
 	Game.manual_nose = PackedFloat64Array()
 	Game.manual_thrust(PackedFloat64Array([1.0, 0.0, 0.0]), 0.0, 0.0)
 	manual_button.text = "Automaattiohjaus" if manual else "Manuaaliohjaus"
 	_manual_hud.visible = manual
+
+
+## Nokan suunta (scene) manuaaliohjauksessa: ikkunan keskikohta, AIM_RAISE aluksen −Z-akselin yläpuolella, kuten
+## automaattiohjauksessa kohde. Kaasu polttaa ja nostovoima vetää tähän suuntaan.
+func boresight() -> Vector3:
+	return ship.basis * (Basis(Vector3.RIGHT, CockpitState.AIM_RAISE) * Vector3.FORWARD)
+
+
+func toggle_ladder() -> void:
+	ladder_on = not ladder_on
+	_sync_aid_buttons()
+
+
+func toggle_speed_unit() -> void:
+	Settings.set_speed_unit("kms" if Settings.speed_unit == "kmh" else "kmh")
+	_sync_aid_buttons()
+
+
+## Korkeudenvakain päälle (tavoite target_km, oletuksena nykyinen korkeus) tai pois. Toimii vain kappaleen lähellä.
+func set_alt_hold(on: bool, target_km: float = NAN) -> void:
+	var alt: Variant = current_alt()
+	if on and alt == null:
+		Game.show_notice("Korkeudenvakain toimii vain planeetan tai kuun lähellä.")
+		on = false
+	alt_hold = on
+	if on:
+		alt_target = maxf(0.0, roundf((float(alt) if is_nan(target_km) else target_km) * 10.0) / 10.0)
+		_ang_vel = Vector3.ZERO
+	_turn = 0.0
+	_sync_aid_buttons()
+
+
+## Tavoitekorkeuden muutos (km); vakain kytkeytyy päälle nykyisestä korkeudesta, jos se oli pois.
+func adjust_alt(d_km: float) -> void:
+	if not alt_hold:
+		set_alt_hold(true)
+	if alt_hold:
+		alt_target = maxf(0.0, alt_target + d_km)
+		_sync_aid_buttons()
+
+
+## Korkeus pinnasta (km) kappaleen kiertoradalla, muuten null.
+func current_alt() -> Variant:
+	var loc: Variant = Game.state.get("location")
+	if loc == null or Game.state.get("orbit") == null or Game.state.pad:
+		return null
+	var rel: Dictionary = Flight.parking_state(loc, Game.sim_now(), Game.state.orbit).rel
+	return Flight.norm(rel.r) - float(Flight.orbit_of(loc).radiusKm)
+
+
+func _sync_aid_buttons() -> void:
+	if _ladder_button == null:
+		return
+	_ladder_button.text = "Ristikko päällä" if ladder_on else "Ristikko pois"
+	_hold_button.text = "Vakain %s km · pois" % Fmt.num(alt_target, 1) if alt_hold else "Lukitse korkeus"
+	_unit_button.text = "km/h" if Settings.speed_unit == "kmh" else "km/s"
 
 
 ## Kääntymisnopeus ohjauksesta input (−1…1 akseleittain): ohjausraketit kiihdyttävät kääntymistä tasaisesti, ja
@@ -451,9 +554,19 @@ func _manual_step(s: Dictionary, delta: float) -> void:
 		return (1.0 if keys and Input.is_key_pressed(pos) else 0.0) - (1.0 if keys and Input.is_key_pressed(neg) else 0.0)
 	var input := Vector3(axis.call(KEY_S, KEY_W), axis.call(KEY_D, KEY_A), axis.call(KEY_E, KEY_Q))
 	_stick = _stick.lerp(input, minf(1.0, delta * 10.0))
-	_ang_vel = turn_rate(_ang_vel, input, delta)
-	if _ang_vel != Vector3.ZERO:
-		ship.basis = (ship.basis * Basis.from_euler(_ang_vel * delta)).orthonormalized()
+	var ship_s: Variant = s.get("ship")
+	var rel: Variant = ship_s.get("rel") if ship_s is Dictionary else null
+	if alt_hold and (input.x != 0.0 or not (rel is Dictionary) or current_alt() == null):
+		# Nokan ohjaus (W/S) kytkee vakaimen pois kuten lentokoneen autopilotin.
+		set_alt_hold(false)
+		if input.x != 0.0:
+			Game.show_notice("Korkeudenvakain pois: ohjaat nokkaa itse.")
+	if alt_hold:
+		_hold_step(rel, input.y, delta)
+	else:
+		_ang_vel = turn_rate(_ang_vel, input, delta)
+		if _ang_vel != Vector3.ZERO:
+			ship.basis = (ship.basis * Basis.from_euler(_ang_vel * delta)).orthonormalized()
 	if keys and Input.is_key_pressed(KEY_SHIFT):
 		manual_throttle = minf(1.0, manual_throttle + delta * 0.6)
 	if keys and Input.is_key_pressed(KEY_CTRL):
@@ -462,10 +575,8 @@ func _manual_step(s: Dictionary, delta: float) -> void:
 		manual_throttle = 0.0
 	var braking := _braking or (keys and Input.is_key_pressed(KEY_B))
 	# Menosuunta: lennolla kartan nuoli, kiertoradalla nopeus kappaleen suhteen.
-	var ship_s: Variant = s.get("ship")
-	var rel: Variant = ship_s.get("rel") if ship_s is Dictionary else null
 	var h: Variant = s.get("heading") if s.get("heading") != null else (rel.v if rel is Dictionary else null)
-	var n := -ship.basis.z
+	var n := boresight()
 	var nose := PackedFloat64Array([n.x, -n.z, n.y]) # scene → ekliptika (Space.to_scene käänteisenä)
 	Game.manual_nose = nose
 	var dir := nose
@@ -480,11 +591,46 @@ func _manual_step(s: Dictionary, delta: float) -> void:
 	state += "   työntö %d %%" % roundi(Game.manual_throttle * 100.0)
 	var speed := ""
 	if h != null:
-		speed = "   nopeus %s" % Fmt.dv(Flight.norm(h))
+		speed = "   nopeus %s" % (Fmt.speed(Flight.norm(h), Settings.speed_unit) if rel is Dictionary else Fmt.dv(Flight.norm(h)))
+	if alt_hold:
+		speed += "   VAKAIN %s km" % Fmt.num(alt_target, 1)
+	if _unit_button.text != ("km/h" if Settings.speed_unit == "kmh" else "km/s"):
+		_sync_aid_buttons()
 	var burned := Game.manual_burned()
 	_manual_label.text = "MANUAALIOHJAUS   kaasu %d %%%s   %s%s%s   polttoaine %s\n%s" % [roundi(manual_throttle * 100.0),
 		"  · JARRUTUS" if braking else "", state, speed, "   poltettu Δv %s" % Fmt.dv(burned) if burned > 0.0 else "",
 		Fmt.dv(float(Game.state.fuel)), course_text(nose, h, rel)]
+
+
+## Korkeudenvakaimen ohjaus: nokka käännetään vakaimen laskemaan suuntaan (Autopilot.nose) enintään ohjauksen
+## suurimmalla kääntymisnopeudella, siivet vaakaan ja kaarrossa kallistus kääntösuuntaan. A/D kaartaa.
+func _hold_step(rel: Dictionary, yaw_input: float, delta: float) -> void:
+	var loc: String = Game.state.location
+	_turn = move_toward(_turn, yaw_input, delta * 1.5)
+	var thrust := manual_throttle * Game.manual_accel()
+	var n := Autopilot.nose(loc, rel.r, rel.v, alt_target, thrust, _turn)
+	var up := _ecl_to_scene(Flight.scale(rel.r, 1.0 / Flight.norm(rel.r))).normalized()
+	# Nokka (ikkunan keskikohta) vakaimen suuntaan, kaarteessa kallistus; aluksen kanta on AIM_RAISE alempana.
+	var want := Basis.looking_at(_ecl_to_scene(n).normalized(), up) * Basis(Vector3(0, 0, 1), _turn * 0.5) \
+		* Basis(Vector3.RIGHT, -CockpitState.AIM_RAISE)
+	var q0 := ship.basis.get_rotation_quaternion()
+	var q1 := want.get_rotation_quaternion()
+	var ang := q0.angle_to(q1)
+	ship.basis = Basis(q0.slerp(q1, 1.0 if ang < 1e-5 else minf(1.0, MANUAL_RATE * delta / ang)))
+	_ang_vel = Vector3.ZERO
+
+
+## Horisonttiristikko manuaaliohjauksessa kappaleen lähellä (ei zoomattuna eikä 360°-kameran ollessa koko näytöllä).
+func _update_ladder(s: Dictionary) -> void:
+	var ship_s: Variant = s.get("ship")
+	var rel: Variant = ship_s.get("rel") if ship_s is Dictionary else null
+	var show := manual and ladder_on and rel is Dictionary and Game.state.get("location") != null and not pan_full \
+		and fov_target >= base_fov - 0.5
+	ladder.visible = show
+	if not show:
+		return
+	ladder.update(camera.global_transform.basis, ship.global_transform.basis, camera.fov, _ecl_to_scene(rel.r).normalized(),
+		ship.global_transform.basis * (Basis(Vector3.RIGHT, CockpitState.AIM_RAISE) * Vector3.FORWARD), _ecl_to_scene(rel.v), func(d: Vector3) -> bool: return Cabin.through_window(d))
 
 
 ## Kurssirivi: nokan kulma menosuunnasta ja kiertoradalla radan muoto (perikeskus ja apokeskus pinnasta tai
@@ -498,7 +644,7 @@ static func course_text(nose: PackedFloat64Array, heading: Variant, rel: Variant
 	if loc != null and rel is Dictionary:
 		var alt := Flight.norm(rel.r) - float(Flight.orbit_of(loc).radiusKm)
 		parts.append("korkeus %s km" % Fmt.num(alt))
-		parts.append("pystynopeus %s km/s" % CockpitState.signed(CockpitState.vertical_speed(rel.r, rel.v), 2))
+		parts.append("pystynopeus %s" % Fmt.speed(CockpitState.vertical_speed(rel.r, rel.v), Settings.speed_unit, true))
 		var sh := Flight.orbit_shape(loc, rel.r, rel.v)
 		if Game.atmo_q > 0.0:
 			# Ilmakehässä rata ei ole kartioleikkaus: näytetään ilmanpaine ja kohtauskulma.
@@ -1024,6 +1170,26 @@ func _unhandled_key_input(event: InputEvent) -> void:
 			and (event as InputEventKey).keycode == KEY_M and not Game.state.pad:
 		toggle_manual()
 		get_viewport().set_input_as_handled()
+	elif is_visible_in_tree() and manual and event is InputEventKey and (event as InputEventKey).pressed:
+		# Lentoavut (#58): G ristikko, L korkeudenvakain, U nopeuden yksikkö, PgUp/PgDn tavoitekorkeus ±1 km.
+		var k := event as InputEventKey
+		var handled := true
+		if k.keycode == KEY_PAGEUP:
+			adjust_alt(1.0)
+		elif k.keycode == KEY_PAGEDOWN:
+			adjust_alt(-1.0)
+		elif k.echo:
+			handled = false
+		elif k.keycode == KEY_G:
+			toggle_ladder()
+		elif k.keycode == KEY_L:
+			set_alt_hold(not alt_hold)
+		elif k.keycode == KEY_U:
+			toggle_speed_unit()
+		else:
+			handled = false
+		if handled:
+			get_viewport().set_input_as_handled()
 
 
 # Pystykulma niin, että ohjaamon kuva täyttää näkymän (kapeassa ikkunassa katsetta käännetään sivuille).
@@ -1102,6 +1268,7 @@ func _process(delta: float) -> void:
 	head.basis = head.basis * Basis.from_euler(Vector3((sin(tt * 31.0) * 0.4 + sin(tt * 47.0 + 1.0) * 0.3) * 0.012 * rumble, sin(tt * 23.0) * 0.006 * rumble, 0.0))
 	camera.position = Vector3.ZERO
 	_update_overlay()
+	_update_ladder(s)
 	_lighting(s)
 	_effects(s)
 	_screens(s)

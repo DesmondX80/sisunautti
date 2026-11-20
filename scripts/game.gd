@@ -234,6 +234,11 @@ func limit_warp(t: float) -> void:
 	changed.emit()
 
 
+## Ilmoitus pelaajalle käyttöliittymästä (esim. ohjaamon lentoavut).
+func show_notice(text: String) -> void:
+	_set_notice(text)
+
+
 func _set_notice(text: String) -> void:
 	if text == notice:
 		return
@@ -678,8 +683,12 @@ var manual_throttle := 0.0
 var _manual_dv := PackedFloat64Array([0.0, 0.0, 0.0]) # polttamatta jäänyt nopeuden muutos (km/s)
 var _manual_total := 0.0 # yhtäjaksoisen polton Δv lokikirjaan
 var _manual_at := 0.0
-## Manuaalikaasun kiihtyvyys (km/s²), kun aluksen moottori on impulssimainen (kemiallinen, ydin): 2 g.
-const MANUAL_ACCEL := 0.0196
+var _manual_cost := 0.0 # polttamatta jääneen nopeuden muutoksen polttoainekulu (km/s)
+## Manuaalikaasun kiihtyvyys (km/s²) täydellä kaasulla (#58: maailman tehokkain alus): 10 g, jolloin 10 %:n kaasu
+## kumoaa Maan painovoiman. Ionialus kiihtyy tyhjiössä omalla työnnöllään.
+const MANUAL_ACCEL := 0.098
+## Ilmakehässä moottori hengittää ilmaa (ramjet): polttoainetta kuluu vain tämä osuus nopeuden muutoksesta.
+const AIR_FUEL_FACTOR := 0.02
 ## Suurin aikakiihdytys manuaalipolton aikana (WARPS-indeksi: 10×).
 const MANUAL_WARP := 1
 
@@ -726,22 +735,30 @@ func manual_thrust(dir: PackedFloat64Array, throttle: float, dt_s: float) -> boo
 		anchor(sim_now(), MANUAL_WARP)
 		_set_notice("Polton aikana kiihdytys enintään %s." % WARPS[MANUAL_WARP][1])
 		changed.emit()
-	# Ionialus kiihtyy hitaasti omalla työnnöllään, muut 2 g:n kaasulla.
-	var accel := Flight.ship_accel(state.ship) if Flight.ship_accel(state.ship) > 0.0 else MANUAL_ACCEL
+	var accel := manual_accel()
+	var factor := AIR_FUEL_FACTOR if atmo_q > 0.0 else 1.0
 	var sim_dt := dt_s * float(WARPS[warp_index()][0])
-	var dv := minf(accel * manual_throttle * sim_dt, float(state.fuel) - Flight.norm(_manual_dv))
-	_manual_dv = Flight.add(_manual_dv, Flight.scale(dir, maxf(dv, 0.0)))
+	var dv := maxf(minf(accel * manual_throttle * sim_dt, (float(state.fuel) - _manual_cost) / factor), 0.0)
+	_manual_dv = Flight.add(_manual_dv, Flight.scale(dir, dv))
+	_manual_cost += dv * factor
 	_manual_at += dt_s
 	if _manual_at >= 0.5:
 		_flush_manual(false)
 	return true
 
 
+## Manuaalikaasun kiihtyvyys täydellä kaasulla (km/s²): ionialus tyhjiössä omalla työnnöllään, muut (ja
+## ilmakehässä kaikki) 10 g.
+func manual_accel() -> float:
+	var ion := Flight.ship_accel(state.ship)
+	return ion if ion > 0.0 and atmo_q <= 0.0 else MANUAL_ACCEL
+
+
 func _flush_manual(done: bool) -> void:
 	var dv := Flight.norm(_manual_dv)
 	if dv > 1e-9 and can_manual_burn():
 		var now := sim_now()
-		state.fuel = maxf(0.0, float(state.fuel) - dv)
+		state.fuel = maxf(0.0, float(state.fuel) - _manual_cost)
 		if state.get("flight") != null:
 			state.flight = Flight.apply_burn_vector(state.flight, now, _manual_dv)
 		elif state.location != null:
@@ -752,6 +769,7 @@ func _flush_manual(done: bool) -> void:
 		_manual_total += dv
 		changed.emit()
 	_manual_dv = PackedFloat64Array([0.0, 0.0, 0.0])
+	_manual_cost = 0.0
 	_manual_at = 0.0
 	if done and _manual_total > 0.0:
 		# Alle 0,01 km/s (pyöristyy nollaan) ei kirjata lokikirjaan.

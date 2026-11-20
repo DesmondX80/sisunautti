@@ -23,6 +23,8 @@ var music_volume := 0.6
 var radio_channel := -1
 ## Aluksen häiriöt (#42): 0 pois, 1 harvoin, 2 usein.
 var faults := 1
+## Nopeuden yksikkö ohjaamossa kappaleen suhteen (#58): "kms" tai "kmh".
+var speed_unit := "kms"
 const FAULT_NAMES: PackedStringArray = ["Pois", "Harvoin", "Usein"]
 var path := PATH # testit vaihtavat polun, jotta oikeat asetukset eivät muutu
 
@@ -102,6 +104,11 @@ func set_radio_channel(c: int) -> void:
 
 
 ## Pääväylän voimakkuus ja mykistys.
+func set_speed_unit(unit: String) -> void:
+	speed_unit = "kmh" if unit == "kmh" else "kms"
+	save_settings()
+
+
 func set_faults(level: int) -> void:
 	faults = clampi(level, 0, 2)
 	save_settings()
@@ -124,6 +131,7 @@ func load_settings() -> void:
 		music_volume = 0.6
 		radio_channel = -1
 		faults = 1
+		speed_unit = "kms"
 		apply_audio()
 		return
 	quality = clampi(int(cfg.get_value("graphics", "quality", default_quality())), Quality.LOW, max_quality())
@@ -134,6 +142,7 @@ func load_settings() -> void:
 	music_volume = clampf(float(cfg.get_value("audio", "music_volume", 0.6)), 0.0, 1.0)
 	radio_channel = int(cfg.get_value("audio", "radio_channel", -1))
 	faults = clampi(int(cfg.get_value("game", "faults", 1)), 0, 2)
+	speed_unit = "kmh" if String(cfg.get_value("ui", "speed_unit", "kms")) == "kmh" else "kms"
 	apply_audio()
 
 
@@ -147,4 +156,5 @@ func save_settings() -> void:
 	cfg.set_value("audio", "music_volume", music_volume)
 	cfg.set_value("audio", "radio_channel", radio_channel)
 	cfg.set_value("game", "faults", faults)
+	cfg.set_value("ui", "speed_unit", speed_unit)
 	cfg.save(path)

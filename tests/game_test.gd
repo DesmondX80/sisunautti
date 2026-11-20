@@ -247,11 +247,12 @@ func _manual_burn() -> void:
 	G.state.fuel = fuel
 
 
-## Polttaa manuaalisesti suuntaan dir, kunnes Δv on poltettu (2 g, puolen sekunnin askelin; kello ei kulu).
+## Polttaa manuaalisesti suuntaan dir täsmälleen Δv:n verran (täysi kaasu lyhyin askelin; kello ei kulu).
 func _burn(dir: PackedFloat64Array, dv: float) -> void:
-	var steps := ceili(dv / (float(G.MANUAL_ACCEL) * 0.5))
+	var steps := ceili(dv / (float(G.MANUAL_ACCEL) * 0.1))
+	var dt := dv / (float(G.MANUAL_ACCEL) * steps)
 	for i in steps:
-		G.manual_thrust(dir, 1.0, 0.5)
+		G.manual_thrust(dir, 1.0, dt)
 	G.manual_thrust(dir, 0.0, 0.0)
 
 
@@ -272,7 +273,7 @@ func _manual_orbit(orbit_save: String) -> void:
 	var rel2: Dictionary = Flight.parking_state("Maa", G.sim_now(), G.state.orbit).rel
 	var sh2 := Flight.orbit_shape("Maa", rel2.r, rel2.v)
 	check("myötäsuuntainen poltto venyttää rataa (apokeskus %s km)" % Fmt.num(sh2.apo), Flight.is_free_orbit(G.state.orbit)
-		and float(sh2.apo) > float(sh.apo) + 5000.0 and absf(float(sh2.peri) - float(sh.peri)) < 20.0 and not sh2.escape)
+		and float(sh2.apo) > float(sh.apo) + 4800.0 and absf(float(sh2.peri) - float(sh.peri)) < 20.0 and not sh2.escape)
 	check("poltto kuluttaa polttoainetta", absf(fuel - float(G.state.fuel) - 1.0) < 0.02)
 	_burn(pro, 2.4)
 	rel2 = Flight.parking_state("Maa", G.sim_now(), G.state.orbit).rel
@@ -437,11 +438,12 @@ func _manual_sound_and_fuel(orbit_save: String) -> void:
 	var quiet := GameSound.levels(CockpitState.make(), false)
 	check("polttoääni ja työntö kaasun mukaan, nollalla hiljaista", ok and float(quiet.burn) == 0.0)
 	G.state.fuel = 0.0
+	var log_n: int = G.state.log.size()
 	var burned: bool = G.manual_thrust(dir, 1.0, 0.5)
 	check("tyhjällä tankilla ei polttoa eikä polttoääntä", not burned and G.manual_throttle == 0.0
 		and float(GameSound.levels(CockpitState.make(), false).burn) == 0.0)
 	G.manual_thrust(dir, 0.0, 0.0)
-	check("nollapolttoa ei kirjata", not String(G.state.log[-1].text).begins_with("Manuaalipoltto"))
+	check("nollapolttoa ei kirjata", G.state.log.size() == log_n)
 	_restore(orbit_save)
 
 
@@ -454,7 +456,7 @@ func _air_flight(orbit_save: String) -> void:
 		var r := PackedFloat64Array([6371.0 + 60.0, 0.0, 0.0])
 		var v := PackedFloat64Array([-0.4, 7.0, 0.0])
 		G.state.orbit = {"epoch": G.sim_now(), "arg": 0.0, "rel": {"r": r, "v": v}}
-		G.set_warp(3)
+		G.set_warp(1)
 		var heat := 0.0
 		var q := 0.0
 		for i in 300: # 30 s
@@ -462,6 +464,8 @@ func _air_flight(orbit_save: String) -> void:
 			var vh := Flight.scale(rel.v, 1.0 / Flight.norm(rel.v))
 			var up := Flight.scale(rel.r, 1.0 / Flight.norm(rel.r))
 			G.manual_nose = Flight.add(Flight.scale(vh, cos(0.26)), Flight.scale(up, sin(0.26))) if mode == "nokka ylös" else PackedFloat64Array()
+			if i == 150:
+				G.set_warp(3) # pelaaja yrittää kiihdyttää: ilmakehässä enintään 10×
 			G.fake_real_ms += 100.0
 			G.tick()
 			heat = maxf(heat, G.atmo_heat)
@@ -477,4 +481,22 @@ func _air_flight(orbit_save: String) -> void:
 	check("ilmakehässä nokka ylös: alus nousee (pystynopeus %s km/s)" % Fmt.num(a.vsp, 2), float(a.vsp) > 0.0)
 	check("ilman nostovoimaa alus putoaa (%s km)" % Fmt.num(b.alt, 1), float(b.vsp) < 0.0 and float(b.alt) < float(a.alt))
 	check("ilmakehässä kiihdytys enintään 10×, plasma ja ilmanpaine", int(a.warp) <= G.MANUAL_WARP and float(a.q) > 1000.0 and float(a.heat) > 0.0)
+	# Maailman tehokkain alus (#58): 10 %:n kaasu kumoaa painovoiman, ja ilmakehässä moottori hengittää ilmaa.
+	_restore(orbit_save)
+	var ra := PackedFloat64Array([6371.0 + 10.0, 0.0, 0.0])
+	var va := PackedFloat64Array([0.0, 0.25, 0.0])
+	G.state.orbit = {"epoch": G.sim_now(), "arg": 0.0, "rel": {"r": ra, "v": va}}
+	G.set_warp(0)
+	G.fake_real_ms += 100.0
+	G.tick()
+	var fuel0: float = G.state.fuel
+	check("10 %%:n kaasu vähintään 1 g (%s m/s²)" % Fmt.num(G.manual_accel() * 100.0, 1), G.manual_accel() * 0.1 >= 0.0098 - 1e-9)
+	for i in 10:
+		G.manual_thrust(PackedFloat64Array([1.0, 0.0, 0.0]), 1.0, 0.1)
+	G.manual_thrust(PackedFloat64Array([1.0, 0.0, 0.0]), 0.0, 0.0)
+	var used_air: float = fuel0 - float(G.state.fuel)
+	check("ilmakehässä polttoainetta kuluu vain %d %% (%s km/s)" % [roundi(G.AIR_FUEL_FACTOR * 100.0), Fmt.num(used_air, 4)],
+		absf(used_air - G.MANUAL_ACCEL * G.AIR_FUEL_FACTOR) < 1e-6)
+	var rel_a: Dictionary = Flight.parking_state("Maa", G.sim_now(), G.state.orbit).rel
+	check("työntö 1 s × 10 g nostaa nopeutta ylöspäin", float(rel_a.v[0]) > 0.09)
 	_restore(orbit_save)

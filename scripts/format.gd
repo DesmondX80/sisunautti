@@ -57,6 +57,15 @@ static func dv(v: float) -> String:
 	return "%s km/s" % num(v, 2)
 
 
+## Nopeus valitussa yksikössä (#58): "kmh" → "900 km/h", muuten "0,25 km/s". sign lisää etumerkin (+/−).
+static func speed(v_kms: float, unit: String, sign: bool = false) -> String:
+	var kmh := unit == "kmh"
+	var t := num(v_kms * 3600.0) if kmh else num(v_kms, 2)
+	if sign and not t.begins_with(MINUS) and t != "0":
+		t = "+" + t
+	return t + (" km/h" if kmh else " km/s")
+
+
 static func days(d: float) -> String:
 	if d < 730.0:
 		return "%s vrk" % num(roundf(d))
@@ -109,7 +118,12 @@ static func from_text(from: Variant) -> String:
 static func orbit_text(name: String, orbit: Variant = null) -> String:
 	if Flight.is_free_orbit(orbit):
 		# Manuaalipolttojen muuttama rata (#57): muoto ei muutu ilman polttoa.
-		var sh := Flight.orbit_shape(name, PackedFloat64Array(orbit.rel.r), PackedFloat64Array(orbit.rel.v))
+		var r := PackedFloat64Array(orbit.rel.r)
+		var sh := Flight.orbit_shape(name, r, PackedFloat64Array(orbit.rel.v))
+		var alt := Flight.norm(r) - float(Flight.orbit_of(name).radiusKm)
+		if Flight.has_air(name) and alt <= float(Flight.AIR[name][2]):
+			# Ilmakehälennolla rata ei ole kartioleikkaus (#58).
+			return "ilmakehässä %s km korkeudella" % num(alt, 1 if alt < 100.0 else 0)
 		if sh.escape:
 			return "pakoradalla (v∞ %s)" % dv(sh.vinf)
 		if float(sh.peri) < 0.0:

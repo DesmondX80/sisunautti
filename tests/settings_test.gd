@@ -34,8 +34,15 @@ func _ready() -> void:
 	s.set_volume(2.0)
 	s.set_muted(false)
 	check("voimakkuus rajataan", s.volume == 1.0 and not AudioServer.is_bus_mute(0))
+	check("nopeuden yksikkö oletuksena km/s", s.speed_unit == "kms")
+	s.set_speed_unit("kmh")
+	s.speed_unit = "kms"
+	s.load_settings()
+	check("nopeuden yksikkö tallentui", s.speed_unit == "kmh")
+	s.set_speed_unit("jotain")
+	check("tuntematon yksikkö → km/s", s.speed_unit == "kms")
 	check("ikkunan otsikko", ProjectSettings.get_setting("application/config/name") == "Sisunautti")
-	check("versio", ProjectSettings.get_setting("application/config/version") == "1.22.0")
+	check("versio", ProjectSettings.get_setting("application/config/version") == "1.23.0")
 	DirAccess.remove_absolute(path)
 	s.path = original_path
 	s.load_settings()

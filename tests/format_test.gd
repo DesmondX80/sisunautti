@@ -11,6 +11,9 @@ func _ready() -> void:
 			[12.5, 0, "13"], [999.999, 2, "1%s000" % S], [0.1, 1, "0,1"], [149597870.7, 0, "149%s597%s871" % [S, S]], [1000.0, 0, "1%s000" % S]]:
 		check("num(%s, %d) = %s" % [c[0], c[1], c[2]], Fmt.num(c[0], c[1]) == c[2])
 	check("Δv", Fmt.dv(3.7512) == "3,75 km/s")
+	check("nopeus km/s tai km/h", Fmt.speed(0.25, "kms") == "0,25 km/s" and Fmt.speed(0.25, "kmh") == "900 km/h"
+		and Fmt.speed(7.8, "kmh") == "28%s080 km/h" % S and Fmt.speed(0.01, "kmh", true) == "+36 km/h"
+		and Fmt.speed(-0.05, "kms", true) == "−0,05 km/s" and Fmt.speed(0.0001, "kms", true) == "0 km/s")
 	check("vuorokaudet", Fmt.days(258.6) == "259 vrk" and Fmt.days(800.0) == "2 v 70 vrk")
 	check("kilometrit", Fmt.km(5000.4) == "5%s000 km" % S and Fmt.km(2.5e6) == "2,5 milj. km")
 	check("suuret etäisyydet AU:na", Fmt.km(Planets.AU_KM) == "150 milj. km (1 AU)")
@@ -27,6 +30,8 @@ func _ready() -> void:
 		and Fmt.orbit_text("Maa", free.call(vc * 1.5, 0.0)).begins_with("pakoradalla (v∞ ")
 		and Fmt.orbit_text("Maa", free.call(vc, -1.0)) == "pintaa leikkaavalla radalla"
 		and Fmt.orbit_text("Maa", free.call(vc * 1.05, 0.0)).ends_with("km radalla"))
+	check("ilmakehälento", Fmt.orbit_text("Maa", {"epoch": 0.0, "arg": 0.0, "rel": {"r": [6381.0, 0.0, 0.0], "v": [0.0, 0.25, 0.0]}})
+		== "ilmakehässä 10 km korkeudella")
 	check("päivämäärän muoto", Fmt.date(1794614400000.0).split(" ").size() == 2 and Fmt.date(1794614400000.0).ends_with(".11.2026"))
 	check("kellonajan muoto", Fmt.clock(1794614400000.0).length() == 8 and Fmt.clock(1794614400000.0).ends_with(".00.00"))
 	finish()

@@ -210,6 +210,46 @@ func _ready() -> void:
 	check("manuaaliohjaus päälle", cv.manual and cv.manual_button.text == "Automaattiohjaus")
 	cv.toggle_manual()
 	check("manuaaliohjaus pois", not cv.manual and Game.manual_throttle == 0.0)
+	# Lentoavut (#58): ristikko, nopeuden yksikkö ja korkeudenvakain.
+	cv.toggle_manual()
+	var unit0 := Settings.speed_unit
+	cv.toggle_speed_unit()
+	var unit1 := Settings.speed_unit
+	cv.toggle_speed_unit()
+	check("nopeuden yksikön kytkin", unit1 != unit0 and Settings.speed_unit == unit0)
+	cv.toggle_ladder()
+	var ladder_off := not cv.ladder_on
+	cv.toggle_ladder()
+	check("ristikko päälle ja pois", ladder_off and cv.ladder_on)
+	var alt0: Variant = cv.current_alt()
+	cv.set_alt_hold(true)
+	if alt0 == null:
+		check("korkeudenvakain vain kappaleen lähellä", not cv.alt_hold)
+	else:
+		cv.adjust_alt(2.0)
+		check("korkeudenvakain lukitsee nykyisen korkeuden, +2 km", cv.alt_hold and absf(cv.alt_target - float(alt0) - 2.0) < 0.06)
+	cv.toggle_manual()
+	check("manuaaliohjaus pois kytkee vakaimen pois", not cv.alt_hold)
+	var view := Vector2(1600, 900)
+	var level := Basis.looking_at(Vector3.FORWARD, Vector3.UP)
+	var all_window := func(_d: Vector3) -> bool: return true
+	var lad := HudLadder.build(level, level, 70.0, view, Vector3.UP, Vector3.FORWARD, Vector3.FORWARD, all_window)
+	var horizon: Array = lad.lines.filter(func(l: Dictionary) -> bool: return l.get("horizon", false))
+	var flat := true
+	for p: Vector2 in horizon[0].points:
+		flat = flat and absf(p.y - 450.0) < 0.5
+	var ten: Array = lad.labels.filter(func(l: Dictionary) -> bool: return l.text == "10")
+	check("vaakalennossa horisontti ruudun keskellä, nokan ja lentoradan merkki keskellä", horizon.size() == 1 and flat
+		and (lad.nose as Vector2).distance_to(view / 2.0) < 0.5 and (lad.path as Vector2).distance_to(view / 2.0) < 0.5)
+	check("nousukulma-asteikko: 10° horisontin yläpuolella ja −10° alapuolella",
+		ten.size() == 4 and ten.any(func(l: Dictionary) -> bool: return (l.pos as Vector2).y < 450.0)
+		and ten.any(func(l: Dictionary) -> bool: return (l.pos as Vector2).y > 450.0))
+	var rolled := level * Basis(Vector3(0, 0, 1), 0.5)
+	var lad2 := HudLadder.build(rolled, rolled, 70.0, view, Vector3.UP, Vector3.FORWARD, Vector3.ZERO, all_window)
+	var h2: PackedVector2Array = (lad2.lines.filter(func(l: Dictionary) -> bool: return l.get("horizon", false))[0] as Dictionary).points
+	check("kallistus kääntää horisonttia", absf(h2[0].y - h2[h2.size() - 1].y) > 100.0 and lad2.path == null)
+	var none := HudLadder.build(level, level, 70.0, view, Vector3.UP, Vector3.FORWARD, Vector3.FORWARD, func(_d: Vector3) -> bool: return false)
+	check("ristikko vain ikkunan kohdalla", none.lines.is_empty() and none.nose == null)
 	# Pehmeä ohjaus (#57): sauvan kääntö kiihdyttää kääntymistä vähitellen, ja vapautettaessa kääntyminen pysähtyy.
 	var w := Vector3.ZERO
 	w = CockpitView.turn_rate(w, Vector3(1, 0, 0), 0.1)

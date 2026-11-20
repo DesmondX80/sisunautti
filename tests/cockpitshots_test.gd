@@ -345,6 +345,27 @@ func _run() -> void:
 		cv.manual_throttle = 0.5
 		await shot("manuaali-mars-ilmakeha", 30)
 		cv.toggle_manual()
+	# Lentoavut (#58): vaakalento Maan ilmakehässä 10 km:ssä, horisonttiristikko ja korkeudenvakain päällä.
+	if want("lentoavut"):
+		orbit_at("Maa", t0, sun_angle("Maa", t0, false) + 0.3)
+		var re: Dictionary = Flight.parking_state("Maa", G.sim_now(), G.state.orbit).rel
+		var rer: PackedFloat64Array = Flight.scale(re.r, (6371.0 + 10.0) / Flight.norm(re.r))
+		var rev: PackedFloat64Array = Flight.scale(re.v, 0.25 / Flight.norm(re.v))
+		G.state.orbit = {"epoch": G.sim_now(), "arg": 0.0, "rel": {"r": rer, "v": rev}}
+		cv.snap_attitude()
+		await _frames(3)
+		cv.toggle_manual()
+		var up_e := Space.to_scene(rer).normalized()
+		cv.ship.basis = Basis.looking_at(Space.to_scene(rev).normalized().rotated(Space.to_scene(Flight.cross(rer, rev)).normalized(), 0.05), up_e) \
+			* Basis(Vector3(0, 0, 1), 0.25)
+		cv.manual_throttle = 0.1
+		await shot("lentoavut-ristikko", 30)
+		cv.set_alt_hold(true)
+		cv.adjust_alt(2.0)
+		Settings.speed_unit = "kmh"
+		await shot("lentoavut-vakain", 40)
+		Settings.speed_unit = "kms"
+		cv.toggle_manual()
 	# Radiopaneeli (#31).
 	if want("radio"):
 		var radio: Radio = get_parent().radio

@@ -747,9 +747,11 @@ const AIR := {
 	"Venus": [65.0, 15.9, 250.0], "Maa": [1.225, 8.5, 140.0], "Mars": [0.020, 11.1, 150.0], "Titan": [5.3, 40.0, 700.0],
 	"Jupiter": [0.16, 27.0, 1000.0], "Saturnus": [0.19, 59.5, 1500.0], "Uranus": [0.42, 27.7, 800.0], "Neptunus": [0.45, 19.7, 600.0],
 }
-## Alus ilmakehässä kuin avaruussukkula: siipipinta-ala / massa (m²/kg; 100 m², 20 t). Nostovoimakerroin
-## C_L = 1,2·sin 2α ja vastuskerroin C_D = 0,08 + 1,4·sin²α kohtauskulman α mukaan. Nostovoima rajataan 5 g:hen.
+## Alus ilmakehässä kuin sileä nostovoimarunko: siipipinta-ala / massa (m²/kg; 100 m², 20 t). Nostovoimakerroin
+## C_L = 1,2·sin 2α ja vastuskerroin C_D = 0,03 + 1,4·sin²α kohtauskulman α mukaan (#58: maailman tehokkain alus,
+## liitosuhde vaakalennossa noin 5). Nostovoima rajataan 5 g:hen.
 const WING_LOADING := 0.005
+const DRAG_ZERO := 0.03
 const LIFT_MAX := 0.049 # km/s²
 const AIR_STEP_S := 0.05
 
@@ -779,7 +781,7 @@ static func aero(name: String, r: PackedFloat64Array, v: PackedFloat64Array, nos
 	var alpha := acos(c)
 	var q := 0.5 * rho * pow(speed * 1000.0, 2.0)
 	var k := q * WING_LOADING / 1000.0 # km/s² kerrointa kohti
-	var a := scale(vh, -k * (0.08 + 1.4 * sin(alpha) * sin(alpha)))
+	var a := scale(vh, -k * (DRAG_ZERO + 1.4 * sin(alpha) * sin(alpha)))
 	var perp := sub(n, scale(vh, c))
 	var pn := norm(perp)
 	if pn > 1e-9:
