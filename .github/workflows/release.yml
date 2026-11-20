@@ -1,5 +1,6 @@
 # Työpöytäversiot GitHub-julkaisun liitteiksi: Windows (Sisunautti-windows.zip), Linux (Sisunautti-linux.zip) ja
-# macOS (Sisunautti-macos.zip, universaali, ad hoc -allekirjoitus ilman Applen kehittäjätiliä).
+# macOS (Sisunautti-macos.zip, universaali, ad hoc -allekirjoitus ilman Applen kehittäjätiliä). Liitteet säilyvät
+# viidessä uusimmassa julkaisussa.
 name: Julkaisu
 
 on:
@@ -67,6 +68,21 @@ jobs:
         run: |
           gh release upload "$TAG" export/Sisunautti-windows.zip export/Sisunautti-linux.zip \
             export/Sisunautti-macos.zip --clobber
+
+      - name: Vanhojen julkaisujen liitteet pois
+        # Liitteet säilyvät viidessä uusimmassa julkaisussa; vanhemmista jäävät julkaisutiedot ja tagi.
+        # Poistetut liitteet voi rakentaa uudelleen tagista tämän työnkulun käsiajolla.
+        env:
+          GH_TOKEN: ${{ github.token }}
+          KEEP: 5
+        run: |
+          gh release list --limit 1000 --json tagName,publishedAt \
+            -q 'sort_by(.publishedAt) | reverse | .[].tagName' | tail -n +$((KEEP + 1)) |
+          while read -r tag; do
+            gh release view "$tag" --json assets -q '.assets[].name' | while read -r asset; do
+              gh release delete-asset "$tag" "$asset" --yes && echo "Poistettu $tag: $asset"
+            done
+          done
 
   pages:
     # Selainversio Pagesiin main-haarasta (ympäristö sallii käyttöönoton vain mainista).

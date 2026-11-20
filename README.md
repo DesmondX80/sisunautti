@@ -222,7 +222,9 @@ Ohjaamon pintakartat ovat hakemistossa `assets/textures/` (tasavälinen lieriöp
 ## Julkaisu
 
 GitHub-julkaisu (`gh release create vX.Y.Z`) käynnistää `release.yml`:n, joka vie Windows-, Linux- ja macOS-versiot ja
-liittää ne julkaisuun (Sisunautti-windows.zip, Sisunautti-linux.zip, Sisunautti-macos.zip) sekä käynnistää `main`-haarasta `pages.yml`:n,
+liittää ne julkaisuun (Sisunautti-windows.zip, Sisunautti-linux.zip, Sisunautti-macos.zip). Liitteet säilyvät viidessä uusimmassa
+julkaisussa; vanhemmista ne poistetaan (julkaisutiedot ja tagi jäävät, ja liitteet voi rakentaa tagista uudelleen
+`release.yml`:n käsiajolla). Lopuksi työnkulku käynnistää `main`-haarasta `pages.yml`:n,
 joka vie selainversion (Compatibility, `web_nothreads`-pohja) GitHub Pagesiin. Pagesiin kopioidaan myös `tools/web/sw.js`,
 joka korvaa vanhan selainversion service workerin ja poistaa sen. `ci.yml` ajaa ikkunattomat testit jokaisesta
 pushista.
