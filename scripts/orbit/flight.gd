@@ -724,9 +724,42 @@ static func parking_state(name: String, time: float, orbit: Variant = null) -> D
 	var vp := sqrt(mu * (2.0 / peri - 1.0 / a))
 	var c := cos(arg)
 	var s := sin(arg)
-	var rel := propagate(vec(peri * c, peri * s, 0.0), vec(-vp * s, vp * c, 0.0), (time - epoch) / 1000.0, mu)
+	var rel: Dictionary
+	if is_free_orbit(orbit):
+		# Manuaalipolttojen muuttama rata: paikka ja nopeus kappaleen suhteen hetkellä epoch.
+		var rel0: Dictionary = orbit.rel
+		rel = propagate(PackedFloat64Array(rel0.r), PackedFloat64Array(rel0.v), (time - epoch) / 1000.0, mu)
+	else:
+		rel = propagate(vec(peri * c, peri * s, 0.0), vec(-vp * s, vp * c, 0.0), (time - epoch) / 1000.0, mu)
 	var p := body_state(name, time)
 	return {"r": add(p.r, rel.r), "v": add(p.v, rel.v), "rel": rel}
+
+
+## Onko rata manuaalipolttojen muuttama vapaa rata (orbit.rel = {r, v} kappaleen suhteen hetkellä orbit.epoch, #57).
+## Vapaa rata voi olla ellipsi, joka leikkaa pinnan, tai pakorata (hyperbeli).
+static func is_free_orbit(orbit: Variant) -> bool:
+	return orbit is Dictionary and orbit.get("rel") is Dictionary
+
+
+## Kappaleen vaikutuspiirin säde (km): kuulla emoplaneetan suhteen, planeetoilla Auringon suhteen.
+static func soi_of(name: String) -> float:
+	return moon_soi(name) if is_moon(name) else float(body(name).soiKm)
+
+
+## Radan muoto kappaleen name ympärillä tilasta (r, v) kappaleen suhteen: perikeskuksen ja apokeskuksen korkeus
+## pinnasta (km; apokeskus INF pakoradalla), eksentrisyys, pakorata (energia ≥ 0) ja ylinopeus v∞ (km/s).
+static func orbit_shape(name: String, r: PackedFloat64Array, v: PackedFloat64Array) -> Dictionary:
+	var o := orbit_of(name)
+	var mu: float = o.mu
+	var radius: float = o.radiusKm
+	var energy := dot(v, v) / 2.0 - mu / norm(r)
+	var h := norm(cross(r, v))
+	var ecc := sqrt(maxf(0.0, 1.0 + 2.0 * energy * h * h / (mu * mu)))
+	var p := h * h / mu
+	var rp := p / (1.0 + ecc)
+	var escape := energy >= 0.0
+	return {"peri": rp - radius, "apo": INF if escape or ecc >= 1.0 else p / (1.0 - ecc) - radius, "ecc": ecc,
+		"escape": escape, "vinf": sqrt(maxf(0.0, 2.0 * energy))}
 
 
 ## Pysäköintiradan kiertoaika (s).

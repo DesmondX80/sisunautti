@@ -25,6 +25,7 @@ func _ready() -> void:
 	_save_and_load()
 	_flyby_without_fuel(orbit_save)
 	_aerobrake(orbit_save)
+	_manual_orbit(orbit_save)
 	_web_save()
 	G.fake_real_ms = -1.0
 	DirAccess.remove_absolute(G.TEST_SAVE_PATH)
@@ -241,3 +242,72 @@ func _manual_burn() -> void:
 	# Palautetaan alkuperäinen lento, jotta muu testi kulkee ennallaan.
 	G.state.flight = f
 	G.state.fuel = fuel
+
+
+## Polttaa manuaalisesti suuntaan dir, kunnes Δv on poltettu (2 g, puolen sekunnin askelin; kello ei kulu).
+func _burn(dir: PackedFloat64Array, dv: float) -> void:
+	var steps := ceili(dv / (float(G.MANUAL_ACCEL) * 0.5))
+	for i in steps:
+		G.manual_thrust(dir, 1.0, 0.5)
+	G.manual_thrust(dir, 0.0, 0.0)
+
+
+## Manuaaliohjaus kiertoradalla (#57): ilman kaasua rata pysyy, myötäsuuntainen poltto venyttää rataa ja
+## pakonopeudessa alus irtoaa Auringon kiertoradalle; poltto kohti planeettaa vie törmäykseen.
+func _manual_orbit(orbit_save: String) -> void:
+	_restore(orbit_save)
+	G.set_warp(0)
+	check("manuaalipoltto kiertoradalla mahdollinen", G.state.location == "Maa" and G.can_manual_burn())
+	G.manual_thrust(PackedFloat64Array([1.0, 0.0, 0.0]), 0.0, 0.5)
+	advance(2000)
+	check("ilman kaasua rata ennallaan", not Flight.is_free_orbit(G.state.orbit))
+	var rel: Dictionary = Flight.parking_state("Maa", G.sim_now(), G.state.orbit).rel
+	var pro := Flight.scale(rel.v, 1.0 / Flight.norm(rel.v))
+	var fuel: float = G.state.fuel
+	_burn(pro, 1.0)
+	var sh := Flight.orbit_shape("Maa", rel.r, Flight.add(rel.v, Flight.scale(pro, 0.0)))
+	var rel2: Dictionary = Flight.parking_state("Maa", G.sim_now(), G.state.orbit).rel
+	var sh2 := Flight.orbit_shape("Maa", rel2.r, rel2.v)
+	check("myötäsuuntainen poltto venyttää rataa (apokeskus %s km)" % Fmt.num(sh2.apo), Flight.is_free_orbit(G.state.orbit)
+		and float(sh2.apo) > float(sh.apo) + 5000.0 and absf(float(sh2.peri) - float(sh.peri)) < 20.0 and not sh2.escape)
+	check("poltto kuluttaa polttoainetta", absf(fuel - float(G.state.fuel) - 1.0) < 0.02)
+	_burn(pro, 2.4)
+	rel2 = Flight.parking_state("Maa", G.sim_now(), G.state.orbit).rel
+	check("pakonopeudessa pakorata", Flight.orbit_shape("Maa", rel2.r, rel2.v).escape)
+	G.set_warp(4)
+	var left := false
+	for i in 3000:
+		G.fake_real_ms += 100.0
+		G.tick()
+		if G.warp_index() < 4:
+			G.set_warp(4)
+		if G.state.location == null:
+			left = true
+			break
+	check("alus irtoaa Maan vaikutuspiiristä Auringon kiertoradalle", left and G.state.drift != null and G.state.orbit == null
+		and String(G.state.log[-1].text).begins_with("Pakorata"))
+	G.set_warp(0)
+	var d0: Dictionary = Flight.departure_state(G.state.drift, G.sim_now())
+	var dh := Flight.scale(d0.v, 1.0 / Flight.norm(d0.v))
+	_burn(dh, 0.5)
+	var d1: Dictionary = Flight.departure_state(G.state.drift, G.sim_now())
+	check("manuaalipoltto Auringon kiertoradalla", G.can_manual_burn() and absf(Flight.norm(d1.v) - Flight.norm(d0.v) - 0.5) < 0.02)
+	# Nokka kohti Maata ja kaasua: perikeskus pinnan alle ja törmäys.
+	_restore(orbit_save)
+	G.set_warp(0)
+	rel = Flight.parking_state("Maa", G.sim_now(), G.state.orbit).rel
+	_burn(Flight.scale(rel.r, -1.0 / Flight.norm(rel.r)), 0.6)
+	rel2 = Flight.parking_state("Maa", G.sim_now(), G.state.orbit).rel
+	check("poltto kohti planeettaa laskee perikeskuksen pinnan alle", float(Flight.orbit_shape("Maa", rel2.r, rel2.v).peri) < 0.0)
+	G.set_warp(5)
+	G.tick()
+	check("pintaa leikkaavalla radalla kiihdytys rajataan", G.warp_index() <= 2)
+	var crashed := false
+	for i in 3000:
+		G.fake_real_ms += 100.0
+		G.tick()
+		if G.state.get("destroyed") != null:
+			crashed = true
+			break
+	check("alus törmää Maan pintaan", crashed and String(G.state.destroyed.text).contains("pintaan"))
+	_restore(orbit_save)

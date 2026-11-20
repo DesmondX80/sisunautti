@@ -310,6 +310,27 @@ func _run() -> void:
 		cv.manual_throttle = 0.8
 		await shot("manuaali", 40)
 		cv.toggle_manual()
+	# Manuaaliohjaus kiertoradalla (#57): pakorata myötäsuuntaisella poltolla ja syöksy kohti pintaa.
+	if want("manuaali") or want("manuaali-rata"):
+		orbit_at("Maa", t0, sun_angle("Maa", t0, false) + 0.3)
+		var rel: Dictionary = Flight.parking_state("Maa", G.sim_now(), G.state.orbit).rel
+		G.state.orbit = {"epoch": G.sim_now(), "arg": 0.0, "rel": {"r": rel.r, "v": Flight.scale(rel.v, 1.42)}}
+		cv.snap_attitude()
+		await _frames(3)
+		cv.toggle_manual()
+		cv.manual_throttle = 0.6
+		await shot("manuaali-pakorata", 40)
+		cv.toggle_manual()
+		var r0: PackedFloat64Array = Flight.scale(rel.r, (6378.0 + 45.0) / Flight.norm(rel.r))
+		var v0 := Flight.add(Flight.scale(rel.v, 1.0), Flight.scale(r0, -0.6 / Flight.norm(r0)))
+		G.state.orbit = {"epoch": G.sim_now(), "arg": 0.0, "rel": {"r": r0, "v": v0}}
+		cv.snap_attitude()
+		await _frames(3)
+		cv.toggle_manual()
+		cv.face(cv.direction_to("Maa").rotated(Vector3.UP, 0.5))
+		cv.manual_throttle = 1.0
+		await shot("manuaali-syoksy", 40)
+		cv.toggle_manual()
 	# Radiopaneeli (#31).
 	if want("radio"):
 		var radio: Radio = get_parent().radio

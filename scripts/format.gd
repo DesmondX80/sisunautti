@@ -106,7 +106,17 @@ static func from_text(from: Variant) -> String:
 	return "%s kiertoradalta" % gen(from) if Flight.is_planet(from) else "Auringon kiertoradalta"
 
 
-static func orbit_text(name: String) -> String:
+static func orbit_text(name: String, orbit: Variant = null) -> String:
+	if Flight.is_free_orbit(orbit):
+		# Manuaalipolttojen muuttama rata (#57): muoto ei muutu ilman polttoa.
+		var sh := Flight.orbit_shape(name, PackedFloat64Array(orbit.rel.r), PackedFloat64Array(orbit.rel.v))
+		if sh.escape:
+			return "pakoradalla (v∞ %s)" % dv(sh.vinf)
+		if float(sh.peri) < 0.0:
+			return "pintaa leikkaavalla radalla"
+		var p := roundf(float(sh.peri))
+		var a := roundf(float(sh.apo))
+		return "%s km korkeudella" % num(p) if p == a else "%s × %s km radalla" % [num(p), num(a)]
 	var b := Flight.orbit_of(name)
 	var peri: float = b.periKm - b.radiusKm
 	var apo: float = b.apoKm - b.radiusKm

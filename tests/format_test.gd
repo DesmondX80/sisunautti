@@ -19,6 +19,14 @@ func _ready() -> void:
 	check("taivutukset", Fmt.gen("Mars") == "Marsin" and Fmt.ill("Kuu") == "Kuuhun" and Fmt.par("Ganymedes") == "Ganymedestä")
 	check("lähtöpaikka", Fmt.from_text("Maa") == "Maan kiertoradalta" and Fmt.from_text({"r": [1, 0, 0]}) == "Auringon kiertoradalta")
 	check("kiertoradan kuvaus", Fmt.orbit_text("Mars") == "500 km korkeudella" and Fmt.orbit_text("Jupiter") == "5%s000 × 2%s000%s000 km radalla" % [S, S, S])
+	var mu: float = Flight.orbit_of("Maa").mu
+	var vc := sqrt(mu / 6571.0)
+	var free := func(v: float, vr: float) -> Dictionary:
+		return {"epoch": 0.0, "arg": 0.0, "rel": {"r": [6571.0, 0.0, 0.0], "v": [vr, v, 0.0]}}
+	check("vapaan radan kuvaus", Fmt.orbit_text("Maa", free.call(vc, 0.0)) == "200 km korkeudella"
+		and Fmt.orbit_text("Maa", free.call(vc * 1.5, 0.0)).begins_with("pakoradalla (v∞ ")
+		and Fmt.orbit_text("Maa", free.call(vc, -1.0)) == "pintaa leikkaavalla radalla"
+		and Fmt.orbit_text("Maa", free.call(vc * 1.05, 0.0)).ends_with("km radalla"))
 	check("päivämäärän muoto", Fmt.date(1794614400000.0).split(" ").size() == 2 and Fmt.date(1794614400000.0).ends_with(".11.2026"))
 	check("kellonajan muoto", Fmt.clock(1794614400000.0).length() == 8 and Fmt.clock(1794614400000.0).ends_with(".00.00"))
 	finish()

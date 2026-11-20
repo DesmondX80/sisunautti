@@ -210,6 +210,21 @@ func _ready() -> void:
 	check("manuaaliohjaus päälle", cv.manual and cv.manual_button.text == "Automaattiohjaus")
 	cv.toggle_manual()
 	check("manuaaliohjaus pois", not cv.manual and Game.manual_throttle == 0.0)
+	# Pehmeä ohjaus (#57): sauvan kääntö kiihdyttää kääntymistä vähitellen, ja vapautettaessa kääntyminen pysähtyy.
+	var w := Vector3.ZERO
+	w = CockpitView.turn_rate(w, Vector3(1, 0, 0), 0.1)
+	var first := w.x
+	for i in 50:
+		w = CockpitView.turn_rate(w, Vector3(1, -1, 0), 0.1)
+	var full := w
+	for i in 30:
+		w = CockpitView.turn_rate(w, Vector3.ZERO, 0.1)
+	check("ohjaus kiihtyy pehmeästi suurimpaan nopeuteen", first > 0.0 and first < 0.05 and absf(full.x - CockpitView.MANUAL_RATE) < 1e-6
+		and absf(full.y + CockpitView.MANUAL_RATE) < 1e-6 and full.z == 0.0)
+	check("vapautettu sauva pysäyttää kääntymisen", w == Vector3.ZERO)
+	var orbit_rel := {"r": PackedFloat64Array([6578.0, 0, 0]), "v": PackedFloat64Array([0, 7.78, 0])}
+	var txt := CockpitView.course_text(PackedFloat64Array([0, 1, 0]), orbit_rel.v, orbit_rel)
+	check("kurssirivi: nokan kulma ja rata", txt.begins_with("nokka 0° menosuunnasta") and (Game.state.location == null or txt.contains("rata")))
 	cv.cabin.set_light("moottori", 2.0)
 	cv.cabin.set_light("polttoaine", 0.0)
 	var ind := cv.cabin.indicator_values()

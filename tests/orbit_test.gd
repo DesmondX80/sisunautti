@@ -27,6 +27,7 @@ func _ready() -> void:
 	_launch()
 	_injection_and_orbits()
 	_aerobrake()
+	_free_orbit()
 	finish()
 
 
@@ -405,3 +406,24 @@ func _aerobrake() -> void:
 		low_ok = low_ok and alt.call(n) <= 5000
 	check("saapumisradat ovat matalia", low_ok)
 	check("Mars- ja Jupiter-saapuminen mahtuu budjettiin", F.burn_dv("Mars", 2.6) < 2.5 and F.burn_dv("Jupiter", 5.6) < 2)
+
+
+## Vapaa rata kappaleen ympärillä (#57): radan muoto ja paikka propagoidaan tallennetusta tilasta.
+func _free_orbit() -> void:
+	var circ := Flight.orbit_shape("Maa", PackedFloat64Array([6578.0, 0, 0]), PackedFloat64Array([0, sqrt(398600.44 / 6578.0), 0]))
+	check("ympyrärata: peri = apo", absf(float(circ.peri) - float(circ.apo)) < 1.0 and float(circ.ecc) < 1e-6 and not circ.escape)
+	var vesc := sqrt(2.0 * 398600.44 / 6578.0)
+	var hyp := Flight.orbit_shape("Maa", PackedFloat64Array([6578.0, 0, 0]), PackedFloat64Array([0, vesc + 1.0, 0]))
+	check("pakorata: v∞ = √(v² − v_esc²)", hyp.escape and is_inf(float(hyp.apo))
+		and absf(float(hyp.vinf) - sqrt(pow(vesc + 1.0, 2) - vesc * vesc)) < 1e-9)
+	var t0 := Flight.J2000_MS
+	var o := {"epoch": t0, "arg": 0.0, "rel": {"r": [7000.0, 0.0, 0.0], "v": [0.0, 8.0, 0.5]}}
+	check("vapaa rata tunnistetaan", Flight.is_free_orbit(o) and not Flight.is_free_orbit({"epoch": t0, "arg": 0.0}))
+	var a := Flight.parking_state("Maa", t0, o)
+	var b := Flight.parking_state("Maa", t0 + 3600000.0, o)
+	var mu: float = Flight.orbit_of("Maa").mu
+	var e0: float = Flight.invariants(a.rel.r, a.rel.v, mu).energy
+	var e1: float = Flight.invariants(b.rel.r, b.rel.v, mu).energy
+	check("vapaa rata alkaa tallennetusta tilasta ja säilyttää energian", close(a.rel.r, PackedFloat64Array([7000.0, 0, 0]), 1e-6)
+		and absf(e0 - e1) < 1e-6 and absf(float(b.rel.r[2])) > 1.0)
+	check("vaikutuspiirit: Maa ja Kuu", Flight.soi_of("Maa") > 900000.0 and Flight.soi_of("Kuu") > 60000.0 and Flight.soi_of("Kuu") < 70000.0)

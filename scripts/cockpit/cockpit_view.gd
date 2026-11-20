@@ -58,14 +58,20 @@ const TELE_MAX_FOV := 62.0
 var tele_env: Environment
 const PAN_MOUNT := Vector3(0.0, 0.9, 0.2) # aluksen katolla ohjaamon takana
 var _throttle := 0.0 # tehovivun asento 0–1 (pehmennetty)
-## Manuaaliohjaus (#30): aluksen asento näppäimillä 360°, kaasu ja jarrutus lennolla.
+## Manuaaliohjaus (#30, #57): aluksen asento näppäimillä 360° pehmeästi, kaasu ja jarrutus lennolla ja kiertoradalla.
 var manual := false
 var manual_throttle := 0.0
 var manual_button: Button
 var _manual_hud: PanelContainer
 var _manual_label: Label
 var _braking := false
-const MANUAL_RATE := 0.6 # rad/s
+const MANUAL_RATE := 0.6 # suurin kääntymisnopeus (rad/s)
+## Ohjausrakettien kulmakiihtyvyys (rad/s²): sauvaa käännettäessä alus alkaa kääntyä pehmeästi ja saavuttaa
+## suurimman nopeuden noin 2,5 sekunnissa. Sauvan palatessa keskelle vakautus pysäyttää kääntymisen.
+const MANUAL_ANG_ACCEL := 0.25
+const MANUAL_DAMP := 0.4
+var _ang_vel := Vector3.ZERO # kääntymisnopeus aluksen akseleilla (x nokka, y kääntö, z kallistus; rad/s)
+var _stick := Vector3.ZERO # sauvan asento −1…1 (pehmennetty)
 var _steer := Vector2.ZERO # ohjainsauvan poikkeama (px) aluksen kääntymisen mukaan
 const REAR_TILT := 0.87 # 50°
 var overlay: ColorRect # ohjaamon kuva ja näytöt 3D-näkymän päällä
@@ -357,7 +363,7 @@ func _build_tools() -> void:
 	zoom_out_button.visible = false
 	tools.add_child(zoom_out_button)
 	manual_button = UiKit.button("Manuaaliohjaus", toggle_manual)
-	manual_button.tooltip_text = "Ohjaa alusta itse (M): W/S nokka, A/D kääntö, Q/E kallistus, Shift/Ctrl kaasu, X nollaa, B jarruta"
+	manual_button.tooltip_text = "Ohjaa alusta itse (M): W/S nokka, A/D kääntö, Q/E kallistus, Shift/Ctrl kaasu, X nollaa, B jarruta. Kurssi muuttuu vain kaasulla."
 	tools.add_child(manual_button)
 	_build_manual_hud()
 	rear_button = UiKit.button("Takakamera", cycle_camera)
@@ -377,13 +383,20 @@ func _build_manual_hud() -> void:
 	_manual_hud.set_anchors_and_offsets_preset(Control.PRESET_CENTER_BOTTOM)
 	_manual_hud.grow_horizontal = Control.GROW_DIRECTION_BOTH
 	_manual_hud.grow_vertical = Control.GROW_DIRECTION_BEGIN
-	_manual_hud.position.y -= 56.0
+	_manual_hud.offset_left = 0.0
+	_manual_hud.offset_right = 0.0
+	_manual_hud.offset_top = -56.0
+	_manual_hud.offset_bottom = -56.0
 	add_child(_manual_hud)
 	var v := UiKit.vbox(6)
 	_manual_hud.add_child(v)
 	_manual_label = UiKit.label("", "", false)
+	_manual_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	v.add_child(_manual_label)
-	var row := UiKit.hbox(6)
+	# Kapeassa ikkunassa painikkeet rivittyvät (leveys _fit_manual_hud).
+	var row := HFlowContainer.new()
+	row.add_theme_constant_override("h_separation", 6)
+	row.add_theme_constant_override("v_separation", 6)
 	row.add_child(UiKit.button("Kaasu −", func() -> void: manual_throttle = maxf(0.0, manual_throttle - 0.25)))
 	row.add_child(UiKit.button("Kaasu +", func() -> void: manual_throttle = minf(1.0, manual_throttle + 0.25)))
 	row.add_child(UiKit.button("Nollaa", func() -> void: manual_throttle = 0.0))
@@ -392,7 +405,16 @@ func _build_manual_hud() -> void:
 	brake.button_up.connect(func() -> void: _braking = false)
 	row.add_child(brake)
 	v.add_child(row)
-	v.add_child(UiKit.label("W/S nokka · A/D kääntö · Q/E kallistus · Shift/Ctrl kaasu · X nollaa · B jarruta · M lopeta", "MutedLabel", false))
+	var hint := UiKit.label("W/S nokka · A/D kääntö · Q/E kallistus · Shift/Ctrl kaasu · X nollaa · B jarruta · M lopeta", "MutedLabel", false)
+	hint.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	v.add_child(hint)
+	_fit_manual_hud()
+	resized.connect(_fit_manual_hud)
+
+
+## Manuaaliohjauksen paneelin leveys näkymän mukaan (enintään 620 px, reunoilla 12 px tilaa).
+func _fit_manual_hud() -> void:
+	_manual_hud.custom_minimum_size.x = clampf(size.x - 24.0, 200.0, 620.0)
 
 
 ## Manuaaliohjaus päälle ja pois: pois kytkettäessä kaasu nollataan ja asento palaa automaattiseksi.
@@ -400,20 +422,37 @@ func toggle_manual() -> void:
 	manual = not manual
 	manual_throttle = 0.0
 	_braking = false
+	_ang_vel = Vector3.ZERO
+	_stick = Vector3.ZERO
 	Game.manual_thrust(PackedFloat64Array([1.0, 0.0, 0.0]), 0.0, 0.0)
 	manual_button.text = "Automaattiohjaus" if manual else "Manuaaliohjaus"
 	_manual_hud.visible = manual
 
 
-# Manuaaliohjaus: näppäimet kääntävät alusta sen omien akselien ympäri, kaasu polttaa nokan suuntaan ja jarrutus
-# menosuuntaa vastaan (Game.manual_thrust). Kaasu ja jarrutus vain lennolla.
+## Kääntymisnopeus ohjauksesta input (−1…1 akseleittain): ohjausraketit kiihdyttävät kääntymistä tasaisesti, ja
+## akselilla, jolla ei ohjata, vakautus hidastaa sen nollaan.
+static func turn_rate(w: Vector3, input: Vector3, delta: float) -> Vector3:
+	var out := w
+	for i in 3:
+		if input[i] != 0.0:
+			out[i] = move_toward(w[i], input[i] * MANUAL_RATE, MANUAL_ANG_ACCEL * delta)
+		else:
+			out[i] = move_toward(w[i], 0.0, MANUAL_DAMP * delta)
+	return out
+
+
+# Manuaaliohjaus: näppäimet kääntävät alusta pehmeästi sen omien akselien ympäri (turn_rate). Kaasu polttaa nokan
+# suuntaan ja jarrutus menosuuntaa vastaan (Game.manual_thrust) lennolla, Auringon kiertoradalla ja kappaleen
+# kiertoradalla; ilman kaasua alus jatkaa samalla radalla.
 func _manual_step(s: Dictionary, delta: float) -> void:
 	var keys := is_visible_in_tree() and not (get_viewport().gui_get_focus_owner() is LineEdit)
 	var axis := func(neg: Key, pos: Key) -> float:
 		return (1.0 if keys and Input.is_key_pressed(pos) else 0.0) - (1.0 if keys and Input.is_key_pressed(neg) else 0.0)
-	var rate := Vector3(axis.call(KEY_S, KEY_W), axis.call(KEY_D, KEY_A), axis.call(KEY_E, KEY_Q)) * MANUAL_RATE
-	if rate != Vector3.ZERO:
-		ship.basis = (ship.basis * Basis.from_euler(rate * delta)).orthonormalized()
+	var input := Vector3(axis.call(KEY_S, KEY_W), axis.call(KEY_D, KEY_A), axis.call(KEY_E, KEY_Q))
+	_stick = _stick.lerp(input, minf(1.0, delta * 10.0))
+	_ang_vel = turn_rate(_ang_vel, input, delta)
+	if _ang_vel != Vector3.ZERO:
+		ship.basis = (ship.basis * Basis.from_euler(_ang_vel * delta)).orthonormalized()
 	if keys and Input.is_key_pressed(KEY_SHIFT):
 		manual_throttle = minf(1.0, manual_throttle + delta * 0.6)
 	if keys and Input.is_key_pressed(KEY_CTRL):
@@ -421,19 +460,40 @@ func _manual_step(s: Dictionary, delta: float) -> void:
 	if keys and Input.is_key_pressed(KEY_X):
 		manual_throttle = 0.0
 	var braking := _braking or (keys and Input.is_key_pressed(KEY_B))
-	var dir: PackedFloat64Array
+	# Menosuunta: lennolla kartan nuoli, kiertoradalla nopeus kappaleen suhteen.
+	var ship_s: Variant = s.get("ship")
+	var rel: Variant = ship_s.get("rel") if ship_s is Dictionary else null
+	var h: Variant = s.get("heading") if s.get("heading") != null else (rel.v if rel is Dictionary else null)
+	var n := -ship.basis.z
+	var nose := PackedFloat64Array([n.x, -n.z, n.y]) # scene → ekliptika (Space.to_scene käänteisenä)
+	var dir := nose
 	var power := manual_throttle
-	if braking and s.get("heading") != null:
-		var h: PackedFloat64Array = s.heading
+	if braking and h != null:
 		dir = Flight.scale(h, -1.0 / maxf(Flight.norm(h), 1e-9))
 		power = 1.0
-	else:
-		var n := -ship.basis.z
-		dir = PackedFloat64Array([n.x, -n.z, n.y]) # scene → ekliptika (Space.to_scene käänteisenä)
 	var ok := Game.manual_thrust(dir, power, delta)
-	var state := "POLTTO" if ok else ("ei polttoa: vain lennolla" if power > 0.0 and not Game.can_manual_burn() else "valmius")
-	_manual_label.text = "MANUAALIOHJAUS   kaasu %d %%%s   %s   polttoaine %s" % [roundi(manual_throttle * 100.0),
-		"  · JARRUTUS" if braking else "", state, Fmt.dv(float(Game.state.fuel))]
+	var state := "POLTTO" if ok else ("ei polttoa nyt" if power > 0.0 and not Game.can_manual_burn() else "valmius")
+	_manual_label.text = "MANUAALIOHJAUS   kaasu %d %%%s   %s   polttoaine %s\n%s" % [roundi(manual_throttle * 100.0),
+		"  · JARRUTUS" if braking else "", state, Fmt.dv(float(Game.state.fuel)), course_text(nose, h, rel)]
+
+
+## Kurssirivi: nokan kulma menosuunnasta ja kiertoradalla radan muoto (perikeskus ja apokeskus pinnasta tai
+## pakoradan ylinopeus); varoitus, jos rata leikkaa pinnan.
+static func course_text(nose: PackedFloat64Array, heading: Variant, rel: Variant) -> String:
+	var parts: PackedStringArray = []
+	if heading != null and Flight.norm(heading) > 1e-9:
+		var c := clampf(Flight.dot(nose, heading) / (Flight.norm(nose) * Flight.norm(heading)), -1.0, 1.0)
+		parts.append("nokka %d° menosuunnasta" % roundi(rad_to_deg(acos(c))))
+	var loc: Variant = Game.state.get("location")
+	if loc != null and rel is Dictionary:
+		var sh := Flight.orbit_shape(loc, rel.r, rel.v)
+		if sh.escape:
+			parts.append("PAKORATA v∞ %s" % Fmt.dv(sh.vinf))
+		else:
+			parts.append("rata %s–%s km" % [Fmt.num(maxf(float(sh.peri), 0.0)), Fmt.num(sh.apo)])
+		if float(sh.peri) < 0.0:
+			parts.append("⚠ RATA LEIKKAA PINNAN")
+	return "   ".join(parts)
 
 
 func _build_rear() -> void:
@@ -1048,10 +1108,9 @@ func _zoom_step(delta: float) -> void:
 # keskellä, ja kappaleen lähellä radan mukaan (CockpitState.body_frame). Käännös pehmeästi.
 func _attitude(s: Dictionary, delta: float) -> void:
 	if manual and not Game.state.pad:
-		var before_m := ship.basis
 		_manual_step(s, delta)
-		var rot_m := (before_m.inverse() * ship.basis).get_euler()
-		_steer = _steer.lerp((Vector2(-rot_m.y, -rot_m.x) / maxf(delta, 1e-3) * 40.0).limit_length(7.0), minf(1.0, delta * 5.0))
+		# Sauva seuraa ohjausta heti, alus kääntyy sen perässä pehmeästi.
+		_steer = (Vector2(-_stick.y, -_stick.x) * 7.0).limit_length(7.0)
 		return
 	var want: Basis = ship.basis
 	if s.get("nose") != null:

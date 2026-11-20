@@ -682,10 +682,20 @@ var _manual_at := 0.0
 const MANUAL_ACCEL := 0.0196
 
 
-## Voiko manuaalisesti polttaa: lennolla (ei kuiden välisellä paikallislennolla eikä ennen lähtöä).
+## Voiko manuaalisesti polttaa: lennolla (ei kuiden välisellä paikallislennolla eikä ennen lähtöä), Auringon
+## kiertoradalla ja kappaleen kiertoradalla (ei laukaisualustalla, nousussa eikä ionialuksen spiraalissa).
 func can_manual_burn() -> bool:
+	if state.get("destroyed") != null:
+		return false
 	var f: Variant = state.get("flight")
-	return f != null and not f.get("local", false) and sim_now() > float(f.depart)
+	if f != null:
+		return not f.get("local", false) and sim_now() > float(f.depart)
+	if state.get("drift") != null:
+		return true
+	var sv: Variant = state.get("survey")
+	var p: Variant = state.get("plan")
+	return state.location != null and not state.pad and state.ascent == null and not (sv != null and sv.kind == "spiral") \
+		and not (p != null and p.get("spiralStarted", false))
 
 
 ## Manuaalinen poltto suuntaan dir (yksikkövektori, ekliptika) kaasulla throttle oikean ajan dt_s aikana. Kertynyt
@@ -711,10 +721,16 @@ func manual_thrust(dir: PackedFloat64Array, throttle: float, dt_s: float) -> boo
 
 func _flush_manual(done: bool) -> void:
 	var dv := Flight.norm(_manual_dv)
-	if dv > 1e-9 and state.get("flight") != null:
+	if dv > 1e-9 and can_manual_burn():
 		var now := sim_now()
 		state.fuel = maxf(0.0, float(state.fuel) - dv)
-		state.flight = Flight.apply_burn_vector(state.flight, now, _manual_dv)
+		if state.get("flight") != null:
+			state.flight = Flight.apply_burn_vector(state.flight, now, _manual_dv)
+		elif state.location != null:
+			_burn_orbit(now, _manual_dv)
+		else:
+			var d := Flight.departure_state(state.drift, now)
+			state.drift = {"r": d.r, "v": Flight.add(d.v, _manual_dv), "t": now}
 		_manual_total += dv
 		changed.emit()
 	_manual_dv = PackedFloat64Array([0.0, 0.0, 0.0])
@@ -724,6 +740,72 @@ func _flush_manual(done: bool) -> void:
 		course_burn.emit(_manual_total)
 		_manual_total = 0.0
 		save_game()
+
+
+## Manuaalipoltto kiertoradalla (#57): rata muuttuu vapaaksi radaksi (Flight.is_free_orbit). Myötäsuuntainen
+## poltto venyttää rataa ja pakonopeudessa irrottaa aluksen, poltto kohti kappaletta laskee perikeskusta.
+## Suunniteltu lähtö perutaan, koska se laskettiin vanhalle radalle.
+func _burn_orbit(now: float, dv: PackedFloat64Array) -> void:
+	var name: String = state.location
+	var rel: Dictionary = Flight.parking_state(name, now, state.orbit).rel
+	var r: PackedFloat64Array = rel.r
+	state.orbit = {"epoch": now, "arg": atan2(r[1], r[0]), "rel": {"r": r, "v": Flight.add(rel.v, dv)}}
+	if state.get("lowOrbit") != null:
+		state.lowOrbit = null
+		_sync_low_orbit()
+	if state.get("plan") != null:
+		state.plan = null
+		options = []
+		options_ready = false
+		_set_notice("Lähtö peruttu: rata muuttui")
+
+
+## Vapaa rata kappaleen ympärillä: törmäys pintaan tuhoaa aluksen, ja pakoradalla vaikutuspiirin rajalla alus
+## siirtyy kuun ympäriltä emoplaneetan kiertoradalle tai planeetan ympäriltä Auringon kiertoradalle. Pintaa
+## leikkaavalla radalla aikakiihdytys rajataan, jotta törmäys ei hyppää yli.
+func _free_orbit_step(t: float) -> void:
+	var name: Variant = state.location
+	if name == null or not Flight.is_free_orbit(state.orbit) or state.get("destroyed") != null:
+		return
+	var s := Flight.parking_state(name, t, state.orbit)
+	var rel: Dictionary = s.rel
+	var rn := Flight.norm(rel.r)
+	if rn <= float(Flight.orbit_of(name).radiusKm):
+		destroy_ship("Alus syöksyi %s pintaan." % Fmt.gen(name))
+		return
+	var shape := Flight.orbit_shape(name, rel.r, rel.v)
+	if float(shape.peri) < 0.0 and warp_index() > 2:
+		_set_notice("Kiihdytys pienennettiin (%s): rata leikkaa %s pinnan." % [WARPS[2][1], Fmt.gen(name)])
+		anchor(t, 2)
+		changed.emit()
+	if shape.escape and rn > Flight.soi_of(name):
+		_leave_soi(name, t, s)
+
+
+func _leave_soi(name: String, t: float, s: Dictionary) -> void:
+	var sv: Variant = state.get("survey")
+	if sv != null and sv.body == name:
+		state.survey = null
+		log_event(t, "Kartoitus keskeytyi: alus poistui %s läheltä" % Fmt.gen(name))
+	state.lowOrbit = null
+	if Flight.is_moon(name):
+		var parent: String = Flight.MOONS[name].parent
+		var p := Flight.body_state(parent, t)
+		var r := Flight.sub(s.r, p.r)
+		state.location = parent
+		state.orbit = {"epoch": t, "arg": atan2(r[1], r[0]), "rel": {"r": r, "v": Flight.sub(s.v, p.v)}}
+		log_event(t, "Pakorata: alus poistui %s vaikutuspiiristä %s kiertoradalle" % [Fmt.gen(name), Fmt.gen(parent)])
+	else:
+		state.location = null
+		state.orbit = null
+		state.drift = {"r": s.r, "v": s.v, "t": t}
+		log_event(t, "Pakorata: alus poistui %s vaikutuspiiristä Auringon kiertoradalle" % Fmt.gen(name))
+	_sync_low_orbit()
+	options = []
+	options_ready = false
+	target = ""
+	save_game()
+	changed.emit()
 
 
 ## Automaattisen kurssikorjauksen ehdotus {flight, dv} tai tyhjä, jos korjausta ei tarvita (rata osuu ja on
@@ -991,14 +1073,17 @@ func fault_valve(v: int) -> void:
 
 
 ## Aika loppui: alus tuhoutuu. Kello pysähtyy tuhon hetkeen, ja peli alkaa alusta käyttäjän valitessa.
-func destroy_ship() -> void:
+## Muu syy (esim. törmäys pintaan) annetaan tekstinä text.
+func destroy_ship(text: String = "") -> void:
 	var f: Variant = state.get("fault")
 	var kind := String(f.kind) if f != null else ""
 	var t := sim_now()
-	state.destroyed = {"t": t, "kind": kind, "text": Faults.doom(kind)}
+	var doom := text if text != "" else Faults.doom(kind)
+	state.destroyed = {"t": t, "kind": kind, "text": doom}
 	destroyed_at = real_ms()
 	state.fault = null
-	log_event(t, "Alus tuhoutui: %s" % Faults.doom(kind))
+	manual_throttle = 0.0
+	log_event(t, "Alus tuhoutui: %s" % doom)
 	anchor(t, 0)
 	ship_destroyed.emit(kind)
 	changed.emit()
@@ -1023,6 +1108,7 @@ func tick() -> void:
 	if plan != null and plan.get("armed", false) and t >= float(plan.depart):
 		launch()
 	limit_warp(t)
+	_free_orbit_step(t)
 	var f: Variant = state.flight
 	if f != null:
 		var fb: Variant = f.get("flyby")

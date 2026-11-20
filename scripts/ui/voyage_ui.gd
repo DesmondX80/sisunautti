@@ -414,7 +414,7 @@ func _status() -> Control:
 		where_s = "lähtö %s" % Fmt.from_text(s.flight.from)
 	elif s.location != null:
 		where_t = "%s kiertoradalla" % Fmt.gen(s.location)
-		where_s = Fmt.orbit_text(s.location)
+		where_s = Fmt.orbit_text(s.location, s.orbit)
 	else:
 		where_t = "Auringon kiertoradalla"
 		where_s = "ohilennon jälkeen"
