@@ -697,6 +697,8 @@ const MANUAL_WARP := 1
 var _free_prev := {} # vapaan radan edellinen tarkistus: {t, vsp, orbit}
 ## Nokan suunta (ekliptika) manuaaliohjauksessa ilmakehän nostovoimaa varten; tyhjä = nokka menosuuntaan (ohjaamo asettaa).
 var manual_nose := PackedFloat64Array()
+## Aluksen katon suunta (ekliptika): siipien taso, jonka mukaan kallistus kääntää nostovoimaa (#58); tyhjä = ei siipiä.
+var manual_roof := PackedFloat64Array()
 ## Ilmakehälennon dynaaminen paine (Pa) ja lämpökuorma 0–1 (plasma, hehku) viimeisimmästä askeleesta.
 var atmo_q := 0.0
 var atmo_heat := 0.0
@@ -868,8 +870,9 @@ func _air_step(name: String, t: float) -> bool:
 			state.orbit = {"epoch": t, "arg": o.arg, "rel": {"r": now_rel.r, "v": now_rel.v}}
 		return false
 	var nose := manual_nose if manual_nose.size() == 3 else PackedFloat64Array()
+	var roof := manual_roof if manual_roof.size() == 3 and nose.size() == 3 else PackedFloat64Array()
 	if t <= t0:
-		var ae0 := Flight.aero(name, r0, v0, nose)
+		var ae0 := Flight.aero(name, r0, v0, nose, roof)
 		atmo_q = ae0.q
 		atmo_heat = clampf((float(ae0.heat) - 2e7) / 3e8, 0.0, 1.0)
 		return false
@@ -877,9 +880,9 @@ func _air_step(name: String, t: float) -> bool:
 		_set_notice("Ilmakehässä kiihdytys enintään %s." % WARPS[MANUAL_WARP][1])
 		anchor(t, MANUAL_WARP)
 		changed.emit()
-	var f := Flight.fly_air(name, r0, v0, nose, (t - t0) / 1000.0)
+	var f := Flight.fly_air(name, r0, v0, nose, (t - t0) / 1000.0, roof)
 	state.orbit = {"epoch": t, "arg": atan2(f.r[1], f.r[0]), "rel": {"r": f.r, "v": f.v}}
-	var ae := Flight.aero(name, f.r, f.v, nose)
+	var ae := Flight.aero(name, f.r, f.v, nose, roof)
 	atmo_q = ae.q
 	# Plasma ja hehku lämpökuorman mukaan (ρv³; paluussa Maahan huippu noin 10⁸–10⁹ W/m²).
 	atmo_heat = clampf((float(ae.heat) - 2e7) / 3e8, 0.0, 1.0)

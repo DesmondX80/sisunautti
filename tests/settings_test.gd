@@ -42,7 +42,7 @@ func _ready() -> void:
 	s.set_speed_unit("jotain")
 	check("tuntematon yksikkö → km/s", s.speed_unit == "kms")
 	check("ikkunan otsikko", ProjectSettings.get_setting("application/config/name") == "Sisunautti")
-	check("versio", ProjectSettings.get_setting("application/config/version") == "1.23.1")
+	check("versio", ProjectSettings.get_setting("application/config/version") == "1.24.0")
 	DirAccess.remove_absolute(path)
 	s.path = original_path
 	s.load_settings()

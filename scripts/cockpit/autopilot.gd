@@ -20,8 +20,8 @@ const ACCEL_MAX := 0.0196
 ## Kohtauskulman rajat (rad): −20° … 35°.
 const ALPHA_MIN := -0.35
 const ALPHA_MAX := 0.61
-## Suurin sivuttainen kulma (rad) kääntymiseen vakaimen ollessa päällä.
-const TURN_MAX := 0.26
+## Suurin kallistus (rad, 35°) kaarrettaessa vakaimen ollessa päällä.
+const BANK_MAX := 0.61
 ## Dynaaminen paine (Pa), jota ohuemmassa ilmassa ohjataan pystytyönnöllä.
 const Q_AIR := 2000.0
 ## Pystytyönnön suunnan vaihdon marginaali (km/s², 0,2 g).
@@ -35,9 +35,11 @@ static func vs_command(err: float, limit: float) -> float:
 
 
 ## Ohjaus kappaleen name ympärillä tilassa (r, v) (km, km/s kappaleen suhteen), kun tavoitekorkeus on target_km
-## pinnasta, pelaajan kaasun työntö thrust ja suurin työntö thrust_max (km/s²). turn −1…1 kääntää ilmakehässä nokkaa
-## sivulle (vasemmalle +), jolloin nostovoima kaartaa lentorataa. prev_sign on edellisen pystytyönnön suunta.
-## Palauttaa {nose: nokan suunta (ekliptika), thrust: työntö (km/s²), sign, auto: automaattikaasu käytössä, air}.
+## pinnasta, pelaajan kaasun työntö thrust ja suurin työntö thrust_max (km/s²). turn −1…1 kallistaa ilmakehässä
+## alusta (vasemmalle +) koordinoituun kaartoon: nostovoima kääntyy sivulle ja kaartaa lentorataa, ja kohtauskulmaa
+## kasvatetaan niin, että korkeus pysyy. prev_sign on edellisen pystytyönnön suunta.
+## Palauttaa {nose: nokan suunta (ekliptika), roof: katon suunta (ilmakehässä, muuten tyhjä), thrust: työntö (km/s²),
+## sign, auto: automaattikaasu käytössä, air}.
 static func control(name: String, r: PackedFloat64Array, v: PackedFloat64Array, target_km: float, thrust: float,
 		thrust_max: float, turn: float = 0.0, prev_sign: int = 1) -> Dictionary:
 	var rn := Flight.norm(r)
@@ -60,17 +62,19 @@ static func control(name: String, r: PackedFloat64Array, v: PackedFloat64Array, 
 			sign = -1
 		elif sign < 0 and need > SIGN_BAND:
 			sign = 1
-		return {"nose": Flight.scale(up, float(sign)), "thrust": clampf(need * sign, 0.0, thrust_max), "sign": sign,
-			"auto": true, "air": false}
+		return {"nose": Flight.scale(up, float(sign)), "roof": PackedFloat64Array(), "thrust": clampf(need * sign, 0.0, thrust_max),
+			"sign": sign, "auto": true, "air": false}
 	var fr := frame(up, v)
 	var vhat: PackedFloat64Array = fr.vhat
 	var p: PackedFloat64Array = fr.p
 	var side := Flight.cross(up, vhat)
 	side = Flight.scale(side, 1.0 / maxf(Flight.norm(side), 1e-9))
-	var beta := clampf(turn, -1.0, 1.0) * TURN_MAX
+	# Kallistus kääntää siipien tason (nokan ja katon taso) menosuunnan ympäri.
+	var bank := clampf(turn, -1.0, 1.0) * BANK_MAX
+	var pb := Flight.add(Flight.scale(p, cos(bank)), Flight.scale(side, sin(bank)))
 	var accel_up := func(alpha: float, t: float) -> float:
-		var n := _dir(vhat, p, side, alpha, beta)
-		var a := Flight.add(g, Flight.add(Flight.aero(name, r, v, n).a, Flight.scale(n, t)))
+		var n := _dir(vhat, pb, alpha)
+		var a := Flight.add(g, Flight.add(Flight.aero(name, r, v, n, _roof(vhat, pb, alpha)).a, Flight.scale(n, t)))
 		return Flight.dot(a, up) + vh2 / rn - a_cmd
 	var out := {"thrust": thrust, "sign": 1, "auto": false, "air": true}
 	if float(accel_up.call(ALPHA_MAX, thrust)) < 0.0:
@@ -86,10 +90,12 @@ static func control(name: String, r: PackedFloat64Array, v: PackedFloat64Array, 
 					lo_t = mid
 		out.thrust = hi_t
 		out.auto = hi_t > thrust + 1e-9
-		out.nose = _dir(vhat, p, side, ALPHA_MAX, beta)
+		out.nose = _dir(vhat, pb, ALPHA_MAX)
+		out.roof = _roof(vhat, pb, ALPHA_MAX)
 		return out
 	if float(accel_up.call(ALPHA_MIN, thrust)) > 0.0:
-		out.nose = _dir(vhat, p, side, ALPHA_MIN, beta)
+		out.nose = _dir(vhat, pb, ALPHA_MIN)
+		out.roof = _roof(vhat, pb, ALPHA_MIN)
 		return out
 	var lo := ALPHA_MIN
 	var hi := ALPHA_MAX
@@ -99,7 +105,8 @@ static func control(name: String, r: PackedFloat64Array, v: PackedFloat64Array, 
 			hi = mid
 		else:
 			lo = mid
-	out.nose = _dir(vhat, p, side, (lo + hi) / 2.0, beta)
+	out.nose = _dir(vhat, pb, (lo + hi) / 2.0)
+	out.roof = _roof(vhat, pb, (lo + hi) / 2.0)
 	return out
 
 
@@ -126,9 +133,12 @@ static func frame(up: PackedFloat64Array, v: PackedFloat64Array) -> Dictionary:
 	return {"vhat": vhat, "p": Flight.scale(p, 1.0 / maxf(Flight.norm(p), 1e-9))}
 
 
-static func _dir(vhat: PackedFloat64Array, p: PackedFloat64Array, side: PackedFloat64Array, alpha: float, beta: float) -> PackedFloat64Array:
-	var n := Flight.add(Flight.scale(vhat, cos(alpha) * cos(beta)), Flight.add(Flight.scale(p, sin(alpha) * cos(beta)), Flight.scale(side, sin(beta))))
-	return Flight.scale(n, 1.0 / Flight.norm(n))
+static func _dir(vhat: PackedFloat64Array, p: PackedFloat64Array, alpha: float) -> PackedFloat64Array:
+	return Flight.add(Flight.scale(vhat, cos(alpha)), Flight.scale(p, sin(alpha)))
+
+
+static func _roof(vhat: PackedFloat64Array, p: PackedFloat64Array, alpha: float) -> PackedFloat64Array:
+	return Flight.add(Flight.scale(vhat, -sin(alpha)), Flight.scale(p, cos(alpha)))
 
 
 ## Työnnön osuus, kun aluksen nokka actual ei vielä osoita vakaimen suuntaan want: täysi linjassa, ei lainkaan yli

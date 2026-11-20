@@ -767,10 +767,18 @@ static func air_density(name: String, alt_km: float) -> float:
 	return float(AIR[name][0]) * exp(-maxf(alt_km, 0.0) / float(AIR[name][1]))
 
 
+## Sivuvoiman kerroin suhteessa nostovoimaan (runko ja pystyvakaaja sivuluisussa; siivet antavat nostovoiman).
+const SIDE_FORCE := 0.3
+
+
 ## Ilmakehän kiihtyvyys (km/s²) kappaleen suhteen tilassa (r, v), kun nokka osoittaa suuntaan nose (tyhjä = menosuuntaan):
 ## {a: nostovoima + ilmanvastus, q: dynaaminen paine (Pa), alpha: kohtauskulma (rad), heat: lämpökuorma ρv³ (W/m²)}.
-## Nostovoima kääntää lentorataa kohti nokkaa kuten lentokoneella.
-static func aero(name: String, r: PackedFloat64Array, v: PackedFloat64Array, nose: PackedFloat64Array) -> Dictionary:
+## Kun aluksen katon suunta roof annetaan (#58), nostovoima on kohtisuorassa siipien tasoa vastaan kuten lentokoneella:
+## kohtauskulma mitataan nokan ja katon tasossa, ja kallistus kääntää nostovoimaa sivulle, jolloin lentorata kaartaa
+## sitä jyrkemmin, mitä tiheämpää ilma ja suurempi nopeus on. Sivuluisu (nokka sivulle) antaa heikomman sivuvoiman.
+## Ilman roofia nostovoima kääntää lentorataa kohti nokkaa.
+static func aero(name: String, r: PackedFloat64Array, v: PackedFloat64Array, nose: PackedFloat64Array,
+		roof: PackedFloat64Array = PackedFloat64Array()) -> Dictionary:
 	var rho := air_density(name, norm(r) - float(orbit_of(name).radiusKm))
 	var speed := norm(v)
 	if rho <= 0.0 or speed < 1e-9:
@@ -782,6 +790,23 @@ static func aero(name: String, r: PackedFloat64Array, v: PackedFloat64Array, nos
 	var q := 0.5 * rho * pow(speed * 1000.0, 2.0)
 	var k := q * WING_LOADING / 1000.0 # km/s² kerrointa kohti
 	var a := scale(vh, -k * (DRAG_ZERO + 1.4 * sin(alpha) * sin(alpha)))
+	if roof.size() == 3 and nose.size() == 3 and norm(nose) > 1e-9:
+		var u := sub(roof, scale(n, dot(roof, n)))
+		if norm(u) > 1e-9:
+			u = scale(u, 1.0 / norm(u))
+			var sd := cross(n, u)
+			var vn := dot(vh, n)
+			var att := atan2(-dot(vh, u), vn) # tuuli alhaalta → positiivinen
+			var slip := atan2(-dot(vh, sd), vn)
+			var lift_dir := sub(u, scale(vh, dot(u, vh)))
+			if norm(lift_dir) > 1e-9:
+				var lift_a := clampf(k * 1.2 * sin(2.0 * att), -LIFT_MAX, LIFT_MAX)
+				a = add(a, scale(lift_dir, lift_a / norm(lift_dir)))
+			var side_dir := sub(sd, scale(vh, dot(sd, vh)))
+			if norm(side_dir) > 1e-9:
+				var side_a := clampf(k * 1.2 * SIDE_FORCE * sin(2.0 * slip), -LIFT_MAX, LIFT_MAX)
+				a = add(a, scale(side_dir, side_a / norm(side_dir)))
+			return {"a": a, "q": q, "alpha": att, "heat": rho * pow(speed * 1000.0, 3.0)}
 	var perp := sub(n, scale(vh, c))
 	var pn := norm(perp)
 	if pn > 1e-9:
@@ -792,7 +817,8 @@ static func aero(name: String, r: PackedFloat64Array, v: PackedFloat64Array, nos
 
 ## Lento ilmakehässä ajasta 0 ajan dt_s (s) eteenpäin: painovoima, nostovoima ja ilmanvastus askelin AIR_STEP_S
 ## (puoli-implisiittinen Euler). Pysähtyy pintaan. Palauttaa {r, v, hit}.
-static func fly_air(name: String, r: PackedFloat64Array, v: PackedFloat64Array, nose: PackedFloat64Array, dt_s: float) -> Dictionary:
+static func fly_air(name: String, r: PackedFloat64Array, v: PackedFloat64Array, nose: PackedFloat64Array, dt_s: float,
+		roof: PackedFloat64Array = PackedFloat64Array()) -> Dictionary:
 	var o := orbit_of(name)
 	var mu: float = o.mu
 	var radius: float = o.radiusKm
@@ -803,7 +829,7 @@ static func fly_air(name: String, r: PackedFloat64Array, v: PackedFloat64Array, 
 	for i in steps:
 		var rn := norm(rr)
 		var g := scale(rr, -mu / (rn * rn * rn))
-		vv = add(vv, scale(add(g, aero(name, rr, vv, nose).a), h))
+		vv = add(vv, scale(add(g, aero(name, rr, vv, nose, roof).a), h))
 		rr = add(rr, scale(vv, h))
 		if norm(rr) <= radius:
 			return {"r": rr, "v": vv, "hit": true}

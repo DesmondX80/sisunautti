@@ -77,6 +77,8 @@ var ladder: HudLadder
 var ladder_on := true
 var alt_hold := false
 var alt_target := 0.0
+## Ohjaussyöte näppäimistön lisäksi (−1…1 akseleittain kuten näppäimet; esim. kosketusohjaus ja testit).
+var stick_input := Vector3.ZERO
 var _hold_sign := 1 # vakaimen pystytyönnön suunta avaruudessa
 var _hold_auto := false # vakain käyttää automaattikaasua
 var _turn := 0.0 # sivuttaisohjaus vakaimen ollessa päällä −1…1 (pehmennetty)
@@ -449,7 +451,7 @@ func _build_manual_hud() -> void:
 	aids.add_child(_unit_button)
 	v.add_child(aids)
 	_sync_aid_buttons()
-	_hint = UiKit.label("W/S nokka · A/D kääntö · Q/E kallistus · Shift/Ctrl kaasu · X nollaa · B jarruta · G ristikko · L korkeudenvakain · U yksikkö · M lopeta", "MutedLabel", false)
+	_hint = UiKit.label("W/S nokka · A/D kääntö (vakaimella kaarto) · Q/E kallistus · Shift/Ctrl kaasu · X nollaa · B jarruta · G ristikko · L korkeudenvakain · U yksikkö · M lopeta", "MutedLabel", false)
 	_hint.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	v.add_child(_hint)
 	_fit_manual_hud()
@@ -474,6 +476,7 @@ func toggle_manual() -> void:
 	_turn = 0.0
 	_sync_aid_buttons()
 	Game.manual_nose = PackedFloat64Array()
+	Game.manual_roof = PackedFloat64Array()
 	Game.manual_thrust(PackedFloat64Array([1.0, 0.0, 0.0]), 0.0, 0.0)
 	manual_button.text = "Automaattiohjaus" if manual else "Manuaaliohjaus"
 	_manual_hud.visible = manual
@@ -557,6 +560,7 @@ func _manual_step(s: Dictionary, delta: float) -> void:
 	var axis := func(neg: Key, pos: Key) -> float:
 		return (1.0 if keys and Input.is_key_pressed(pos) else 0.0) - (1.0 if keys and Input.is_key_pressed(neg) else 0.0)
 	var input := Vector3(axis.call(KEY_S, KEY_W), axis.call(KEY_D, KEY_A), axis.call(KEY_E, KEY_Q))
+	input = (input + stick_input).clamp(-Vector3.ONE, Vector3.ONE)
 	_stick = _stick.lerp(input, minf(1.0, delta * 10.0))
 	var ship_s: Variant = s.get("ship")
 	var rel: Variant = ship_s.get("rel") if ship_s is Dictionary else null
@@ -571,7 +575,9 @@ func _manual_step(s: Dictionary, delta: float) -> void:
 	else:
 		_ang_vel = turn_rate(_ang_vel, input, delta)
 		if _ang_vel != Vector3.ZERO:
-			ship.basis = (ship.basis * Basis.from_euler(_ang_vel * delta)).orthonormalized()
+			# Kääntö nokan (ikkunan keskikohdan) akselien ympäri: Q/E kallistaa nokan ympäri kuten lentokoneessa.
+			var b := Basis(Vector3.RIGHT, CockpitState.AIM_RAISE)
+			ship.basis = (ship.basis * b * Basis.from_euler(_ang_vel * delta) * b.inverse()).orthonormalized()
 	if keys and Input.is_key_pressed(KEY_SHIFT):
 		manual_throttle = minf(1.0, manual_throttle + delta * 0.6)
 	if keys and Input.is_key_pressed(KEY_CTRL):
@@ -584,6 +590,8 @@ func _manual_step(s: Dictionary, delta: float) -> void:
 	var n := boresight()
 	var nose := PackedFloat64Array([n.x, -n.z, n.y]) # scene → ekliptika (Space.to_scene käänteisenä)
 	Game.manual_nose = nose
+	var rf := ship.basis * (Basis(Vector3.RIGHT, CockpitState.AIM_RAISE) * Vector3.UP)
+	Game.manual_roof = PackedFloat64Array([rf.x, -rf.z, rf.y])
 	var dir := nose
 	var power := manual_throttle if hold_power < 0.0 else hold_power
 	if braking and h != null:
@@ -623,12 +631,15 @@ func _hold_step(rel: Dictionary, yaw_input: float, delta: float) -> float:
 	var n := _ecl_to_scene(c.nose).normalized()
 	# Pystysuoraan osoittaessa (laskeutuja) näkymän yläreuna menosuuntaan.
 	var ref := up
-	if absf(n.dot(up)) > 0.95:
+	var roof: PackedFloat64Array = c.roof
+	if roof.size() == 3:
+		# Ilmakehässä siipien taso vakaimen mukaan: kaarrossa kallistus kääntösuuntaan (koordinoitu kaarto).
+		ref = _ecl_to_scene(roof).normalized()
+	elif absf(n.dot(up)) > 0.95:
 		var fwd := Autopilot.frame(up_e, rel.v).vhat as PackedFloat64Array
 		ref = _ecl_to_scene(fwd).normalized() * (1.0 if n.dot(up) < 0.0 else -1.0)
 	# Nokka (ikkunan keskikohta) vakaimen suuntaan, kaarteessa kallistus; aluksen kanta on AIM_RAISE alempana.
-	var want := Basis.looking_at(n, ref) * Basis(Vector3(0, 0, 1), _turn * 0.5) \
-		* Basis(Vector3.RIGHT, -CockpitState.AIM_RAISE)
+	var want := Basis.looking_at(n, ref) * Basis(Vector3.RIGHT, -CockpitState.AIM_RAISE)
 	var q0 := ship.basis.get_rotation_quaternion()
 	var q1 := want.get_rotation_quaternion()
 	var ang := q0.angle_to(q1)
@@ -652,6 +663,20 @@ func _update_ladder(s: Dictionary) -> void:
 		ship.global_transform.basis * (Basis(Vector3.RIGHT, CockpitState.AIM_RAISE) * Vector3.FORWARD), _ecl_to_scene(rel.v), func(d: Vector3) -> bool: return Cabin.through_window(d))
 
 
+## Kallistuskulma (rad, oikealle +): siipien kallistus paikallisesta vaakatasosta nokan ympäri. 0 ilman katon suuntaa.
+static func bank_angle(nose: PackedFloat64Array, roof: PackedFloat64Array, r: PackedFloat64Array) -> float:
+	if roof.size() != 3 or nose.size() != 3:
+		return 0.0
+	var n := Flight.scale(nose, 1.0 / Flight.norm(nose))
+	var up := Flight.scale(r, 1.0 / Flight.norm(r))
+	var right := Flight.cross(n, up)
+	if Flight.norm(right) < 1e-6:
+		return 0.0
+	right = Flight.scale(right, 1.0 / Flight.norm(right))
+	var level_up := Flight.cross(right, n)
+	return atan2(Flight.dot(roof, right), Flight.dot(roof, level_up))
+
+
 ## Kurssirivi: nokan kulma menosuunnasta ja kiertoradalla radan muoto (perikeskus ja apokeskus pinnasta tai
 ## pakoradan ylinopeus); varoitus, jos rata leikkaa pinnan.
 static func course_text(nose: PackedFloat64Array, heading: Variant, rel: Variant) -> String:
@@ -667,8 +692,10 @@ static func course_text(nose: PackedFloat64Array, heading: Variant, rel: Variant
 		var sh := Flight.orbit_shape(loc, rel.r, rel.v)
 		if Game.atmo_q > 0.0:
 			# Ilmakehässä rata ei ole kartioleikkaus: näytetään ilmanpaine ja kohtauskulma.
-			var ae := Flight.aero(loc, rel.r, rel.v, nose)
-			parts.append("ILMAKEHÄ q %s kPa · kohtauskulma %d°" % [Fmt.num(Game.atmo_q / 1000.0, 1), roundi(rad_to_deg(ae.alpha))])
+			var ae := Flight.aero(loc, rel.r, rel.v, nose, Game.manual_roof)
+			var bank := roundi(rad_to_deg(bank_angle(nose, Game.manual_roof, rel.r)))
+			parts.append("ILMAKEHÄ q %s kPa · kohtauskulma %s° · kallistus %s" % [Fmt.num(Game.atmo_q / 1000.0, 1),
+				Fmt.num(roundf(rad_to_deg(ae.alpha))), "%d° %s" % [absi(bank), "oikealle" if bank > 0 else "vasemmalle"] if bank != 0 else "0°"])
 		elif sh.escape:
 			parts.append("PAKORATA v∞ %s" % Fmt.dv(sh.vinf))
 		else:

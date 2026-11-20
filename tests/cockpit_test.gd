@@ -250,6 +250,11 @@ func _ready() -> void:
 	check("kallistus kääntää horisonttia", absf(h2[0].y - h2[h2.size() - 1].y) > 100.0 and lad2.path == null)
 	var none := HudLadder.build(level, level, 70.0, view, Vector3.UP, Vector3.FORWARD, Vector3.FORWARD, func(_d: Vector3) -> bool: return false)
 	check("ristikko vain ikkunan kohdalla", none.lines.is_empty() and none.nose == null)
+	var up_r := PackedFloat64Array([6381.0, 0.0, 0.0])
+	var fwd_b := PackedFloat64Array([0.0, 1.0, 0.0])
+	check("kallistuskulma: vaaka 0°, oikealle 30° (katto kohti −z)",
+		absf(CockpitView.bank_angle(fwd_b, PackedFloat64Array([1.0, 0.0, 0.0]), up_r)) < 1e-9
+		and absf(rad_to_deg(CockpitView.bank_angle(fwd_b, PackedFloat64Array([cos(0.5236), 0.0, -sin(0.5236)]), up_r)) - 30.0) < 0.01)
 	# Pehmeä ohjaus (#57): sauvan kääntö kiihdyttää kääntymistä vähitellen, ja vapautettaessa kääntyminen pysähtyy.
 	var w := Vector3.ZERO
 	w = CockpitView.turn_rate(w, Vector3(1, 0, 0), 0.1)

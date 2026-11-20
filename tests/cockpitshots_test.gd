@@ -364,6 +364,13 @@ func _run() -> void:
 		cv.adjust_alt(2.0)
 		Settings.speed_unit = "kmh"
 		await shot("lentoavut-vakain", 40)
+		# Kaarto vakaimen ollessa päällä (A pohjassa): alus kallistuu vasemmalle ja lentorata kaartaa.
+		cv.stick_input = Vector3(0, 1, 0)
+		for i in 25:
+			var rk: Dictionary = Flight.parking_state("Maa", G.sim_now(), G.state.orbit).rel
+			cv._hold_step(rk, 1.0, 0.1)
+		await shot("lentoavut-kaarto", 10)
+		cv.stick_input = Vector3.ZERO
 		Settings.speed_unit = "kms"
 		cv.toggle_manual()
 		# Vakain laskeutuu 200 km:n radalta: avaruudessa nokka alas ja automaattikaasu.

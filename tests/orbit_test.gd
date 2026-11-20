@@ -451,3 +451,35 @@ func _air() -> void:
 	var fly_flat: Dictionary = Flight.fly_air("Maa", r, v, PackedFloat64Array(), 20.0)
 	check("nokka ylös: alus nousee kuin lentokone", fly_up.r[0] > r[0] + 0.5 and fly_up.v[0] > 0.0)
 	check("ilman nostovoimaa alus putoaa ja hidastuu", fly_flat.r[0] < r[0] and Flight.norm(fly_flat.v) < 2.0)
+	# Kallistuskaarto (#58): nostovoima kohtisuoraan siipiä vastaan. Alus 10 km:ssä 250 m/s, nokka 4° ylös.
+	var rk := PackedFloat64Array([6371.0 + 10.0, 0.0, 0.0])
+	var vk := PackedFloat64Array([0.0, 0.25, 0.0])
+	var a4 := deg_to_rad(4.0)
+	var nk := PackedFloat64Array([sin(a4), cos(a4), 0.0])
+	var roof_level := PackedFloat64Array([cos(a4), -sin(a4), 0.0])
+	var bank := deg_to_rad(30.0)
+	# Kallistus oikealle menosuunnan (y) ympäri: ylös (x) kääntyy oikealle (oikea = nokka × ylös = −z).
+	var roll := func(a: PackedFloat64Array) -> PackedFloat64Array:
+		return PackedFloat64Array([a[0] * cos(bank), a[1], -a[0] * sin(bank)])
+	var roof_right: PackedFloat64Array = roll.call(roof_level)
+	var nb: PackedFloat64Array = roll.call(nk)
+	var lv: Dictionary = Flight.aero("Maa", rk, vk, nk, roof_level)
+	var lb: Dictionary = Flight.aero("Maa", rk, vk, nb, roof_right)
+	check("siivet vaakatasossa: nostovoima ylös, ei sivulle", lv.a[0] > 0.0 and absf(float(lv.a[2])) < 1e-12
+		and absf(float(lv.a[0]) - float(Flight.aero("Maa", rk, vk, nk).a[0])) < 1e-9)
+	check("30° kallistus oikealle: nostovoima kääntyy oikealle, pystykomponentti cos 30°",
+		lb.a[2] < 0.0 and absf(float(lb.a[0]) / float(lv.a[0]) - cos(bank)) < 0.01 and absf(float(lb.a[2]) / float(lv.a[0]) + sin(bank)) < 0.01)
+	var turn_rate := func(name: String, alt: float) -> float:
+		var radius: float = Flight.orbit_of(name).radiusKm
+		var rr := PackedFloat64Array([radius + alt, 0.0, 0.0])
+		var ab: Dictionary = Flight.aero(name, rr, vk, nb, roof_right)
+		return -float(ab.a[2]) / 0.25 # rad/s
+	var t_low: float = turn_rate.call("Maa", 5.0)
+	var t_high: float = turn_rate.call("Maa", 15.0)
+	var t_mars: float = turn_rate.call("Mars", 5.0)
+	var t_moon: float = turn_rate.call("Kuu", 5.0)
+	check("kaarto sitä jyrkempi, mitä tiheämpää ilma (Maa 5 km %s°/s, 15 km %s°/s, Mars %s°/s, Kuu 0)" % [
+		Fmt.num(rad_to_deg(t_low), 1), Fmt.num(rad_to_deg(t_high), 1), Fmt.num(rad_to_deg(t_mars), 2)],
+		t_low > t_high and t_high > t_mars and t_mars > 0.0 and t_moon == 0.0)
+	var fb: Dictionary = Flight.fly_air("Maa", rk, vk, nb, 5.0, roof_right)
+	check("kallistettuna lentorata kaartaa oikealle (%s m/s sivulle 5 s:ssa)" % Fmt.num(-float(fb.v[2]) * 1000.0, 1), fb.v[2] < -0.005)
