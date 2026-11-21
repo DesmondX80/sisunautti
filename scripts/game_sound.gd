@@ -5,7 +5,7 @@ extends Node
 ## samaa ääntä (tools/make_voice.py), ja se kutsuu alusta tunnuksella "Alpha Alpha One" (AA-1):
 ## lähtölaskenta kymmenestä, "liftoff", tornin ohitus, Max Q, vaiheen erotus 2:30 ja toisen vaiheen sytytys sekä
 ## lennon vaiheiden kuulutukset Quindar-piippauksin (kiertorata, lähtöpoltto, vaikutuspiiri, saapuminen, jarrutus
-## kiertoradalle tai ohilento). Repliikit soivat jonossa, eivät päällekkäin. Kartoituksen
+## kiertoradalle tai ohilento) ja tehtävien (#44) antaminen ja suoritus. Repliikit soivat jonossa, eivät päällekkäin. Kartoituksen
 ## valmistuminen kuittaa pelkällä Quindar-piippauksella. Muut äänet syntetisoidaan käynnistyksessä (SoundSynth).
 ## Voimakkuus ja mykistys ovat Settingsissä (pääväylä). quiet: valikko auki.
 
@@ -13,9 +13,9 @@ const LOOPS := ["rumble", "burn", "plasma", "hum"]
 ## Lennonjohdon repliikit: assets/sound/voice/<nimi>.ogg.
 const VOICE_DIR := "res://assets/sound/voice/"
 const VOICES := ["count1", "count2", "count3", "count4", "count5", "count6", "count7", "count8", "count9", "count10",
-	"liftoff", "tower", "maxq", "staging", "stage2", "orbit", "depart", "soi", "arrive", "capture", "flyby"]
+	"liftoff", "tower", "maxq", "staging", "stage2", "orbit", "depart", "soi", "arrive", "capture", "flyby", "mission_new", "mission_done"]
 ## Vaiheet, joista kuuluu kuulutus; muut ilmoitukset kuittaa pelkkä piippaus.
-const CALLOUTS := ["orbit", "depart", "soi", "arrive", "capture", "flyby"]
+const CALLOUTS := ["orbit", "depart", "soi", "arrive", "capture", "flyby", "mission_new", "mission_done"]
 ## Laukaisun repliikit: [hetki laukaisusta (s), repliikki]. Lähtölaskennan luvut sekunnin välein.
 const LAUNCH_LINES := [[-10.0, "count10"], [-9.0, "count9"], [-8.0, "count8"], [-7.0, "count7"], [-6.0, "count6"],
 	[-5.0, "count5"], [-4.0, "count4"], [-3.0, "count3"], [-2.0, "count2"], [-1.0, "count1"], [0.0, "liftoff"],
@@ -34,6 +34,7 @@ var _queue: Array = [] # [nimi, jonoon (ms)]
 var _state_at := -1000
 var _target := {}
 var _last_tau := -INF
+var _mission_done_ms := -100000 # tehtävän suoritus (ms): heti perään annettua uutta tehtävää ei kuuluteta erikseen
 ## Vian hälytys (#42) silmukkana vian ajan ja kertaäänet.
 var _alarm: AudioStreamPlayer
 var _buzz: AudioStreamWAV
@@ -66,6 +67,12 @@ func _ready() -> void:
 	Game.arrived.connect(func(_b: String) -> void: announce("arrive"))
 	Game.capture_done.connect(func(_b: String, ok: bool, _a: bool) -> void: announce("capture" if ok else "flyby"))
 	Game.survey_finished.connect(func(_b: String, _f: bool) -> void: announce("survey"))
+	Game.mission_completed.connect(func(_m: Dictionary) -> void:
+		_mission_done_ms = Time.get_ticks_msec()
+		announce("mission_done"))
+	Game.mission_issued.connect(func(_m: Dictionary) -> void:
+		if Time.get_ticks_msec() - _mission_done_ms > 1000:
+			announce("mission_new"))
 	_alarm = AudioStreamPlayer.new()
 	_alarm.stream = SoundSynth.to_wav(SoundSynth.alarm(), true)
 	_alarm.volume_db = -12.0

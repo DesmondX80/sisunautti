@@ -48,6 +48,8 @@ var _live := {} # päivitettävät tekstit ja palkit: nimi → Control
 var _phase_key := ""
 var _dirty := true
 var _log_open := false
+var _missions_open := true
+var mission_toast: MissionToast
 var _burn_open := false
 var _burn_dir := "prograde"
 var _burn_dv := 0.05
@@ -196,6 +198,9 @@ func _build_view() -> void:
 	_overlay_modes = _overlay(Control.PRESET_TOP_RIGHT)
 	_overlay_zoom = _overlay(Control.PRESET_BOTTOM_RIGHT)
 	_refresh_overlays()
+	# Tehtäväilmoitukset (#44) näkymän yläreunassa.
+	mission_toast = MissionToast.new()
+	_view_area.add_child(mission_toast)
 
 
 func _overlay(preset: int) -> MarginContainer:
@@ -366,6 +371,7 @@ func _rebuild() -> void:
 		c.queue_free()
 	var s: Dictionary = Game.state
 	_body.add_child(_status())
+	_body.add_child(_missions())
 	if s.pad:
 		_pad_view()
 	elif s.flight != null:
@@ -505,6 +511,11 @@ func _option_card(o: Dictionary) -> Control:
 	if float(o.get("spiralOut", 0.0)) > 0.0 or float(o.get("spiralIn", 0.0)) > 0.0:
 		rows.append(["Spiraalit", "nousu alkaa %s (%s), lasku %s" % [Fmt.date(float(o.depart) - float(o.spiralOut)), Fmt.days(float(o.spiralOut) / DAY), Fmt.days(float(o.spiralIn) / DAY)]])
 	v.add_child(UiKit.rows(rows))
+	for m: Dictionary in Game.missions().active:
+		if Missions.fits_option(m, o, Game.here(), Game.target):
+			var badge := UiKit.label("%s Täyttää tehtävän: %s (+%d TP)" % [MissionUI.icon_of(m), Missions.title(m), int(m.points)], "WarmLabel")
+			badge.add_theme_color_override("font_color", MissionUI.color_of(m))
+			v.add_child(badge)
 	var pick := UiKit.button("Valitse reitti", func() -> void: Game.choose(o), "GoButton" if o.kind == "cheapest" or o.kind == "local" else "")
 	pick.disabled = not o.fuelOk
 	v.add_child(_actions([pick]))
@@ -588,6 +599,17 @@ func _collapsible(title: String, open: bool, on_toggle: Callable) -> Array:
 	head.pressed.connect(func() -> void: on_toggle.call(not open))
 	v.add_child(head)
 	return [c[0], v]
+
+
+## Lennonjohdon tehtävät (#44).
+func _missions() -> Control:
+	var ms: Dictionary = Game.missions()
+	var c := _collapsible("Tehtävät" if _missions_open else "Tehtävät · %d · %s TP" % [ms.active.size(), Fmt.num(int(ms.points))], _missions_open, func(o: bool) -> void:
+		_missions_open = o
+		_dirty = true)
+	if _missions_open:
+		MissionUI.fill(c[1], ms)
+	return c[0]
 
 
 func _logbook() -> Control:
@@ -735,11 +757,17 @@ func _orbiting() -> void:
 		_add(_shipyard())
 	_add(UiKit.label("Valitse kohde", "HeadLabel"))
 	var target_btn := func(name: String, on_press: Callable) -> Button:
-		var b := UiKit.button(name + ("" if s.explored.has(name) else " •"), on_press)
+		var mission := Missions.targets(Game.missions()).has(name)
+		var b := UiKit.button(name + ("" if s.explored.has(name) else " •") + (" ◆" if mission else ""), on_press)
 		b.toggle_mode = true
 		b.button_pressed = name == Game.target
+		var tips := PackedStringArray()
 		if not s.explored.has(name):
-			b.tooltip_text = "tutkimatta"
+			tips.append("tutkimatta")
+		if mission:
+			tips.append("tehtävän kohde")
+			b.add_theme_color_override("font_color", UiKit.WARM)
+		b.tooltip_text = ", ".join(tips)
 		return b
 	var targets := HFlowContainer.new()
 	targets.add_theme_constant_override("h_separation", 6)
@@ -766,7 +794,7 @@ func _orbiting() -> void:
 				row.add_child(target_btn.call(mm, func() -> void: Game.local_option(mm)))
 			_add(row)
 	if Game.target == "":
-		_add(UiKit.label("Peli laskee siirtoradan valmiiksi: se etsii seuraavan kahden vuoden laukaisuikkunat ja näyttää halvimman sekä nopeammat vaihtoehdot. Tutkimattomat kohteet on merkitty pisteellä. Polttoaine täydentyy, kun kohde on tutkittu.", "MutedLabel"))
+		_add(UiKit.label("Peli laskee siirtoradan valmiiksi: se etsii seuraavan kahden vuoden laukaisuikkunat ja näyttää halvimman sekä nopeammat vaihtoehdot. Tutkimattomat kohteet on merkitty pisteellä ja tehtävien kohteet salmiakilla ◆. Polttoaine täydentyy, kun kohde on tutkittu.", "MutedLabel"))
 	elif not Game.options_ready:
 		_add(UiKit.label("Haetaan laukaisuikkunoita ja linkousreittejä: %s %s…" % [Fmt.from_text(Game.here()), Fmt.ill(Game.target)], "MutedLabel"))
 		var bar := UiKit.progress(Game.progress)

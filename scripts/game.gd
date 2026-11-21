@@ -41,6 +41,9 @@ signal fault_started(kind: String)
 signal fault_fixed(kind: String)
 signal fault_mistake(kind: String)
 signal ship_destroyed(kind: String)
+## Lennonjohdon tehtävät (#44): uusi tehtävä annettu tai tehtävä suoritettu.
+signal mission_issued(m: Dictionary)
+signal mission_completed(m: Dictionary)
 
 ## Tallennusavaimet ovat peräisin OmaAvaruuden Avaruuslennosta; niitä ei nimetä uudelleen (selaintallennusten tuonti).
 const KEY := "avaruuslento"
@@ -253,7 +256,8 @@ func fresh() -> Dictionary:
 	var now := real_ms()
 	return {"v": 1, "location": "Maa", "pad": true, "ascent": null, "orbit": null, "lowOrbit": null, "drift": null,
 		"ship": "kemiallinen", "fuel": Flight.FUEL_KMS, "simTime": now, "realTime": now, "warp": 0,
-		"plan": null, "flight": null, "survey": null, "explored": ["Maa"], "flights": [], "log": [], "fault": null, "destroyed": null}
+		"plan": null, "flight": null, "survey": null, "explored": ["Maa"], "flights": [], "log": [], "fault": null, "destroyed": null,
+		"missions": Missions.fresh()}
 
 
 func new_game() -> void:
@@ -261,6 +265,7 @@ func new_game() -> void:
 	state = fresh()
 	_reset_runtime()
 	_sync_low_orbit()
+	_refill_missions(false)
 	save_game()
 	changed.emit()
 
@@ -350,6 +355,7 @@ func load_game_from_state() -> void:
 	state.warp = 0
 	_sync_low_orbit()
 	sim_now()
+	_refill_missions(false)
 	changed.emit()
 
 
@@ -610,6 +616,8 @@ func launch() -> void:
 	p.erase("armed")
 	p.erase("window")
 	_set_notice("")
+	# Polttoaine ennen lähtöä: Δv-tehtävät (#44) laskevat koko lennon kulutuksen.
+	p.fuel0 = float(state.fuel) + (float(p.dvDep) if p.get("spiralStarted", false) else 0.0)
 	# Ionialuksen polttoaine kului jo spiraalinousussa, eikä hiljainen ionimoottori täräytä ohjaamoa.
 	if not p.get("spiralStarted", false):
 		state.fuel = maxf(0.0, float(state.fuel) - float(p.dvDep))
@@ -655,6 +663,7 @@ func flyby_done() -> void:
 	log_event(fb.t, "Linkous %s ohi %s korkeudelta%s" % [Fmt.gen(fb.body), Fmt.km(float(fb.rpKm) - float(Flight.body(fb.body).radiusKm)),
 		" (Δv %s)" % Fmt.dv(fb.dv) if float(fb.dv) > 0.005 else ""])
 	_set_notice("")
+	_mission_event({"type": "flyby", "body": fb.body}, fb.t)
 	save_game()
 	flyby.emit(fb.body)
 	changed.emit()
@@ -1002,6 +1011,9 @@ func capture(aero: bool = false) -> void:
 	_set_notice("")
 	anchor(arrive, 0)
 	capture_done.emit(to, captured, aero and captured)
+	if captured:
+		_mission_event({"type": "capture", "body": to, "aero": aero, "from": f.from if f.from is String else "",
+			"days": (arrive - float(f.depart)) / DAY, "dv": float(f.fuel0) - float(state.fuel) if f.has("fuel0") else INF}, arrive)
 	changed.emit()
 
 
@@ -1043,8 +1055,9 @@ func finish_survey() -> void:
 		log_event(end, "Tankkaus %s kiertoradalla" % Fmt.gen(name))
 	if first and not Flight.is_moon(name) and planets == 8:
 		log_event(end, "Kaikki aurinkokunnan planeetat on tutkittu!")
-	save_game()
 	survey_finished.emit(name, first)
+	_mission_event({"type": "survey", "body": name}, end)
+	save_game()
 	changed.emit()
 
 
@@ -1059,6 +1072,57 @@ func change_ship(id: String) -> void:
 	options_ready = false
 	target = ""
 	log_event(sim_now(), "Vaihdettiin alukseen: %s (%s km/s)" % [ship.name, Fmt.num(ship.fuel)])
+	save_game()
+	changed.emit()
+
+
+# --- Tehtävät (#44) ---
+
+## Tehtävien tila; vanhassa tallennuksessa sitä ei ole, ja puuttuvat kentät täydennetään.
+func missions() -> Dictionary:
+	var ms: Variant = state.get("missions")
+	if not (ms is Dictionary):
+		ms = Missions.fresh()
+		state.missions = ms
+	for k: String in ["active", "done"]:
+		if not (ms.get(k) is Array):
+			ms[k] = []
+	ms.points = int(ms.get("points", 0))
+	ms.seq = int(ms.get("seq", 0))
+	return ms
+
+
+func _refill_missions(announce: bool) -> void:
+	var t := sim_now()
+	for m: Dictionary in Missions.refill(missions(), state, Settings.faults > 0, t):
+		if announce:
+			log_event(t, "Uusi tehtävä: %s" % Missions.title(m))
+			mission_issued.emit(m)
+
+
+## Tapahtuma, joka voi täyttää tehtäviä: suoritetut kirjataan, pisteet lisätään ja tilalle annetaan uudet.
+func _mission_event(ev: Dictionary, t: float) -> void:
+	var done := Missions.complete(missions(), ev, t)
+	if done.is_empty():
+		return
+	for m: Dictionary in done:
+		log_event(t, "Tehtävä suoritettu: %s (+%d tutkimuspistettä)" % [Missions.title(m), int(m.points)])
+		mission_completed.emit(m)
+	_refill_missions(true)
+
+
+## Tehtävästä luovutaan, ja tilalle annetaan uusi.
+func discard_mission(id: int) -> void:
+	var ms := missions()
+	var i: int = ms.active.find_custom(func(m: Dictionary) -> bool: return int(m.id) == id)
+	if i < 0:
+		return
+	var m: Dictionary = ms.active[i]
+	ms.active.remove_at(i)
+	if m.kind != "fault":
+		ms.dropped = ms.get("dropped", []) + ["%s %s" % [m.kind, m.get("body", "")]]
+	log_event(sim_now(), "Tehtävästä luovuttiin: %s" % Missions.title(m))
+	_refill_missions(true)
 	save_game()
 	changed.emit()
 
@@ -1124,6 +1188,7 @@ func _fault_done() -> void:
 	state.fault = null
 	_fault_clock = 0.0
 	log_event(sim_now(), "%s korjattu (%d s jäljellä)" % [Faults.INFO[kind].name, roundi(left)])
+	_mission_event({"type": "fault", "left": left}, sim_now())
 	save_game()
 	fault_fixed.emit(kind)
 	changed.emit()

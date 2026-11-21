@@ -32,6 +32,31 @@ kuva Kosmiset kalliot Carinan sumussa (NASA, ESA, CSA, STScI, [CC BY 4.0](https:
 `assets/menu/taustakuva.webp`) hitaasti liukuen ja zoomaten, hiiren mukaan parallaksina ja tähdet tuikkien
 (`shaders/menu_bg.gdshader`).
 
+## Tehtävät ja lennonjohto
+
+Lennonjohto antaa tehtäviä, joista saa tutkimuspisteitä (TP). Pisteillä kehitetään myöhemmin alusta (#46).
+Kerrallaan avoinna on kolme tehtävää, ja ne näkyvät sivupaneelin Tehtävät-osiossa (lajin värinen kortti, ohje ja
+palkkio). Suoritetun tilalle tulee heti uusi. Jos tehtävä ei kiinnosta, siitä voi luopua (Luovu), jolloin lennonjohto
+antaa tilalle toisen, eikä sama tehtävä tule uudelleen. Tehtävälajit (`scripts/missions.gd`):
+
+- **Kiertoradalle**: saavu kohteen kiertoradalle.
+- **Kartoita**: tutki kohde kiertoradalta.
+- **Linkous**: lennä planeetan ohi matkalla toiseen kohteeseen (Venus, Mars, Jupiter, Saturnus).
+- **Ilmajarrutus**: jarruta kaasujättiläisen kaasukehässä matalalle radalle.
+- **Pikalento**: lennä lähtöplaneetalta kohteeseen enintään 80 %:ssa Hohmannin siirron ajasta.
+- **Säästölento**: lennä lähtöplaneetalta kohteeseen enintään 1,12-kertaisella Hohmannin siirron Δv:llä (lähtö,
+  korjaukset ja jarrutus).
+- **Vikapäivystys**: korjaa seuraava aluksen vika niin, että aikaa jää vähintään 30 s (vain, kun häiriöt ovat päällä).
+
+Kohteet avautuvat portaittain: aluksi Kuu, Mars ja Venus, kahden suoritetun tehtävän jälkeen Phobos, Merkurius ja
+Jupiter kuineen, ja viiden jälkeen Saturnus, Uranus, Neptunus ja niiden kuut. Peruspalkkio on portaittain 10, 25 ja
+50 TP, ja vaativammista lajeista saa enemmän. Ensimmäinen tehtävä on aina Kuun kiertorata. Kohdepainikkeissa
+tehtävien kohteet on merkitty salmiakilla ◆, ja reittivaihtoehdossa lukee, jos reitti täyttää linkous-, pika- tai
+säästötehtävän. Uusi ja suoritettu tehtävä ilmoitetaan näkymän yläreunassa ja lennonjohdon kuulutuksella
+("Alpha Alpha One, new mission assigned." ja "Alpha Alpha One, mission accomplished. Well done."), ja ne kirjataan
+lokikirjaan. Tehtävät ja pisteet tallentuvat pelin tilaan (`missions`); vanha tallennus saa tehtävät latauksessa,
+eikä jo tutkittua kohdetta anneta kartoitettavaksi.
+
 ## Äänet
 
 Äänet syntetisoidaan käynnistyksessä (`scripts/sound_synth.gd`, noin 0,2 s), paitsi lennonjohdon puhe.
@@ -43,7 +68,7 @@ Lennonjohdon puhe (`assets/sound/voice/`) on kokonaan samaa ääntä: lähtölas
 "And liftoff! We have liftoff of Alpha Alpha One.", "Alpha Alpha One, tower cleared.", Max Q, kantoraketin
 erotus 2:30 ("Main engine cutoff. Booster separation confirmed.") ja toisen vaiheen sytytys sekä lennon vaiheiden
 kuulutukset Apollo-lentojen Quindar-piippauksin (kiertorata, lähtöpoltto, vaikutuspiiri, saapuminen, jarrutus
-kiertoradalle tai ohilento). Lennonjohto kutsuu alusta **AA-1 Taivaantuli** (AA = AvaruusAlus) sen tunnuksella radioaakkosin:
+kiertoradalle tai ohilento) sekä uusi ja suoritettu tehtävä. Lennonjohto kutsuu alusta **AA-1 Taivaantuli** (AA = AvaruusAlus) sen tunnuksella radioaakkosin:
 "Alpha Alpha One".
 Repliikit soivat jonossa eivätkä päällekkäin, ja aikaa kiihdytettäessä ohitetut jäävät pois. Puhe on tehty
 puhesynteesillä [Kokoro](https://huggingface.co/hexgrad/Kokoro-82M) (ääni `am_michael`, Apache 2.0) ja

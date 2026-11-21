@@ -15,6 +15,7 @@ func _ready() -> void:
 	G.fake_real_ms = START_REAL
 	G.new_game()
 	refresh()
+	_missions()
 	_play()
 	_layout()
 	check("versio Tietoa-ikkunan otsikossa", ui._about.title == "Sisunautti " + VoyageUI.version())
@@ -22,6 +23,20 @@ func _ready() -> void:
 	G.fake_real_ms = -1.0
 	DirAccess.remove_absolute(G.TEST_SAVE_PATH)
 	finish()
+
+
+## Tehtävät (#44) paneelissa: Kuu-tehtävä näkyy, luopuminen antaa uuden ja ilmoitus tulee näkymään.
+func _missions() -> void:
+	check("tehtäväosio paneelissa", find_button("▾ Tehtävät") != null and panel_text().contains("Kiertoradalle: Kuu"))
+	var b := find_button("Luovu")
+	check("Luovu-painike", b != null)
+	if b != null:
+		b.pressed.emit()
+		refresh()
+	check("luovuttu tehtävä poistui", not panel_text().contains("Kiertoradalle: Kuu") and G.missions().active.size() == Missions.ACTIVE)
+	check("ilmoitus uudesta tehtävästä", ui.mission_toast.pending() == 1)
+	G.new_game()
+	refresh()
 
 
 func refresh() -> void:
@@ -87,9 +102,9 @@ func fly_with_buttons() -> void:
 
 
 func pick_target(name: String) -> void:
-	var b := find_button(name)
-	if b == null:
-		b = find_button(name + " •")
+	var b: Button = null
+	for t: String in [name, name + " •", name + " ◆", name + " • ◆"]:
+		b = find_button(t) if b == null else b
 	check("kohdepainike " + name, b != null)
 	if b != null:
 		b.pressed.emit()

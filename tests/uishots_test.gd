@@ -92,6 +92,18 @@ func _run() -> void:
 	advance(45000)
 	var orbit_json: String = G.to_json()
 	await shot("kiertorata-maa")
+	# Tehtäväilmoitukset (#44): suoritettu ja uusi tehtävä.
+	var m: Dictionary = G.missions().active[0]
+	ui.mission_toast.push("TEHTÄVÄ SUORITETTU", Missions.title(m), "+%d tutkimuspistettä" % int(m.points), UiKit.GOOD, "✓")
+	await get_tree().create_timer(1.2).timeout
+	await shot("tehtava-suoritettu")
+	await get_tree().create_timer(MissionToast.HOLD_S + 1.0).timeout
+	var m2: Dictionary = G.missions().active[1]
+	ui.mission_toast.push("UUSI TEHTÄVÄ", Missions.title(m2), Missions.text(m2), MissionUI.color_of(m2), MissionUI.icon_of(m2))
+	await get_tree().create_timer(1.2).timeout
+	await shot("tehtava-uusi")
+	# Pikalento Marsiin näkyy reittivaihtoehdoissa tehtävämerkintänä.
+	G.missions().active[2] = {"id": 99, "kind": "fast", "body": "Mars", "from": "Maa", "limit": 210.0, "points": 20, "t": G.sim_now()}
 	G.begin_search("Mars")
 	G._process(0.0)
 	G._process(0.0)

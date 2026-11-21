@@ -1,7 +1,7 @@
 """Lennonjohdon puheäänet: kaikki repliikit samalla Kokoro-TTS-äänellä (am_michael, Apache 2.0), radiosuodatettuina.
 
 Lähtölaskennan luvut, laukaisu, tornin ohitus, Max Q, vaiheen erotus, toisen vaiheen sytytys sekä lennon vaiheiden
-kuulutukset. Lennonjohto kutsuu alusta tunnuksella AA-1 radioaakkosin ("Alpha Alpha One"). Aluksen nimeä
+kuulutukset sekä tehtävien (#44) antaminen ja suoritus. Lennonjohto kutsuu alusta tunnuksella AA-1 radioaakkosin ("Alpha Alpha One"). Aluksen nimeä
 Taivaantuli ei sanota: englantilainen ääni ei saa sitä kuulostamaan suomelta (kokeiltu äänneasuja ja suomenkielistä
 Piper-ääntä nimelle). Lennon vaiheiden kuulutuksissa Quindar-piippaukset (2525 Hz alussa, 2475 Hz lopussa) kuten
 Apollossa.
@@ -9,7 +9,8 @@ Tulos: assets/sound/voice/<nimi>.ogg (22 050 Hz mono Vorbis).
 
 Ajo (malli ~330 Mt, lataa https://github.com/thewh1teagle/kokoro-onnx/releases/tag/model-files-v1.0):
     uv venv && uv pip install kokoro-onnx soundfile scipy numpy
-    .venv/bin/python tools/make_voice.py <kansio, jossa kokoro-v1.0.onnx ja voices-v1.0.bin>
+    .venv/bin/python tools/make_voice.py <kansio, jossa kokoro-v1.0.onnx ja voices-v1.0.bin> [repliikki...]
+Repliikkien nimet rajaavat ajon niihin (esim. mission_new mission_done); ilman niitä tehdään kaikki.
 """
 import sys
 from pathlib import Path
@@ -40,6 +41,8 @@ LINES |= {
     "arrive": (f"{CALL}, arrival confirmed.", True),
     "capture": (f"{CALL}, capture burn complete. Orbit confirmed.", True),
     "flyby": (f"{CALL}, no capture. Continuing on flyby trajectory.", True),
+    "mission_new": (f"{CALL}, new mission assigned.", True),
+    "mission_done": (f"{CALL}, mission accomplished. Well done.", True),
 }
 
 
@@ -69,7 +72,10 @@ def main() -> None:
     tts = Kokoro(str(models / "kokoro-v1.0.onnx"), str(models / "voices-v1.0.bin"))
     OUT.mkdir(parents=True, exist_ok=True)
     gap = np.zeros(int(0.12 * RATE))
+    only = set(sys.argv[2:])
     for name, (text, quindar) in LINES.items():
+        if only and name not in only:
+            continue
         x, rate = tts.create(text, voice=VOICE, speed=1.0, lang="en-us")
         x = resample_poly(trim(np.asarray(x, dtype=np.float64), rate), RATE, rate)
         x = radio(x) * 0.8
