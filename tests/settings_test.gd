@@ -42,7 +42,7 @@ func _ready() -> void:
 	s.set_speed_unit("jotain")
 	check("tuntematon yksikkö → km/s", s.speed_unit == "kms")
 	check("ikkunan otsikko", ProjectSettings.get_setting("application/config/name") == "Sisunautti")
-	check("versio", ProjectSettings.get_setting("application/config/version") == "1.29.0")
+	check("versio", ProjectSettings.get_setting("application/config/version") == "1.30.0")
 	# Vientiasetusten versiot (Windows, macOS) samat kuin pelin versio.
 	var version: String = ProjectSettings.get_setting("application/config/version")
 	var presets := ConfigFile.new()
