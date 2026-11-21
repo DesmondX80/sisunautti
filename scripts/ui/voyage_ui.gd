@@ -49,6 +49,7 @@ var _phase_key := ""
 var _dirty := true
 var _log_open := false
 var _missions_open := true
+var _site := 0 # valittu laskeutumispaikka (Landing.SITES)
 var mission_toast: MissionToast
 var _burn_open := false
 var _burn_dir := "prograde"
@@ -418,6 +419,15 @@ func _status() -> Control:
 	elif s.flight != null:
 		where_t = "Matkalla %s" % Fmt.ill(s.flight.to)
 		where_s = "lähtö %s" % Fmt.from_text(s.flight.from)
+	elif s.location != null and Landing.is_surface(s.orbit):
+		where_t = "%s pinnalla" % Fmt.gen(s.location)
+		where_s = String(s.orbit.surface.get("site", "")) if String(s.orbit.surface.get("site", "")) != "" else Game._lat_lon_text(s.orbit.surface.lat, s.orbit.surface.lon)
+	elif s.location != null and s.orbit is Dictionary and s.orbit.has("descent"):
+		where_t = "Laskeutumassa %s" % Fmt.ill(s.location)
+		where_s = String(s.orbit.descent.site)
+	elif s.location != null and s.orbit is Dictionary and s.orbit.has("ascent"):
+		where_t = "Nousussa %s kiertoradalle" % Fmt.gen(s.location)
+		where_s = "nousumoottori"
 	elif s.location != null:
 		where_t = "%s kiertoradalla" % Fmt.gen(s.location)
 		where_s = Fmt.orbit_text(s.location, s.orbit)
@@ -741,6 +751,9 @@ func show_restart() -> void:
 func _orbiting() -> void:
 	var s: Dictionary = Game.state
 	var loc: Variant = s.location
+	if s.get("landing") != null or Landing.is_special(s.get("orbit")):
+		_landing_active()
+		return
 	if loc != null:
 		_add(_info_card(loc))
 		_add(_survey_panel())
@@ -755,6 +768,8 @@ func _orbiting() -> void:
 		return
 	if loc == "Maa":
 		_add(_shipyard())
+	if Landing.can_land(loc):
+		_add(_landing_card(loc))
 	_add(UiKit.label("Valitse kohde", "HeadLabel"))
 	var target_btn := func(name: String, on_press: Callable) -> Button:
 		var mission := Missions.targets(Game.missions()).has(name)
@@ -816,6 +831,125 @@ func _orbiting() -> void:
 	_add(_logbook())
 	if not s.log.is_empty():
 		_add(_actions([_restart_button()]))
+
+
+# --- Laskeutuminen (#45) ---
+
+## Laskeutumispaikan valinta ja automaattilasku kiertoradalta.
+func _landing_card(loc: String) -> Control:
+	var s: Dictionary = Game.state
+	var c := UiKit.card()
+	var v: VBoxContainer = c[1]
+	v.add_child(UiKit.label("Laskeutuminen %s" % Fmt.ill(loc), "TitleLabel"))
+	var t := Game.sim_now()
+	var free := Flight.is_free_orbit(s.orbit)
+	var list := UiKit.vbox(4)
+	var plan := {}
+	for i in Landing.SITES.size():
+		var row: Array = Landing.SITES[i]
+		var p := Landing.plan_descent(loc, s.orbit, row[1], row[2], t, row[0])
+		var idx := i
+		var b := UiKit.button("%s · %s" % [row[0], Fmt.dv(p.dvTotal) if not p.is_empty() else "–"], func() -> void:
+			_site = idx
+			_dirty = true, "SegButton")
+		b.toggle_mode = true
+		b.button_pressed = i == _site
+		b.alignment = HORIZONTAL_ALIGNMENT_LEFT
+		list.add_child(b)
+		if i == _site:
+			plan = p
+	v.add_child(list)
+	if free:
+		v.add_child(UiKit.label("Automaattilasku alkaa pysäköintiradalta. Vapaalta radalta voit laskeutua käsin.", "MutedLabel"))
+	elif not plan.is_empty():
+		var rows := [["Radan laskupoltto", "%s · %s" % [Fmt.clock(plan.tDoi), Fmt.dv(plan.dvDoi)]],
+			["Laskeutumispoltto", "%s · %s" % [Fmt.clock(plan.tPdi), Fmt.dv(plan.dvPd)]],
+			["Kosketus", "%s %s" % [Fmt.date(plan.tLand).substr(3), Fmt.clock(plan.tLand)]],
+			["Δv yhteensä", Fmt.dv(plan.dvTotal)]]
+		if float(plan.planeDeg) > 5.0:
+			rows.append(["Ratatason muutos", "%d° (paikka ei ole radan tasossa)" % roundi(plan.planeDeg)])
+		var asc := Landing.plan_ascent(loc, Landing.SITES[_site][1], Landing.SITES[_site][2], plan.tLand)
+		rows.append(["Nousu takaisin", Fmt.dv(asc.dv)])
+		v.add_child(UiKit.rows(rows))
+		var ok: bool = float(plan.dvTotal) + float(asc.dv) <= float(s.fuel)
+		var go := UiKit.button("Aloita automaattilasku", func() -> void: Game.begin_landing(_site), "GoButton")
+		go.disabled = float(plan.dvTotal) > float(s.fuel)
+		v.add_child(_actions([go]))
+		if not ok:
+			v.add_child(UiKit.label("Polttoaine ei riitä laskeutumiseen ja nousuun takaisin.", "WarnLabel"))
+	v.add_child(UiKit.label("Käsin: manuaaliohjaus (M), kaasu ja korkeudenvakain. Kosketuksessa pystynopeus enintään 4 m/s ja vaakanopeus 3 m/s, muuten alus tuhoutuu.", "MutedLabel"))
+	return c[0]
+
+
+## Laskeutuminen käynnissä, pinnalla tai nousu: vaihe, mittarit ja toiminnot.
+func _landing_active() -> void:
+	var s: Dictionary = Game.state
+	var loc: String = s.location
+	var l: Variant = s.get("landing")
+	var o: Variant = s.get("orbit")
+	if Landing.is_surface(o):
+		var sf: Dictionary = o.surface
+		var site: String = sf.get("site", "")
+		_add(UiKit.label("%s pinnalla" % Fmt.gen(loc), "HeadLabel"))
+		_add(UiKit.label("%s%s" % [site + " · " if site != "" else "", Game._lat_lon_text(sf.lat, sf.lon)], "MutedLabel"))
+		var asc := Landing.plan_ascent(loc, sf.lat, sf.lon, Game.sim_now())
+		_add(UiKit.rows([["Nousu kiertoradalle", "%s · %s" % [Fmt.dv(asc.dv), Fmt.short_duration(float(asc.t1) - float(asc.t0))]],
+			["Polttoaine", "%s km/s" % Fmt.num(s.fuel, 2)]]))
+		var up := UiKit.button("Nouse kiertoradalle", Game.start_surface_ascent, "GoButton")
+		up.disabled = float(asc.dv) > float(s.fuel)
+		_add(_actions([up]))
+		_add(UiKit.label("Voit nousta myös käsin: manuaaliohjaus (M) ja kaasu ylöspäin.", "MutedLabel"))
+		_add(_warp_buttons())
+		if Game.notice != "":
+			_add(UiKit.label(Game.notice, "WarnLabel"))
+		_add(_logbook())
+		return
+	_add(_live_label("land_phase", "", "BigLabel"))
+	_add(_live_label("land_sub", "", "MutedLabel"))
+	_add(_stats_grid([["Korkeus", "land_alt"], ["Pystynopeus", "land_vs"], ["Vaakanopeus", "land_vh"], ["Polttoaine", "land_fuel"]]))
+	var buttons := []
+	if l != null and l.phase != "descent":
+		buttons.append(UiKit.button("Peru laskeutuminen", Game.cancel_landing))
+	if l != null and l.phase == "descent":
+		buttons.append(UiKit.button("Ota ohjaus käsiin", Game.take_landing_control))
+	if not buttons.is_empty():
+		_add(_actions(buttons))
+	_add(_warp_buttons())
+	if Game.notice != "":
+		_add(UiKit.label(Game.notice, "WarnLabel"))
+	_add(_logbook())
+
+
+func _update_landing(t: float) -> void:
+	var s: Dictionary = Game.state
+	var loc: Variant = s.location
+	if loc == null or not _live.has("land_phase"):
+		return
+	var o: Variant = s.orbit
+	var l: Variant = s.get("landing")
+	var rel: Dictionary = Flight.parking_state(loc, t, o).rel
+	var alt := Flight.norm(rel.r) - float(Flight.orbit_of(loc).radiusKm)
+	var sp := Landing.surface_speeds(loc, rel.r, rel.v, t)
+	var phase := ""
+	var sub := ""
+	if l != null and l.phase == "armed":
+		phase = "Laskeutuminen: %s" % l.site
+		sub = "Radan laskupolttoon %s" % Fmt.short_duration(float(l.tDoi) - t)
+	elif l != null and l.phase == "coast":
+		phase = "Liuku perikeskukseen"
+		sub = "Laskeutumispolttoon %s · %s" % [Fmt.short_duration(float(l.tPdi) - t), l.site]
+	elif l != null:
+		phase = String(Landing.descent_phase(l, t)[0])
+		sub = "Kosketukseen %s · %s" % [Fmt.short_duration(maxf(0.0, float(l.tLand) - t)), l.site]
+	elif o is Dictionary and o.has("ascent"):
+		phase = "Nousu kiertoradalle"
+		sub = "Kiertoradalla %s" % Fmt.short_duration(maxf(0.0, float(o.ascent.t1) - t))
+	_set_text("land_phase", phase)
+	_set_text("land_sub", sub)
+	_set_text("land_alt", "%s m" % Fmt.num(alt * 1000.0) if alt < 10.0 else "%s km" % Fmt.num(alt, 1))
+	_set_text("land_vs", "%s m/s" % CockpitState.signed(sp.x * 1000.0, 1))
+	_set_text("land_vh", "%s m/s" % Fmt.num(sp.y * 1000.0) if sp.y < 0.1 else "%s km/s" % Fmt.num(sp.y, 2))
+	_set_text("land_fuel", "%s km/s" % Fmt.num(s.fuel, 2))
 
 
 func _waiting() -> void:
@@ -1061,6 +1195,7 @@ func _update() -> void:
 			bar.value = fr
 		var what: String = "Spiraalilasku kiertoradalle" if sv.kind == "spiral" else ("Tankkaus" if s.explored.has(sv.body) else "Kartoitus: %s" % sv.body)
 		_set_text("survey_label", "%s %s %% · valmis %s %s" % [what, Fmt.num(fr * 100.0), Fmt.date(end), Fmt.clock(end)])
+	_update_landing(t)
 	if s.flight == null:
 		return
 	var r := readouts(t)

@@ -51,6 +51,8 @@ const RELIEF := {
 const PHOTO_MIN_PX := 2.0
 ## Kaukaisten kappaleiden pisteiden näkyvyyskerros: kohdekamera (kaukoputki) ei näe niitä.
 const DOT_LAYER := 8
+## Kappaleen pallo lähipinnan ollessa käytössä (#45): pääkamera ei näe sitä (lähipinta korvaa), kaukoputki näkee.
+const SPHERE_NEAR_LAYER := 16
 const HIRES_PX := 200.0
 const HIRES_BACK_PX := 120.0
 
@@ -82,6 +84,10 @@ var nearest_size := 0.0
 ## näkyisi ikkunasta vain pisteenä.
 var focus := ""
 var focus_px := 0.0
+## Kuun lähipinta (#45) ja ohjaamon tiedot sille: moottorin työntö ja onko alus pinnalla.
+var surface: LunarSurface
+var thrust := 0.0
+var landed := false
 
 
 static func to_scene(v: PackedFloat64Array) -> Vector3:
@@ -146,6 +152,8 @@ func _ready() -> void:
 	noise_tex.noise = FastNoiseLite.new()
 	_build_stars()
 	_build_sun()
+	surface = LunarSurface.new()
+	add_child(surface)
 	for name in Planets.NAMES:
 		var info := Planets.info(name)
 		_build_body(name, info.radius_km, info.color, false)
@@ -449,6 +457,11 @@ func update(ship_km: PackedFloat64Array, t: float, px_per_rad: float) -> void:
 		var sun_local := inv * to_sun
 		var body_sun_d := Flight.norm(body_km) * KM
 		var intensity := 1.5 * clampf(pow(AU_M / body_sun_d, 0.5), 0.3, 1.5) * dim
+		if Landing.can_land(name):
+			var em: ShaderMaterial = b.mat
+			var earth_km: PackedFloat64Array = Flight.body_state(Flight.MOONS[name].parent, t).r
+			surface.update_surface(b, -dir * d, d, to_sun, to_scene(Flight.sub(earth_km, ship_km)).normalized(), intensity,
+				float(em.get_shader_parameter("earthshine")) if em.get_shader_parameter("earthshine") != null else 0.0, thrust, landed, sunlit)
 		var mat: ShaderMaterial = b.mat
 		mat.set_shader_parameter("sun_local", sun_local)
 		mat.set_shader_parameter("sun_intensity", intensity)

@@ -1,7 +1,7 @@
 """Lennonjohdon puheäänet: kaikki repliikit samalla Kokoro-TTS-äänellä (am_michael, Apache 2.0), radiosuodatettuina.
 
 Lähtölaskennan luvut, laukaisu, tornin ohitus, Max Q, vaiheen erotus, toisen vaiheen sytytys sekä lennon vaiheiden
-kuulutukset sekä tehtävien (#44) antaminen ja suoritus. Lennonjohto kutsuu alusta tunnuksella AA-1 radioaakkosin ("Alpha Alpha One"). Aluksen nimeä
+kuulutukset sekä tehtävien (#44) antaminen ja suoritus ja laskeutuminen (#45). Lennonjohto kutsuu alusta tunnuksella AA-1 radioaakkosin ("Alpha Alpha One"). Aluksen nimeä
 Taivaantuli ei sanota: englantilainen ääni ei saa sitä kuulostamaan suomelta (kokeiltu äänneasuja ja suomenkielistä
 Piper-ääntä nimelle). Lennon vaiheiden kuulutuksissa Quindar-piippaukset (2525 Hz alussa, 2475 Hz lopussa) kuten
 Apollossa.
@@ -43,6 +43,9 @@ LINES |= {
     "flyby": (f"{CALL}, no capture. Continuing on flyby trajectory.", True),
     "mission_new": (f"{CALL}, new mission assigned.", True),
     "mission_done": (f"{CALL}, mission accomplished. Well done.", True),
+    "descent": (f"{CALL}, you are go for powered descent.", True),
+    "touchdown": (f"{CALL}, touchdown confirmed. Welcome to the surface.", True),
+    "surface_liftoff": (f"{CALL}, liftoff confirmed. Ascent engine looks good.", True),
 }
 
 

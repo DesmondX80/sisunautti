@@ -87,6 +87,8 @@ static func make() -> Dictionary:
 			["NOPEUS", speed_rows],
 			[String(name).to_upper() if name != null else "POLTTOAINE", [[status, 30], ["polttoaine %s km/s" % Fmt.num(s.fuel, 2), 26, MUTED]], fuel_frac],
 		]}, true)
+		if name != null and Landing.is_special(s.orbit):
+			_landing(base, name, ship, t, fuel_frac)
 		return base
 	var ship: Dictionary
 	if f != null:
@@ -137,6 +139,48 @@ static func _readouts(t: float) -> Dictionary:
 		near = {"name": tr.from, "speed": 0.0}
 	return {"met": "T+ %s" % Flight.fmt_duration(t - float(f.depart)) if f != null else "T− %s" % Flight.fmt_duration(float(tr.depart) - t),
 		"speed": speed, "near": near, "dist": Fmt.km(Flight.surface_distance(_view_r(f, ship, t), tr.to, t))}
+
+
+## Laskeutuminen, pinnalla ja nousu (#45): asento (ikkunan keskikohta vaakatasossa menosuuntaan, hieman alas),
+## moottorin työntö vaiheen mukaan ja näytöillä korkeus metreinä sekä pysty- ja vaakanopeus pinnan suhteen.
+static func _landing(base: Dictionary, name: String, ship: Dictionary, t: float, fuel_frac: float) -> void:
+	var o: Dictionary = Game.state.orbit
+	var rel: Dictionary = ship.rel
+	var att := Landing.attitude(name, o, rel, t)
+	# Aluksen kanta (nose) on AIM_RAISE ikkunan keskikohdan alapuolella.
+	var n: PackedFloat64Array = att.nose
+	var u: PackedFloat64Array = att.up
+	base.nose = Flight.sub(Flight.scale(n, cos(AIM_RAISE)), Flight.scale(u, sin(AIM_RAISE)))
+	base.up = Flight.add(Flight.scale(u, cos(AIM_RAISE)), Flight.scale(n, sin(AIM_RAISE)))
+	base.erase("heading")
+	var alt := Flight.norm(rel.r) - float(Flight.orbit_of(name).radiusKm)
+	var sp := Landing.surface_speeds(name, rel.r, rel.v, t)
+	var title := "PINNALLA"
+	var phase := ""
+	var thrust := 0.0
+	if o.has("descent"):
+		var ph: Array = Landing.descent_phase(o.descent, t)
+		title = "LASKEUTUMINEN"
+		phase = String(ph[0]).to_upper()
+		thrust = float(ph[1])
+	elif o.has("ascent"):
+		title = "NOUSU"
+		phase = "NOUSUMOOTTORI"
+		thrust = 1.0
+	else:
+		var site: String = o.surface.get("site", "")
+		phase = site.to_upper() if site != "" else Fmt.gen(name).to_upper() + " PINTA"
+	base.thrust = maxf(float(base.thrust), thrust)
+	base.shake = maxf(float(base.shake), thrust * 0.18)
+	base.phase = phase
+	base.ground = {"body": name, "alt": alt}
+	var alt_text := "%s m" % Fmt.num(alt * 1000.0) if alt < 10.0 else "%s km" % Fmt.num(alt, 1)
+	base.screens = [
+		[title, [[Fmt.clock(t), 36], [phase, 26, WARM], [Fmt.date(t), 24, MUTED]]],
+		["KORKEUS", [[alt_text, 44], ["pysty %s m/s" % signed(sp.x * 1000.0, 1), 28],
+			["vaaka %s" % ("%s m/s" % Fmt.num(sp.y * 1000.0) if sp.y < 0.1 else "%s km/s" % Fmt.num(sp.y, 2)), 26, MUTED]]],
+		[Fmt.gen(name).to_upper() + " LASKU" if title != "PINNALLA" else name.to_upper(), [["polttoaine %s km/s" % Fmt.num(Game.state.fuel, 2), 28]], fuel_frac],
+	]
 
 
 ## Aluksen paikka näkymässä (lennolla saapumis- ja lähtöhyperbelit, #41): etäisyydet lasketaan tästä, jotta

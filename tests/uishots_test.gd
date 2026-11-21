@@ -225,3 +225,31 @@ func _run() -> void:
 	G.new_game()
 	await _frames(3)
 	check("uusi peli tuhon jälkeen", not ui.game_over.visible and not ui.fault_panel.visible)
+	await _landing()
+
+
+## Laskeutuminen Kuuhun (#45): paikan valinta kiertoradalta, laskeutumispoltto ja pinnalla.
+func _landing() -> void:
+	var t := START_REAL + 86400000.0
+	G.state.pad = false
+	G.state.location = "Kuu"
+	G.state.orbit = {"epoch": t, "arg": 0.0}
+	G.state.explored.append("Kuu")
+	G.fake_real_ms = t
+	G.state.simTime = t
+	G.state.realTime = t
+	G.load_game_from_state()
+	ui._missions_open = false
+	ui._dirty = true
+	await shot("kuu-laskeutuminen", true)
+	G.begin_landing(0)
+	var l: Dictionary = G.state.landing
+	G.anchor(float(l.tHover) - 90000.0, 0)
+	G.tick()
+	ui.cockpit_view.snap_attitude()
+	await shot("kuu-laskeutumispoltto")
+	G.anchor(float(l.tLand) + 1000.0, 0)
+	G.tick()
+	ui.cockpit_view.snap_attitude()
+	await shot("kuu-pinnalla")
+	ui._missions_open = true

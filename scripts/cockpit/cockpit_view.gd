@@ -140,6 +140,7 @@ func _ready() -> void:
 	ship.add_child(head)
 	camera = Camera3D.new()
 	camera.near = 0.02
+	camera.cull_mask = 0xFFFFF & ~Space.SPHERE_NEAR_LAYER
 	camera.far = 1.2e5
 	camera.fov = 70.0
 	camera.attributes = cam_attr
@@ -754,7 +755,7 @@ func _build_rear() -> void:
 	attr.exposure_multiplier = 0.8
 	rear_cam.attributes = attr
 	# Ohjaamon sisäosat (lasi, plasma, häikäisy) eivät näy ulkokameraan.
-	rear_cam.cull_mask = 0xFFFFF & ~Cabin.INTERIOR_LAYER
+	rear_cam.cull_mask = 0xFFFFF & ~Cabin.INTERIOR_LAYER & ~Space.SPHERE_NEAR_LAYER
 	rear_view.add_child(rear_cam)
 	tele_env = env.duplicate()
 	tele_env.background_mode = Environment.BG_COLOR
@@ -846,7 +847,7 @@ func set_cam_mode(mode: String) -> void:
 	rear_cam.near = camera.near
 	rear_cam.fov = PAN_FOV if mode == "360" else 62.0
 	rear_cam.environment = tele_env if tele else null
-	rear_cam.cull_mask = 0xFFFFF & ~Cabin.INTERIOR_LAYER & ~(Space.DOT_LAYER if tele else 0)
+	rear_cam.cull_mask = 0xFFFFF & ~Cabin.INTERIOR_LAYER & ~(Space.DOT_LAYER if tele else Space.SPHERE_NEAR_LAYER)
 	if not tele:
 		space.focus = ""
 	rear_view.render_target_update_mode = SubViewport.UPDATE_ONCE
@@ -1316,6 +1317,7 @@ func apply_quality(level: int) -> void:
 	space.atmo_samples = [4, 6, 10, 16][level]
 	space.surface_detail = [0.0, 0.7, 1.0, 1.0][level]
 	space.shadow_steps = [6, 10, 16, 24][level]
+	space.surface.set_quality(level)
 
 
 func _ecl_to_scene(v: Variant) -> Vector3:
@@ -1331,6 +1333,8 @@ func _process(delta: float) -> void:
 	var t: float = s.t
 	var ship_km: PackedFloat64Array = s.ship.r
 	var px_per_rad := size.y / 2.0 / tan(deg_to_rad(camera.fov) / 2.0)
+	space.thrust = float(s.get("thrust", 0.0))
+	space.landed = Landing.is_surface(Game.state.get("orbit"))
 	space.update(ship_km, t, px_per_rad)
 	_attitude(s, delta)
 	tower.update(s)

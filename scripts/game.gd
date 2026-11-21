@@ -44,6 +44,11 @@ signal ship_destroyed(kind: String)
 ## Lennonjohdon tehtävät (#44): uusi tehtävä annettu tai tehtävä suoritettu.
 signal mission_issued(m: Dictionary)
 signal mission_completed(m: Dictionary)
+## Laskeutuminen (#45): radan laskupoltto, laskeutumispoltto, kosketus pintaan ja nousu pinnalta.
+signal landing_burn(body: String)
+signal powered_descent(body: String)
+signal touchdown(body: String)
+signal surface_liftoff(body: String)
 
 ## Tallennusavaimet ovat peräisin OmaAvaruuden Avaruuslennosta; niitä ei nimetä uudelleen (selaintallennusten tuonti).
 const KEY := "avaruuslento"
@@ -204,10 +209,17 @@ func set_warp(i: int) -> void:
 func limit_warp(t: float) -> void:
 	var plan: Variant = state.plan
 	var f: Variant = state.flight
-	if warp_index() == 0 or not (f != null or (plan != null and plan.get("armed", false))):
+	var l: Variant = state.get("landing")
+	var o: Variant = state.get("orbit")
+	var asc: bool = o is Dictionary and o.has("ascent")
+	if warp_index() == 0 or not (f != null or (plan != null and plan.get("armed", false)) or l != null or asc):
 		return
 	var events: Array[float] = []
-	if f != null:
+	if l != null:
+		events = [float(l.tDoi), float(l.tPdi), float(l.tLand)]
+	elif asc:
+		events = [float(o.ascent.t1)]
+	elif f != null:
 		var fb: Variant = f.get("flyby")
 		events = [fb.t if fb is Dictionary and not fb.get("done", false) else INF, float(f.soi), float(f.arrive)]
 	else:
@@ -224,7 +236,11 @@ func limit_warp(t: float) -> void:
 	if i == warp_index():
 		return
 	var what := "lähtöpoltto"
-	if f != null:
+	if l != null:
+		what = "radan laskupoltto" if next == float(l.tDoi) else ("laskeutumispoltto" if next == float(l.tPdi) else "kosketus pintaan")
+	elif asc:
+		what = "kiertorata"
+	elif f != null:
 		var fb: Variant = f.get("flyby")
 		if fb is Dictionary and next == float(fb.t):
 			what = "ohilento %s ohi" % Fmt.gen(fb.body)
@@ -257,7 +273,7 @@ func fresh() -> Dictionary:
 	return {"v": 1, "location": "Maa", "pad": true, "ascent": null, "orbit": null, "lowOrbit": null, "drift": null,
 		"ship": "kemiallinen", "fuel": Flight.FUEL_KMS, "simTime": now, "realTime": now, "warp": 0,
 		"plan": null, "flight": null, "survey": null, "explored": ["Maa"], "flights": [], "log": [], "fault": null, "destroyed": null,
-		"missions": Missions.fresh()}
+		"missions": Missions.fresh(), "landing": null}
 
 
 func new_game() -> void:
@@ -460,6 +476,8 @@ func reach_orbit() -> void:
 
 ## Laukaisuikkunoiden haku kohteeseen; haku etenee ruutu kerrallaan (_process).
 func begin_search(to: String) -> void:
+	if Landing.is_special(state.get("orbit")) or state.get("landing") != null:
+		return
 	target = to
 	options = []
 	options_ready = false
@@ -477,6 +495,8 @@ func finish_search() -> void:
 
 ## Kuu tai paluu emoplaneetalle: paikallinen siirto lähtee heti, joten vaihtoehtoja on yksi.
 func local_option(to: String) -> void:
+	if Landing.is_special(state.get("orbit")) or state.get("landing") != null:
+		return
 	search = null
 	target = to
 	var tr := Flight.local_transfer(state.location, to, sim_now() + 60000.0)
@@ -730,6 +750,9 @@ func can_manual_burn() -> bool:
 		return true
 	var sv: Variant = state.get("survey")
 	var p: Variant = state.get("plan")
+	var o: Variant = state.get("orbit")
+	if Landing.is_special(o) and not Landing.is_surface(o):
+		return false
 	return state.location != null and not state.pad and state.ascent == null and not (sv != null and sv.kind == "spiral") \
 		and not (p != null and p.get("spiralStarted", false))
 
@@ -776,6 +799,8 @@ func _flush_manual(done: bool, notify: bool = true) -> void:
 		state.fuel = maxf(0.0, float(state.fuel) - _manual_cost)
 		if state.get("flight") != null:
 			state.flight = Flight.apply_burn_vector(state.flight, now, _manual_dv)
+		elif state.location != null and Landing.is_surface(state.orbit):
+			_lift_manual(now, _manual_dv)
 		elif state.location != null:
 			_burn_orbit(now, _manual_dv)
 		else:
@@ -814,6 +839,9 @@ func _burn_orbit(now: float, dv: PackedFloat64Array) -> void:
 		options = []
 		options_ready = false
 		_set_notice("Lähtö peruttu: rata muuttui")
+	if state.get("landing") != null:
+		state.landing = null
+		_set_notice("Automaattilasku peruttu: rata muuttui")
 
 
 ## Vapaa rata kappaleen ympärillä: törmäys pintaan tuhoaa aluksen, ja pakoradalla vaikutuspiirin rajalla alus
@@ -841,6 +869,9 @@ func _free_orbit_step(t: float) -> void:
 		var period := INF if shape.escape else TAU * sqrt(pow(_semi_major(name, rel), 3.0) / float(Flight.orbit_of(name).mu))
 		passed = (float(_free_prev.vsp) < 0.0 and vsp >= 0.0) or dt_s >= period
 	_free_prev = {"t": t, "vsp": vsp, "orbit": state.orbit}
+	if rn <= float(Flight.orbit_of(name).radiusKm) and not passed and Landing.can_land(name):
+		_contact(name, t, rel)
+		return
 	if rn <= float(Flight.orbit_of(name).radiusKm) or passed:
 		destroy_ship(("Alus syöksyi %s kaasukehään." if Flight.is_gas_giant(name) else "Alus syöksyi %s pintaan.") % Fmt.gen(name))
 		return
@@ -1020,7 +1051,7 @@ func capture(aero: bool = false) -> void:
 # --- Perillä ---
 
 func start_survey() -> void:
-	if state.location == null or state.survey != null:
+	if state.location == null or state.survey != null or Landing.is_special(state.get("orbit")) or state.get("landing") != null:
 		return
 	state.survey = {"kind": "survey", "body": state.location, "start": sim_now()}
 	save_game()
@@ -1125,6 +1156,197 @@ func discard_mission(id: int) -> void:
 	_refill_missions(true)
 	save_game()
 	changed.emit()
+
+
+# --- Laskeutuminen (#45) ---
+
+func is_landed() -> bool:
+	return state.location != null and Landing.is_surface(state.get("orbit"))
+
+
+## Automaattilasku paikkaan site (Landing.SITES-indeksi) pysäköintiradalta. Palauttaa false, jos se ei onnistu.
+func begin_landing(site: int) -> bool:
+	var loc: Variant = state.location
+	if not Landing.can_land(loc) or state.get("landing") != null or state.plan != null or state.survey != null:
+		return false
+	var row: Array = Landing.SITES[site]
+	var plan := Landing.plan_descent(loc, state.orbit, row[1], row[2], sim_now(), row[0])
+	if plan.is_empty():
+		_set_notice("Automaattilasku alkaa pysäköintiradalta.")
+		changed.emit()
+		return false
+	if float(plan.dvTotal) > float(state.fuel):
+		_set_notice("Polttoaine ei riitä laskeutumiseen (%s)." % Fmt.dv(plan.dvTotal))
+		changed.emit()
+		return false
+	state.landing = plan
+	options = []
+	options_ready = false
+	target = ""
+	_set_notice("")
+	log_event(sim_now(), "Laskeutuminen suunniteltu: %s, radan laskupoltto %s" % [row[0], Fmt.clock(plan.tDoi)])
+	save_game()
+	changed.emit()
+	return true
+
+
+## Automaattilaskun peruminen ennen laskeutumispolttoa (liukuradalla alus palaa pysäköintiradalle samalla Δv:llä).
+func cancel_landing() -> void:
+	var l: Variant = state.get("landing")
+	if l == null or l.phase == "descent":
+		return
+	if l.phase == "coast":
+		# Ellipsiltä takaisin pysäköintiradalle apokeskuksessa: sama Δv kuin laskupoltossa.
+		state.fuel = maxf(0.0, float(state.fuel) - float(l.dvDoi))
+		state.orbit = {"epoch": sim_now(), "arg": _orbit_angle_now()}
+		log_event(sim_now(), "Laskeutuminen keskeytetty, paluu pysäköintiradalle (Δv %s)" % Fmt.dv(l.dvDoi))
+	state.landing = null
+	save_game()
+	changed.emit()
+
+
+func _orbit_angle_now() -> float:
+	var rel: Dictionary = Flight.parking_state(state.location, sim_now(), state.orbit).rel
+	return atan2(rel.r[1], rel.r[0])
+
+
+## Ohjaus käsiin laskeutumispolton aikana: rata muuttuu vapaaksi radaksi nykyisestä tilasta, ja lentäjä tekee
+## loppulaskun itse (manuaaliohjaus, korkeudenvakain). Jäljellä olevaa polttoa ei veloiteta.
+func take_landing_control() -> void:
+	var l: Variant = state.get("landing")
+	if l == null or l.phase != "descent":
+		return
+	var t := sim_now()
+	var rel: Dictionary = Flight.parking_state(state.location, t, state.orbit).rel
+	var frac := clampf((t - float(l.tPdi)) / maxf(float(l.tLand) - float(l.tPdi), 1.0), 0.0, 1.0)
+	state.fuel = maxf(0.0, float(l.fuel0) - float(l.dvPd) * frac)
+	state.orbit = {"epoch": t, "arg": atan2(rel.r[1], rel.r[0]), "rel": {"r": rel.r, "v": rel.v}}
+	state.landing = null
+	log_event(t, "Lentäjä otti ohjauksen %s korkeudella" % Fmt.km(Flight.norm(rel.r) - float(Flight.orbit_of(state.location).radiusKm)))
+	save_game()
+	changed.emit()
+
+
+func _landing_step(t: float) -> void:
+	var l: Variant = state.get("landing")
+	var name: Variant = state.location
+	if l != null and name != null:
+		if l.phase == "armed" and t >= float(l.tDoi):
+			state.fuel = maxf(0.0, float(state.fuel) - float(l.dvDoi))
+			state.orbit = Landing.doi_orbit(name, l)
+			l.phase = "coast"
+			burn_at = real_ms() - (BURN_SHAKE_MS - 2500.0)
+			log_event(l.tDoi, "Radan laskupoltto: perikeskus %s km korkeudella (Δv %s)" % [Fmt.num(Landing.PDI_ALT_KM), Fmt.dv(l.dvDoi)])
+			save_game()
+			landing_burn.emit(name)
+			changed.emit()
+		if l.phase == "coast" and t >= float(l.tPdi):
+			l.phase = "descent"
+			l.fuel0 = float(state.fuel)
+			state.orbit = {"descent": l.duplicate()}
+			log_event(l.tPdi, "Laskeutumispoltto alkoi: %s" % l.site)
+			save_game()
+			powered_descent.emit(name)
+			changed.emit()
+		if l.phase == "descent":
+			var frac := clampf((t - float(l.tPdi)) / maxf(float(l.tLand) - float(l.tPdi), 1.0), 0.0, 1.0)
+			state.fuel = maxf(0.0, float(l.fuel0) - float(l.dvPd) * frac)
+			if t >= float(l.tLand):
+				_land(name, l.tLand, l.lat, l.lon, l.site, "Laskeutuminen: %s, %s (Δv %s)" % [l.site, _lat_lon_text(l.lat, l.lon), Fmt.dv(l.dvTotal)])
+	var o: Variant = state.get("orbit")
+	if name != null and o is Dictionary and o.has("ascent") and t >= float(o.ascent.t1):
+		var a: Dictionary = o.ascent
+		state.orbit = {"epoch": a.t1, "arg": a.arg}
+		log_event(a.t1, "Nousu valmis: %s kiertoradalla %s km korkeudella" % [Fmt.gen(name), Fmt.num(float(Flight.orbit_of(name).periKm) - float(Flight.orbit_of(name).radiusKm))])
+		anchor(a.t1, 0)
+		save_game()
+		orbit_reached.emit(name)
+		changed.emit()
+
+
+func _lat_lon_text(lat: float, lon: float) -> String:
+	return "%s° %s, %s° %s" % [Fmt.num(absf(lat), 2), "P" if lat >= 0.0 else "E", Fmt.num(absf(lon), 2), "I" if lon >= 0.0 else "L"]
+
+
+## Kosketus pintaan: pinnalla lat/lon, kello pysähtyy.
+func _land(name: String, t: float, lat: float, lon: float, site: String, text: String) -> void:
+	state.orbit = {"surface": {"lat": lat, "lon": lon, "site": site}}
+	state.landing = null
+	state.lowOrbit = null
+	_sync_low_orbit()
+	manual_throttle = 0.0
+	log_event(t, text)
+	anchor(t, 0)
+	_set_notice("")
+	touchdown.emit(name)
+	_mission_event({"type": "land", "body": name}, t)
+	save_game()
+	changed.emit()
+
+
+## Vapaa rata osui pintaan (#45): pehmeä kosketus (pysty- ja vaakanopeus pinnan suhteen pieniä) on laskeutuminen,
+## kova kosketus tuhoaa aluksen.
+func _contact(name: String, t: float, rel: Dictionary) -> void:
+	var sp := Landing.surface_speeds(name, rel.r, rel.v, t)
+	var ll := Landing.lat_lon(name, rel.r, t)
+	if -sp.x <= Landing.SAFE_VS and sp.y <= Landing.SAFE_VH:
+		_flush_manual(true)
+		var site := _nearest_site(ll)
+		_land(name, t, ll.x, ll.y, site, "Laskeutuminen käsin: %s%s (pystynopeus %s m/s, vaakanopeus %s m/s)" % [
+			_lat_lon_text(ll.x, ll.y), ", " + site if site != "" else "", Fmt.num(-sp.x * 1000.0, 1), Fmt.num(sp.y * 1000.0, 1)])
+	else:
+		destroy_ship("Alus törmäsi %s pintaan %s m/s pystynopeudella ja %s m/s vaakanopeudella." % [Fmt.gen(name),
+			Fmt.num(-sp.x * 1000.0), Fmt.num(sp.y * 1000.0)])
+
+
+## Lähin nimetty laskeutumispaikka (alle 50 km), muuten tyhjä.
+func _nearest_site(ll: Vector2) -> String:
+	var best := ""
+	var best_d := INF
+	var p := Vector3(cos(deg_to_rad(ll.x)) * cos(deg_to_rad(ll.y)), cos(deg_to_rad(ll.x)) * sin(deg_to_rad(ll.y)), sin(deg_to_rad(ll.x)))
+	for row: Array in Landing.SITES:
+		var q := Vector3(cos(deg_to_rad(row[1])) * cos(deg_to_rad(row[2])), cos(deg_to_rad(row[1])) * sin(deg_to_rad(row[2])), sin(deg_to_rad(row[1])))
+		var d := p.angle_to(q) * 1737.4
+		if d < best_d:
+			best_d = d
+			best = row[0]
+	return best if best_d < 50.0 else ""
+
+
+## Automaattinen nousu pinnalta pysäköintiradalle. Palauttaa false, jos polttoaine ei riitä.
+func start_surface_ascent() -> bool:
+	if not is_landed():
+		return false
+	var sf: Dictionary = state.orbit.surface
+	var t := sim_now()
+	var a := Landing.plan_ascent(state.location, sf.lat, sf.lon, t)
+	if float(a.dv) > float(state.fuel):
+		_set_notice("Polttoaine ei riitä nousuun kiertoradalle (%s)." % Fmt.dv(a.dv))
+		changed.emit()
+		return false
+	state.fuel = float(state.fuel) - float(a.dv)
+	state.orbit = {"ascent": a}
+	burn_at = real_ms()
+	log_event(t, "Nousu pinnalta: %s (Δv %s)" % [sf.get("site", "") if String(sf.get("site", "")) != "" else _lat_lon_text(sf.lat, sf.lon), Fmt.dv(a.dv)])
+	save_game()
+	surface_liftoff.emit(state.location)
+	changed.emit()
+	return true
+
+
+## Manuaalinen nousu pinnalta: kaasu nostaa aluksen vapaalle radalle pinnan nopeudesta.
+func _lift_manual(now: float, dv: PackedFloat64Array) -> void:
+	var name: String = state.location
+	var sf: Dictionary = state.orbit.surface
+	var s := Landing.surface_rel(name, sf.lat, sf.lon, now, 0.002)
+	var up := Flight.scale(s.r, 1.0 / Flight.norm(s.r))
+	# Pinta kannattelee: alaspäin suuntautuva osa työnnöstä ei liikuta alusta.
+	var dv_up := minf(Flight.dot(dv, up), 0.0)
+	var v := Flight.add(s.v, Flight.sub(dv, Flight.scale(up, dv_up)))
+	state.orbit = {"epoch": now, "arg": atan2(s.r[1], s.r[0]), "rel": {"r": s.r, "v": v}}
+	_free_prev = {}
+	log_event(now, "Nousu pinnalta käsin")
+	surface_liftoff.emit(name)
 
 
 # --- Pelisilmukka ---
@@ -1285,6 +1507,7 @@ func tick() -> void:
 	var plan: Variant = state.plan
 	if plan != null and plan.get("armed", false) and t >= float(plan.depart):
 		launch()
+	_landing_step(t)
 	limit_warp(t)
 	_free_orbit_step(t)
 	var f: Variant = state.flight

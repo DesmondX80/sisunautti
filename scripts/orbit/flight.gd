@@ -730,7 +730,10 @@ static func parking_state(name: String, time: float, orbit: Variant = null) -> D
 	var c := cos(arg)
 	var s := sin(arg)
 	var rel: Dictionary
-	if is_free_orbit(orbit):
+	if Landing.is_special(orbit):
+		# Laskeutuminen, pinnalla tai nousu (#45).
+		rel = Landing.rel_state(name, orbit, time)
+	elif is_free_orbit(orbit):
 		# Manuaalipolttojen muuttama rata: paikka ja nopeus kappaleen suhteen hetkellä epoch.
 		var rel0: Dictionary = orbit.rel
 		rel = propagate(PackedFloat64Array(rel0.r), PackedFloat64Array(rel0.v), (time - epoch) / 1000.0, mu)

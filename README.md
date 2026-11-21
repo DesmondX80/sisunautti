@@ -53,6 +53,44 @@ pieni ja Neptunukselta häikäisevä tähti. Myös ohjaamon valo himmenee ulkopl
 potenssiin 0,35, koska silmä mukautuu). Kun planeetta tai kuu pimentää Auringon, häikäisy sammuu ja reunan takaa
 näkyy korona virtauksineen.
 
+## Laskeutuminen Kuuhun
+
+Kuun kiertoradalta voi laskeutua pinnalle ja nousta takaisin (`scripts/orbit/landing.gd`). Sivupaneelissa valitaan
+laskeutumispaikka (Apollo 11, 12, 15 ja 17 -paikat, Kopernikuksen ja Tychon kraatterit sekä Shackleton
+etelänavalla). Jokaiselle näkyy Δv ja polttojen ajat. **Automaattilasku** etenee kuten Apollossa:
+
+1. **Radan laskupoltto** pysäköintiradalla: alus siirtyy ellipsille, jonka perikeskus on 15 km korkeudella
+   laskeutumispaikan edellä.
+2. **Liuku** puolikas ellipsiä (noin tunti).
+3. **Laskeutumispoltto** perikeskuksessa: jarrutus- ja lähestymisvaihe isoympyrää pitkin paikan ylle tasaisella
+   hidastuvuudella (15 km → 100 m) ja pystylasku 100 m:stä pintaan (50 s). Kesto noin 10 minuuttia.
+
+Δv lasketaan radoista: laskupoltto, nopeus perikeskuksessa, painovoimahäviöt ja suunnanmuutos, jos paikka ei ole
+pysäköintiradan tasossa. Apollo 11 -paikkaan laskeutuminen vie 2,15 km/s ja nousu 1,97 km/s (Apollossa noin 2,1 ja
+1,9). Napa-alueelle tarvitaan 90°:n ratatason muutos, joten se maksaa 5,8 km/s. Laskeutumisen voi perua ennen
+laskeutumispolttoa, ja laskeutumispolton aikana ohjauksen voi ottaa käsiin (**Ota ohjaus käsiin**).
+
+**Käsin** laskeudutaan manuaaliohjauksella (M), kaasulla ja korkeudenvakaimella mistä tahansa radalta. Kosketuksessa
+pystynopeus saa olla enintään 4 m/s ja vaakanopeus 3 m/s pinnan suhteen; muuten alus tuhoutuu. Pinnalla lennonjohto
+kuittaa kosketuksen, ja lokikirjaan kirjataan paikka (leveys ja pituus, lähin nimetty paikka). **Nousu** on
+automaattinen (Nouse kiertoradalle: isoympyrää pitkin 100 km:n pysäköintiradalle noin 6,5 minuutissa) tai käsin
+kaasulla ylöspäin. Laskeutuessa, pinnalla ja noustessa tila on pelin tallennuksessa (`orbit` = `descent`, `surface`
+tai `ascent`, `landing` = automaattilaskun suunnitelma). Kuun pintakoordinaatisto pyörii Kuun mukana: pituusaste 0
+osoittaa Maahan.
+
+Ohjaamosta näkyy Kuun **lähipinta** (`scripts/cockpit/lunar_surface.gd`, `shaders/lunar_surface.gdshader`), kun
+alus on alle 80 km korkeudella. Se on säteittäinen verkko aluksen alta horisonttiin, ja siinä on:
+
+- LOLA-korkeusmallin kohokuvio ja viidessä koossa (1,2 km … 5 m) tuotetut kraatterit reunavalleineen
+- varjot, jotka lasketaan maastoa pitkin Aurinkoa kohti (matala Aurinko luo pitkiä varjoja)
+- pikselitason pienet kraatterit, kivet ja regoliitin rakeisuus
+- Lommel–Seeliger-tyyppinen heijastus vastakkaisuuskirkastumineen
+- aluksen varjo pinnalla
+- moottorin alta lentävä pöly ja tummuva puhallusalue matalalla
+
+Kaukoputki näyttää edelleen Kuun pallon. Näytöillä on korkeus metreinä sekä pysty- ja vaakanopeus, ja lennonjohto
+kuuluttaa laskeutumispolton, kosketuksen ja nousun.
+
 ## Tehtävät ja lennonjohto
 
 Lennonjohto antaa tehtäviä, joista saa tutkimuspisteitä (TP). Pisteillä kehitetään myöhemmin alusta (#46).
@@ -67,6 +105,7 @@ antaa tilalle toisen, eikä sama tehtävä tule uudelleen. Tehtävälajit (`scri
 - **Pikalento**: lennä lähtöplaneetalta kohteeseen enintään 80 %:ssa Hohmannin siirron ajasta.
 - **Säästölento**: lennä lähtöplaneetalta kohteeseen enintään 1,12-kertaisella Hohmannin siirron Δv:llä (lähtö,
   korjaukset ja jarrutus).
+- **Laskeutuminen**: laskeudu Kuun pinnalle.
 - **Vikapäivystys**: korjaa seuraava aluksen vika niin, että aikaa jää vähintään 30 s (vain, kun häiriöt ovat päällä).
 
 Kohteet avautuvat portaittain: aluksi Kuu, Mars ja Venus, kahden suoritetun tehtävän jälkeen Phobos, Merkurius ja

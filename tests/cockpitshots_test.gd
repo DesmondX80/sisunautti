@@ -79,7 +79,8 @@ func shot(name: String, settle: int = 40) -> void:
 	await _frames(settle)
 	var path := dir.path_join("%s-%s.png" % [tag, name])
 	get_viewport().get_texture().get_image().save_png(path)
-	report.append("%s: sunlit %.2f, aurinko %.3f AU, lähin %s" % [name, cv.space.sunlit, cv.space.sun_distance / Space.AU_M, cv.space.nearest.get("name", "-")])
+	report.append("%s: sunlit %.2f, aurinko %.3f AU, lähin %s%s" % [name, cv.space.sunlit, cv.space.sun_distance / Space.AU_M, cv.space.nearest.get("name", "-"),
+		", lähipinta: Aurinko %.1f°, korkeus %.3f km" % [cv.space.surface.sun_elev, cv.space.surface.alt_km] if cv.space.surface.active else ""])
 	check("kuva " + name, FileAccess.file_exists(path))
 
 
@@ -444,6 +445,9 @@ func _run() -> void:
 		await _tele_shots()
 	if only == "kohdeaurinko":
 		await _tele_sun(START + 86400000.0)
+	# Laskeutuminen Kuuhun (#45): liuku, jarrutus, lähestyminen, pystylasku, pinnalla ja nousu.
+	if want("lasku"):
+		await _landing_shots()
 	# 360°-kamera (#38): näytöllä ja koko näytöllä.
 	if want("360"):
 		await _pan_shots()
@@ -460,6 +464,49 @@ func _run() -> void:
 	report.append("ruutunopeus: %.1f fps (%s, %s, laatu %s, ikkuna %s)" % [fps, RenderingServer.get_video_adapter_name(),
 		RenderingServer.get_current_rendering_method(), Settings.quality_name(), DisplayServer.window_get_size()])
 	print(report[-1])
+
+
+func _landing_shots() -> void:
+	# Aamu Rauhallisuuden merellä: Aurinko matalalla idässä, pitkät varjot. Haetaan hetki, jolloin Aurinko on
+	# kosketuksen aikaan noin 8° korkeudella (laskeutuminen kestää noin 2,5 h suunnittelusta).
+	var site: Array = Landing.SITES[0]
+	var t0 := START
+	for i in 24 * 40:
+		var tt := START + i * 3600000.0
+		var up := Landing.site_dir("Kuu", site[1], site[2], tt + 9000000.0)
+		var sun: PackedFloat64Array = Flight.body_state("Kuu", tt).r
+		var e := -Flight.dot(up, sun) / Flight.norm(sun)
+		var up2 := Landing.site_dir("Kuu", site[1], site[2], tt + 9000000.0 + 3600000.0)
+		var rising := -Flight.dot(up2, sun) / Flight.norm(sun) > e
+		if e > sin(deg_to_rad(6.0)) and e < sin(deg_to_rad(9.0)) and rising:
+			t0 = tt
+			break
+	orbit_at("Kuu", t0, 0.0)
+	G.begin_landing(0)
+	var l: Dictionary = G.state.landing
+	var at := func(t: float) -> void:
+		G.fake_real_ms = G.real_ms()
+		G.anchor(t, 0)
+		G.tick()
+		cv.snap_attitude()
+	for v: Array in [["lasku-liuku", (float(l.tDoi) + float(l.tPdi)) / 2.0], ["lasku-jarrutus", float(l.tPdi) + 120000.0],
+			["lasku-lahestyminen", float(l.tHover) - 60000.0], ["lasku-pystylasku", float(l.tHover) + 30000.0]]:
+		at.call(v[1])
+		cv.reset_view()
+		await shot(v[0], 60)
+	at.call(float(l.tLand) + 60000.0)
+	cv.reset_view()
+	await shot("pinta", 60)
+	cv.yaw = 2.2
+	cv.pitch = 0.5
+	await shot("pinta-taivas", 40)
+	cv.reset_view()
+	G.start_surface_ascent()
+	var a: Dictionary = G.state.orbit.ascent
+	at.call(float(a.t0) + 20000.0)
+	cv.reset_view()
+	await shot("nousu-20s", 60)
+	report.append("laskeutuminen: Δv %s, nousu %s" % [Fmt.dv(l.dvTotal), Fmt.dv(a.dv)])
 
 
 ## Kiertoradalta kappaleen pinta kolmella Auringon korkeudella; raporttiin Auringon korkeus aluksen alla.

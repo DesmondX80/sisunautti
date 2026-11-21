@@ -4,7 +4,7 @@ class_name MissionUI
 
 ## Lajin väri ja merkki.
 const KIND_STYLE := {"orbit": [UiKit.ACCENT, "◎"], "survey": [Color("#a78bfa"), "◉"], "flyby": [Color("#f472b6"), "↝"],
-	"aero": [UiKit.WARM, "≋"], "fast": [Color("#facc15"), "»"], "frugal": [UiKit.GOOD, "◆"], "fault": [UiKit.BAD, "⚠"]}
+	"aero": [UiKit.WARM, "≋"], "fast": [Color("#facc15"), "»"], "frugal": [UiKit.GOOD, "◆"], "land": [Color("#e2e8f0"), "▼"], "fault": [UiKit.BAD, "⚠"]}
 
 
 static func color_of(m: Dictionary) -> Color:

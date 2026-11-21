@@ -10,9 +10,10 @@ class_name Missions
 ##   "aero"    ilmajarruta kaasujättiläisen kaasukehässä kiertoradalle
 ##   "fast"    lennä lähtöplaneetalta kohteen kiertoradalle aikarajan alla (vrk)
 ##   "frugal"  lennä lähtöplaneetalta kohteen kiertoradalle Δv-rajan alla (km/s)
+##   "land"    laskeudu kohteen pinnalle (#45)
 ##   "fault"   korjaa seuraava vika niin, että aikaa jää vähintään rajan verran (s)
 ## Tapahtumat (match): {"type": "capture", "body", "aero", "from", "days", "dv"}, {"type": "survey", "body"},
-## {"type": "flyby", "body"} ja {"type": "fault", "left"}. Arvonta on toistettava: siemen on tehtävän numero.
+## {"type": "flyby", "body"}, {"type": "land", "body"} ja {"type": "fault", "left"}. Arvonta on toistettava: siemen on tehtävän numero.
 
 const ACTIVE := 3
 ## Kohteiden vaikeusportaat ja portaan peruspalkkio (tutkimuspisteet). Porras aukeaa suoritettujen tehtävien määrällä.
@@ -21,7 +22,7 @@ const TIERS := [["Kuu", "Mars", "Venus"], ["Phobos", "Merkurius", "Jupiter", "Io
 const TIER_POINTS := [10, 25, 50]
 const TIER_UNLOCK := [0, 2, 5]
 ## Lajien palkkiokerroin.
-const FACTOR := {"orbit": 1.0, "survey": 1.5, "flyby": 1.5, "aero": 1.5, "fast": 2.0, "frugal": 2.0}
+const FACTOR := {"orbit": 1.0, "survey": 1.5, "flyby": 1.5, "aero": 1.5, "fast": 2.0, "frugal": 2.0, "land": 2.5}
 const FLYBY_BODIES := ["Venus", "Mars", "Jupiter", "Saturnus"]
 const FAULT_POINTS := 15
 const FAULT_LEFT_S := 30.0
@@ -96,6 +97,8 @@ static func candidates(ms: Dictionary, s: Dictionary, faults_on: bool) -> Array:
 				out.append(["survey", body, pts.call("survey"), {}])
 			if body in FLYBY_BODIES and not _taken(ms, "flyby", body):
 				out.append(["flyby", body, pts.call("flyby"), {}])
+			if Landing.can_land(body) and not _taken(ms, "land", body):
+				out.append(["land", body, pts.call("land"), {}])
 			if Flight.has_low_orbit(body) and not _taken(ms, "aero", body):
 				out.append(["aero", body, pts.call("aero"), {}])
 			if not Flight.is_moon(body) and body != origin and tier < 2:
@@ -161,6 +164,8 @@ static func matches(m: Dictionary, ev: Dictionary) -> bool:
 			return ev.type == "capture" and ev.body == body and ev.get("from") == m.from and float(ev.get("days", INF)) <= float(m.limit)
 		"frugal":
 			return ev.type == "capture" and ev.body == body and ev.get("from") == m.from and float(ev.get("dv", INF)) <= float(m.limit) + 1e-9
+		"land":
+			return ev.type == "land" and ev.body == body
 		"fault":
 			return ev.type == "fault" and float(ev.get("left", 0.0)) >= float(m.limit)
 	return false
@@ -194,6 +199,8 @@ static func title(m: Dictionary) -> String:
 			return "Pikalento: %s" % body
 		"frugal":
 			return "Säästölento: %s" % body
+		"land":
+			return "Laskeutuminen: %s" % body
 		"fault":
 			return "Vikapäivystys"
 	return String(m.kind)
@@ -214,6 +221,8 @@ static func text(m: Dictionary) -> String:
 			return "Lennä %s %s kiertoradalle enintään %s." % [Fmt.from_text(m.from), Fmt.gen(body), Fmt.days(float(m.limit))]
 		"frugal":
 			return "Lennä %s %s kiertoradalle enintään %s:llä (lähtö, korjaukset ja jarrutus)." % [Fmt.from_text(m.from), Fmt.gen(body), Fmt.dv(float(m.limit))]
+		"land":
+			return "Laskeudu %s pinnalle." % Fmt.gen(body)
 		"fault":
 			return "Korjaa seuraava aluksen vika niin, että aikaa jää vähintään %d s." % int(m.limit)
 	return ""
