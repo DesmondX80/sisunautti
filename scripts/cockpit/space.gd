@@ -17,8 +17,14 @@ const COMPRESS_K := 4.0e3
 const OBLIQUITY := 23.4393 * PI / 180.0
 const AU_M := Planets.AU_KM * KM
 const STAR_DIST := 1.1e5
-# Pyörähdysajat tunteina (negatiivinen = takaperoinen) ja akselien pohjoisnavat (IAU, J2000: RA°, Dec°).
-const SPIN_HOURS := {"Merkurius": 1407.6, "Venus": -5832.5, "Maa": 23.934, "Mars": 24.623, "Jupiter": 9.925, "Saturnus": 10.656, "Uranus": -17.24, "Neptunus": 16.11}
+## Auringon leveän häikäisyn kulmasäde (rad) 1 AU:n etäisyydellä.
+const HALO_AU := 0.03
+# Pyöriminen (IAU 2015): nollameridiaanin kulma W = W0 + Ẇ · d (astetta, d vuorokausia J2000:sta) ja akselien
+# pohjoisnavat (J2000: RA°, Dec°). Negatiivinen Ẇ = takaperoinen. Pintakartan keskikohta (pituusaste 0) osuu
+# nollameridiaaniin, joten päivä ja yö ovat oikeissa kohdissa (esim. Maan yöpuoli oikeilla mantereilla).
+const ROTATION := {"Merkurius": [329.5988, 6.1385108], "Venus": [160.20, -1.4813688], "Maa": [Flight.EARTH_W0, Flight.EARTH_W_DEG_DAY],
+	"Mars": [176.049863, 350.891982443297], "Jupiter": [284.95, 870.5360000], "Saturnus": [38.90, 810.7939024],
+	"Uranus": [203.81, -501.1600928], "Neptunus": [249.978, 541.1397757]}
 const POLES := {"Merkurius": [281.01, 61.41], "Venus": [272.76, 67.16], "Maa": [0.0, 90.0], "Mars": [317.68, 52.89], "Jupiter": [268.06, 64.5],
 	"Saturnus": [40.59, 83.54], "Uranus": [257.31, -15.18], "Neptunus": [299.36, 43.46]}
 ## Ilmakehät: väri, kuoren säde (planeetan säteinä), tiheys ja pinnan reunahehku.
@@ -89,6 +95,32 @@ static func equatorial(ra_hours: float, dec_deg: float) -> PackedFloat64Array:
 	var y := cos(dec) * sin(ra)
 	var z := sin(dec)
 	return PackedFloat64Array([x, y * cos(OBLIQUITY) + z * sin(OBLIQUITY), -y * sin(OBLIQUITY) + z * cos(OBLIQUITY)])
+
+
+## Päiväntasaajan koordinaattien (ICRF) yksikkövektori ekliptikan koordinaatteihin.
+static func eq_to_ecliptic(x: float, y: float, z: float) -> PackedFloat64Array:
+	return PackedFloat64Array([x, y * cos(OBLIQUITY) + z * sin(OBLIQUITY), -y * sin(OBLIQUITY) + z * cos(OBLIQUITY)])
+
+
+## Kappaleen nollameridiaanin suunta päiväntasaajalla (scene) hetkellä t (ms): IAU:n W mitataan kappaleen
+## päiväntasaajaa pitkin sen nousevasta solmusta ICRF:n päiväntasaajalla (RA = α + 90°).
+static func prime_meridian(name: String, t: float) -> Vector3:
+	var a := deg_to_rad(float(POLES[name][0]))
+	var dec := deg_to_rad(float(POLES[name][1]))
+	var rot: Array = ROTATION[name]
+	var w := deg_to_rad(fposmod(float(rot[0]) + float(rot[1]) * (t - Planets.J2000_MS) / Fmt.DAY_MS, 360.0))
+	var p := PackedFloat64Array([cos(dec) * cos(a), cos(dec) * sin(a), sin(dec)])
+	var q := PackedFloat64Array([-sin(a), cos(a), 0.0])
+	var pq := Flight.cross(p, q)
+	var m := Flight.add(Flight.scale(q, cos(w)), Flight.scale(pq, sin(w)))
+	return to_scene(eq_to_ecliptic(m[0], m[1], m[2])).normalized()
+
+
+## Pyörähdyskulma akselin ympäri (spin-solmu), jolla pituusaste 0 (pallon −z) osuu nollameridiaaniin.
+static func spin_angle_for(name: String, t: float) -> float:
+	var pole := to_scene(equatorial(float(POLES[name][0]) / 15.0, float(POLES[name][1]))).normalized()
+	var m := Basis(Quaternion(Vector3.UP, pole)).inverse() * prime_meridian(name, t)
+	return atan2(-m.x, -m.z)
 
 
 ## Kierto scene-koordinaateista päiväntasaajan koordinaatteihin (taivaan panoraamaa varten).
@@ -192,15 +224,12 @@ func _build_sun() -> void:
 	q.size = Vector2(2, 2)
 	sun_glow.mesh = q
 	var gm := ShaderMaterial.new()
-	gm.shader = load("res://shaders/billboard_glow.gdshader")
-	gm.set_shader_parameter("color", Color(1.0, 0.85, 0.6))
-	gm.set_shader_parameter("energy", 2.5)
-	gm.set_shader_parameter("min_pixels", 40.0)
-	gm.set_shader_parameter("falloff", 3.0)
-	gm.set_shader_parameter("core", 0.08)
+	gm.shader = load("res://shaders/sun_glow.gdshader")
 	sun_glow.material_override = gm
 	sun_glow.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	sun_glow.extra_cull_margin = 1e6
+	# Häikäisy syntyy silmässä ja lasissa: kohdekameran kaukoputki (aurinkosuodin) ei näe sitä.
+	sun_glow.layers = DOT_LAYER
 	sun_root.add_child(sun_glow)
 
 
@@ -374,8 +403,9 @@ func update(ship_km: PackedFloat64Array, t: float, px_per_rad: float) -> void:
 	var sk := sd / sun_distance
 	sun_root.position = sun_dir * sd
 	sun_mesh.scale = Vector3.ONE * Planets.SUN_RADIUS_KM * KM * sk
-	sun_glow.scale = Vector3.ONE * Planets.SUN_RADIUS_KM * KM * sk * 5.0
 	var sun_ang := asin(minf(1.0, Planets.SUN_RADIUS_KM * KM / sun_distance))
+	var sun_mat := sun_mesh.material_override as ShaderMaterial
+	sun_mat.set_shader_parameter("sim_days", fmod((t - Planets.J2000_MS) / Fmt.DAY_MS, 36000.0))
 	sunlit = 1.0
 	nearest = {}
 	nearest_size = 0.0
@@ -407,10 +437,11 @@ func update(ship_km: PackedFloat64Array, t: float, px_per_rad: float) -> void:
 			var to_parent := to_scene(Flight.sub(Flight.body_state(Flight.MOONS[name].parent, t).r, body_km))
 			spin_angle = atan2(-to_parent.x, -to_parent.z)
 		else:
-			spin_angle = TAU * fposmod(t / 3600000.0 / float(SPIN_HOURS[name]), 1.0)
+			spin_angle = spin_angle_for(name, t)
 		(b.spin as Node3D).basis = Basis(Vector3.UP, spin_angle)
 		if b.has("cloud_spin"):
-			(b.cloud_spin as Node3D).basis = Basis(Vector3.UP, spin_angle * 1.03 + 0.4)
+			# Pilvet ajelehtivat hitaasti pinnan suhteen (kierros 40 vuorokaudessa).
+			(b.cloud_spin as Node3D).basis = Basis(Vector3.UP, spin_angle + 0.4 + TAU * fposmod(t / Fmt.DAY_MS / 40.0, 1.0))
 		# Valaistus kappaleen koordinaatistossa: suunta kappaleesta Aurinkoon.
 		var to_sun := to_scene(Flight.scale(body_km, -1.0)).normalized()
 		var mesh: MeshInstance3D = b.mesh
@@ -446,6 +477,30 @@ func update(ship_km: PackedFloat64Array, t: float, px_per_rad: float) -> void:
 		(b.dot as Node3D).visible = px < 2.0 and (not b.moon or d < 2e10)
 		(b.dot as Node3D).scale = Vector3.ONE * radius * k
 		_texture_level(b, maxf(px, focus_px) if name == focus else px)
+	_update_sun_glow(sun_ang, sd)
+
+
+## Auringon häikäisyn koko ja kirkkaus valon määrän mukaan (säteilyvuo F = (1 AU / d)²): leveän hehkun kulmasäde
+## kasvaa kuten √F (Maan etäisyydellä 3,2°) ja kirkkaus kuten F^0,35 (silmä mukautuu, kuten light_factor). Korona ja
+## kiekon reuna ovat Auringon säteinä, joten ne näkyvät oikean kokoisina kaikilta etäisyyksiltä.
+func _update_sun_glow(sun_ang: float, sd: float) -> void:
+	var flux := pow(AU_M / sun_distance, 2.0)
+	var halo_ang := HALO_AU * sqrt(flux)
+	var quad_ang := minf(1.2, maxf(halo_ang * 3.4, sun_ang * 6.0))
+	var tq := tan(quad_ang)
+	sun_glow.scale = Vector3.ONE * tq * sd
+	var gm := sun_glow.material_override as ShaderMaterial
+	gm.set_shader_parameter("disk_frac", tan(sun_ang) / tq)
+	gm.set_shader_parameter("halo_frac", tan(halo_ang) / tq)
+	gm.set_shader_parameter("energy", 1.2 * pow(flux, 0.35) * dim)
+	gm.set_shader_parameter("core_energy", 12.0 * pow(flux, 0.1) * dim)
+	gm.set_shader_parameter("visible", sunlit)
+
+
+## Valon voimakkuuskerroin ohjaamossa ja häikäisyssä etäisyyden d (m) mukaan: säteilyvuo (1 AU / d)² korotettuna
+## potenssiin 0,35, koska silmä mukautuu (Jupiterilla 0,32, Neptunuksella 0,09, Merkuriuksella 1,8).
+static func light_factor(d: float) -> float:
+	return clampf(pow(AU_M / d, 0.7), 0.08, 1.8)
 
 
 func _texture_level(b: Dictionary, px: float) -> void:

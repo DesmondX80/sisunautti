@@ -32,6 +32,26 @@ kuva Kosmiset kalliot Carinan sumussa (NASA, ESA, CSA, STScI, [CC BY 4.0](https:
 `assets/menu/taustakuva.webp`) hitaasti liukuen ja zoomaten, hiiren mukaan parallaksina ja tähdet tuikkien
 (`shaders/menu_bg.gdshader`).
 
+## Aurinko
+
+Aurinko on juuri siellä, missä se on: sen suunta lasketaan aluksen paikasta Auringon suhteen, ja kiekon kulmakoko
+on todellinen (Maan etäisyydeltä 32′, Neptunukselta alle 1′). Planeetat pyörivät IAU:n pyörimisalkioiden mukaan
+(`Space.ROTATION`: nollameridiaanin kulma W = W0 + Ẇ · vrk J2000:sta ja akselin suunta), joten päivä ja yö ovat
+oikeissa kohdissa: Maan päiväpuoli on oikeilla mantereilla oikeaan kellonaikaan (Auringon alapiste vastaa NOAA:n
+aurinkokaavoja alle 0,5°:n tarkkuudella, `tests/sun_test.gd`). Laukaisualusta on Kouroun (ESA:n Guyanan
+avaruuskeskus) meridiaanilla, joten alustan aurinkoaika on Kouroun aurinkoaika (`Flight._pad_angle`).
+
+Auringon pinta on varjostin (`shaders/sun.gdshader`): reunatummeneminen aallonpituuden mukaan (reuna oranssimpi),
+granulaatio ja supergranulaatio, auringonpilkut tummine ytimineen ja penumbroineen aktiivisuusvyöhykkeillä, jotka
+kiertävät differentiaalisesti (päiväntasaajalla 25 vrk, navoilla hitaammin) ja syntyvät ja hiipuvat parin kuukauden
+jaksoissa, sekä reunan lähellä kirkkaat soihtukentät. Pinnan yksityiskohdat näkyvät kohdekameran aurinkosuotimella.
+Ikkunasta Aurinko on häikäisevä: kirkas ydin, aureoli kiekon reunalla, pehmeä häikäisy ja diffraktiosäteet
+(`shaders/sun_glow.gdshader`, `shaders/flare.gdshader`). Häikäisyn koko ja kirkkaus seuraavat valon määrää
+etäisyyden mukaan (säteilyvuo (1 AU / d)²): Venuksen radalta Aurinko on suurempi ja kirkkaampi kuin Maan, Jupiterilta
+pieni ja Neptunukselta häikäisevä tähti. Myös ohjaamon valo himmenee ulkoplaneetoilla (`Space.light_factor`, vuo
+potenssiin 0,35, koska silmä mukautuu). Kun planeetta tai kuu pimentää Auringon, häikäisy sammuu ja reunan takaa
+näkyy korona virtauksineen.
+
 ## Tehtävät ja lennonjohto
 
 Lennonjohto antaa tehtäviä, joista saa tutkimuspisteitä (TP). Pisteillä kehitetään myöhemmin alusta (#46).
@@ -129,11 +149,11 @@ tools/run_tests.sh          # ikkunattomat testit, esim. tools/run_tests.sh sett
   järjestelmät, kohdekamera ja pikkunäyttö) ovat `SubViewport`-tekstuureja kuvan näyttöjen muodossa (leveys 1024),
   jotka piirretään uudelleen enintään 20 kertaa sekunnissa (pitkät tekstit sovitetaan näytölle pienentämällä fonttia,
   viimeisenä keinona ellipsillä, `CockpitScreen.fit_text`); järjestelmänäytön hologrammi näyttää
-  kohteen pinnan pyörivänä pallona (`shaders/globe.gdshader`). Kohdekamera on kaukoputki aluksen paikalla samassa 3D-maailmassa: se osoittaa kohteeseen (ilman kohdetta Aurinkoon), joten kuvassa on täsmälleen sama puoli, vaihe, ilmakehä, pilvet ja renkaat kuin ikkunasta katsottuna, pohjoinen ylhäällä. Kohde täyttää näytön kehän (zoom jopa kymmeniätuhansia kertoja; kapea kuvakulma ja sivusiirto frustum-projektiolla, kaukaisten kappaleiden pisteet `Space.DOT_LAYER` eivät näy ja kohteelle ladataan valokuvakartta). Lähellä, kun kohde ei mahtuisi kuvaan (kiertoradalla ja laukaisualustalla), näytöllä on kohde suunnattuna pallona: keskellä kohta, jonka yllä alus on (merkki ALUS ja korkeus), Auringon valo oikealta suunnalta ja Maalla pilvet ja yövalot. Aurinkoon katsottaessa kuvassa on aurinkosuodin (oranssi asteikko ja granulaatio). Kohdekameranäytön voi vaihtaa takakameraksi (painike Takakamera tai T): toinen kamera samassa 3D-maailmassa kuvaa aluksen taakse ja 50° alas (kiertoradalla planeetta näkyy), ja kamera kääntyy niin, että lähdön jälkeen poistuva planeetta pysyy kuvassa; kuvassa on kamerasyötteen juovat, linssivirhe ja kohina (`shaders/rear_camera.gdshader`), ja se päivittyy näytön tahdissa. Kolmantena on 360°-kamera aluksen katolla (painike tai T uudelleen): sitä käännetään raahaamalla kameranäytöllä tai nuolinäppäimillä täysi kierros ja ±85° ylös ja alas, ja lähellä planeettaa tai kuuta se on vakautettu paikalliseen pystysuuntaan (horisontti pysyy vaakasuorassa myös pystyssä alustalla). Kuvassa on suuntimanauha (KEULA 0°, PERÄ 180°) ja kallistusasteikko kuvan mittakaavassa. Painikkeella Koko näyttö (F) 360°-kamera täyttää ohjaamonäkymän näytön tarkkuudella; silloin rulla tai nipistys zoomaa (1–8×) ja Esc palaa ohjaamoon. Ulkokamerat eivät näe ohjaamon lasia eivätkä plasmaa (`Cabin.INTERIOR_LAYER`). Näyttöä napsauttamalla katse kääntyy siihen ja
+  kohteen pinnan pyörivänä pallona (`shaders/globe.gdshader`). Kohdekamera on kaukoputki aluksen paikalla samassa 3D-maailmassa: se osoittaa kohteeseen (ilman kohdetta Aurinkoon), joten kuvassa on täsmälleen sama puoli, vaihe, ilmakehä, pilvet ja renkaat kuin ikkunasta katsottuna, pohjoinen ylhäällä. Kohde täyttää näytön kehän (zoom jopa kymmeniätuhansia kertoja; kapea kuvakulma ja sivusiirto frustum-projektiolla, kaukaisten kappaleiden pisteet `Space.DOT_LAYER` eivät näy ja kohteelle ladataan valokuvakartta). Lähellä, kun kohde ei mahtuisi kuvaan (kiertoradalla ja laukaisualustalla), näytöllä on kohde suunnattuna pallona: keskellä kohta, jonka yllä alus on (merkki ALUS ja korkeus), Auringon valo oikealta suunnalta ja Maalla pilvet ja yövalot. Aurinkoon katsottaessa kuvassa on aurinkosuodin (oranssi asteikko, jolla Auringon pinta näkyy). Kohdekameranäytön voi vaihtaa takakameraksi (painike Takakamera tai T): toinen kamera samassa 3D-maailmassa kuvaa aluksen taakse ja 50° alas (kiertoradalla planeetta näkyy), ja kamera kääntyy niin, että lähdön jälkeen poistuva planeetta pysyy kuvassa; kuvassa on kamerasyötteen juovat, linssivirhe ja kohina (`shaders/rear_camera.gdshader`), ja se päivittyy näytön tahdissa. Kolmantena on 360°-kamera aluksen katolla (painike tai T uudelleen): sitä käännetään raahaamalla kameranäytöllä tai nuolinäppäimillä täysi kierros ja ±85° ylös ja alas, ja lähellä planeettaa tai kuuta se on vakautettu paikalliseen pystysuuntaan (horisontti pysyy vaakasuorassa myös pystyssä alustalla). Kuvassa on suuntimanauha (KEULA 0°, PERÄ 180°) ja kallistusasteikko kuvan mittakaavassa. Painikkeella Koko näyttö (F) 360°-kamera täyttää ohjaamonäkymän näytön tarkkuudella; silloin rulla tai nipistys zoomaa (1–8×) ja Esc palaa ohjaamoon. Ulkokamerat eivät näe ohjaamon lasia eivätkä plasmaa (`Cabin.INTERIOR_LAYER`). Näyttöä napsauttamalla katse kääntyy siihen ja
   kuvakulma kapenee niin, että näyttö täyttää kuvan; uusi napsautus, Esc tai Loitonna palauttaa näkymän. Rullalla
   ja nipistämällä zoomataan vapaasti. Kuva elää pelin mukana: vasen käsi työntää tehovipua eteen moottorin työnnön mukaan, oikean käden ohjainsauva värähtelee tärinässä ja kallistuu aluksen kääntyessä (pehmeä siirto varjostimessa), ja paneelien pienet valot (valokartta `assets/cockpit/ohjaamo_valot.png`, tehty skriptillä `tools/make_cockpit_lights.py`) vilkkuvat kukin omassa tahdissaan; kuusi niistä on merkkivaloja (moottori, aikakiihdytys, suunta, vaikutuspiiri, ilmakehä ja polttoaineen varoitus). Moottorin ja plasman hehku sävyttää ohjaamon kuvaa, ja ikkunan lasissa on
-  likaa ja naarmuja, jotka Aurinko sytyttää häikäisyksi. Avaruudessa ovat kirkkaat tähdet HDR-pisteinä ja Linnunrata taustana, Auringon
-  HDR-kiekko hehkuineen ja linssiheijastus (ohjaamon rakenteet peittävät sen syvyyspuskurin perusteella), planeettojen
+  likaa ja naarmuja, jotka Aurinko sytyttää häikäisyksi. Avaruudessa ovat kirkkaat tähdet HDR-pisteinä ja Linnunrata taustana, Aurinko
+  (ks. alla) ja linssiheijastus (ohjaamon rakenteet peittävät sen syvyyspuskurin perusteella), planeettojen
   ja kuiden pintakartat (2k, lähellä 4k tai 8k, Maalla, Kuulla ja Marsilla Ultra-tasolla 16k), ilmakehän sironta varjostimella, Maan
   erillinen pilvikerros, kaupunkien valot ja merien heijastus sekä Saturnuksen läpikuultavat renkaat varjoineen.
   Ilmakehän sironta (`shaders/atmosphere.gdshader`) kerää näkösäteen matkalta sironneen valon ja vaimennuksen:

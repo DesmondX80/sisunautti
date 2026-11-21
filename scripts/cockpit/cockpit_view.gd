@@ -1419,7 +1419,7 @@ func _body_frame(s: Dictionary) -> Dictionary:
 func _lighting(s: Dictionary) -> void:
 	var inv := ship.basis.inverse()
 	var sun_local := inv * space.sun_dir
-	var dist_factor := clampf(sqrt(Space.AU_M / space.sun_distance), 0.3, 1.3)
+	var dist_factor := Space.light_factor(space.sun_distance)
 	# Auringonvalo ohjaamossa (DirectionalLight osoittaa valon kulkusuuntaan).
 	sun_beam.basis = Basis.looking_at(-space.sun_dir, Vector3.UP if absf(space.sun_dir.y) < 0.99 else Vector3.BACK)
 	sun_beam.light_energy = 3.2 * dist_factor * space.sunlit

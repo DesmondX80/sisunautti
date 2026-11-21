@@ -3,6 +3,10 @@
 // Tuottaa vertailuarvot Godot-version ratamekaniikan testeille (tests/orbit_test.gd) selainversion
 // ratamekaniikasta (web/js/flight.js, web/js/planets.js) ja astronomy-enginestä.
 // Käyttö: (cd web && npm ci) && node tools/make_orbit_reference.mjs  → tests/data/orbit_reference.json
+// Laukaisupaikka siirrettiin Godot-versiossa Kouroun meridiaanille (Flight._pad_angle). Tee sama muutos
+// web/js/flight.js:ään ennen ajoa (rivi const padAngle = ...):
+//   const PAD_LON = -52.77*Math.PI/180, PAD_OBL = 23.4393*Math.PI/180;
+//   const padAngle = time => { const W=(190.147+360.9856235*(time-J2000)/86400000)*Math.PI/180, e=planetState('Maa',time).r, x=-e[0], y=-e[1]; return Math.atan2(y,x)+(Math.PI/2+W+PAD_LON)-Math.atan2(y*Math.cos(PAD_OBL),x); };
 import { writeFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import { dirname, join } from "node:path";

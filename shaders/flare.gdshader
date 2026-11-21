@@ -48,8 +48,10 @@ void fragment() {
 	vec2 axis = center - s;
 	float d = length(p - s);
 	float ang = atan(p.y - s.y, p.x - s.x);
-	float rays = pow(abs(cos(ang * 3.0)), 60.0) * 0.6 + pow(abs(cos(ang * 2.0 + 0.4)), 120.0) * 0.4;
-	vec3 col = vec3(1.0, 0.92, 0.8) * (rays * smoothstep(0.4, 0.0, d) * 0.5 + smoothstep(0.2, 0.0, d) * 0.2);
+	// Säteet (kameran ja silmän diffraktio): ohuet, pehmeästi hiipuvat; ytimen ympärillä pehmeä hehku ilman
+	// terävää reunaa.
+	float rays = pow(abs(cos(ang * 3.0)), 90.0) * 0.6 + pow(abs(cos(ang * 2.0 + 0.4)), 160.0) * 0.4;
+	vec3 col = vec3(1.0, 0.94, 0.84) * (rays * exp(-d / 0.09) * 0.55 + exp(-d / 0.035) * 0.22);
 	col += vec3(0.4, 0.8, 1.0) * smoothstep(0.035, 0.0, length(p - (s + axis * 0.6))) * 0.2;
 	col += vec3(1.0, 0.6, 0.3) * smoothstep(0.06, 0.0, length(p - (s + axis * 1.25))) * 0.14;
 	col += vec3(0.5, 1.0, 0.6) * smoothstep(0.02, 0.0, length(p - (s + axis * 1.7))) * 0.25;

@@ -66,7 +66,12 @@ const BURN_DIRECTIONS: PackedStringArray = ["prograde", "retrograde", "inward", 
 const ASCENT_S := 510.0
 const ASCENT_EVENTS := {"maxQ": 70.0, "meco": 150.0, "stage2": 158.0}
 # Vaakanopeus kasvaa nousun osuuden potenssina TURN_POWER, jolloin kuljettu kulma kasvaa potenssina TURN_POWER + 1.
-const EARTH_SPIN := 2.0 * PI / 86164.1
+## Maan pyöriminen (IAU 2015): nollameridiaanin kulma J2000-hetkellä ja muutos vuorokaudessa (astetta).
+const EARTH_W0 := 190.147
+const EARTH_W_DEG_DAY := 360.9856235
+const OBLIQUITY := 23.4393 * PI / 180.0
+## Laukaisupaikka: Kouroun pituusaste (rad).
+const PAD_LON := -52.77 * PI / 180.0
 const PAD_ALT_KM := 0.06
 const TURN_POWER := 1.5
 
@@ -905,10 +910,19 @@ static func angle_time(name: String, want: float, after: float, orbit: Variant =
 # --- Nousu Maan pinnalta kiertoradalle ---
 # Kantoraketti nostaa aluksen 200 km:n radalle noin 8,5 minuutissa. Korkeus ja vaakanopeus seuraavat sileitä käyriä,
 # jotka alkavat levosta ja päättyvät täsmälleen ympyräradan tilaan. Laukaisupaikka on ekliptikan tasossa Maan
-# pinnalla ja kiertää Maan mukana.
+# pinnalla Kouroun meridiaanilla ja kiertää Maan mukana.
 
+## Laukaisupaikan suunta ekliptikan tasossa: Auringon suunta Maasta käännettynä Kouroun (ESA:n Guyanan
+## avaruuskeskus, 52,77° läntistä pituutta) tuntikulman verran. Kouroun meridiaanin rektaskensio tulee Maan
+## oikeasta pyörimisestä (IAU: W = 190,147° + 360,9856235° · vrk J2000:sta, meridiaani RA = 90° + W + pituus) ja
+## Auringon rektaskensio sen ekliptisesta suunnasta. Alustan aurinkoaika on siis täsmälleen Kouroun aurinkoaika,
+## ja Maan pintakartta (Space) pyörii samassa tahdissa.
 static func _pad_angle(time: float) -> float:
-	return EARTH_SPIN * (time - J2000_MS) / 1000.0
+	var w := deg_to_rad(EARTH_W0 + EARTH_W_DEG_DAY * (time - J2000_MS) / DAY_MS)
+	var e: PackedFloat64Array = planet_state("Maa", time).r
+	var x := -e[0]
+	var y := -e[1]
+	return atan2(y, x) + (PI / 2.0 + w + PAD_LON) - atan2(y * cos(OBLIQUITY), x)
 
 
 static func _ascent_turn() -> float:

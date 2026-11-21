@@ -83,6 +83,21 @@ func shot(name: String, settle: int = 40) -> void:
 	check("kuva " + name, FileAccess.file_exists(path))
 
 
+## Nokka suuntaan dir ja asento pysyy (manuaaliohjaus ilman syötettä), katse eteen.
+func hold_face(dir: Vector3) -> void:
+	if not cv.manual:
+		cv.toggle_manual()
+	# Ikkunan keskikohta (nokka) on AIM_RAISE aluksen −z-akselin yläpuolella.
+	cv.face(dir)
+	cv.ship.basis = Basis.looking_at(dir.normalized(), Vector3.UP) * Basis(Vector3.RIGHT, -CockpitState.AIM_RAISE)
+	cv.reset_view()
+
+
+func release_face() -> void:
+	if cv.manual:
+		cv.toggle_manual()
+
+
 func want(name: String) -> bool:
 	return only == "" or only == name
 
@@ -201,18 +216,32 @@ func _run() -> void:
 		var off := Flight.add(Flight.scale(away, 8000.0 * cos(ang)), Flight.scale(side, 8000.0 * sin(ang)))
 		drift_at(Flight.add(e, off), t0)
 		await _frames(3)
-		cv.face(cv.direction_to("Aurinko").rotated(Vector3.UP, 0.12))
-		cv.reset_view()
+		hold_face(cv.direction_to("Aurinko").rotated(Vector3.UP, 0.12))
 		await shot("varjo", 80)
+		# Täysi pimennys: Aurinko kokonaan Maan takana, korona näkyy reunan takaa.
+		var ang2 := asin(6371.0 / 8000.0) - deg_to_rad(0.3)
+		drift_at(Flight.add(e, Flight.add(Flight.scale(away, 8000.0 * cos(ang2)), Flight.scale(side, 8000.0 * sin(ang2)))), t0)
+		await _frames(3)
+		hold_face(cv.direction_to("Aurinko").rotated(Vector3.UP, 0.12))
+		await shot("pimennys", 80)
+		release_face()
 	# Aurinko kohti katsottaessa Maan kiertoradalla.
 	if want("aurinko"):
 		# Auringon kiertoradalla (ei kohdetta) Venuksen radan tuntumassa: nokka lähes kohti Aurinkoa.
 		var ve: PackedFloat64Array = Flight.planet_state("Venus", t0).r
 		drift_at(Flight.add(ve, PackedFloat64Array([3.0e6, 2.0e6, 0.0])), t0)
 		await _frames(3)
-		cv.face(cv.direction_to("Aurinko").rotated(Vector3.UP, 0.25).rotated(Vector3.RIGHT, -0.12))
-		cv.reset_view()
+		hold_face(cv.direction_to("Aurinko").rotated(Vector3.UP, 0.25))
 		await shot("aurinko", 80)
+		# Sama suunta Maan, Jupiterin ja Neptunuksen etäisyydeltä: häikäisy pienenee ja himmenee valon mukaan.
+		for far: Array in [["Maa", "aurinko-maa"], ["Jupiter", "aurinko-jupiter"], ["Neptunus", "aurinko-neptunus"]]:
+			var pr: PackedFloat64Array = Flight.planet_state(far[0], t0).r
+			# Sivuun planeetasta (2 % radan säteestä), jotta planeetta ei pimennä Aurinkoa.
+			drift_at(Flight.add(pr, Flight.scale(Flight.cross(pr, PackedFloat64Array([0, 0, 1])), 0.02)), t0)
+			await _frames(3)
+			hold_face(cv.direction_to("Aurinko").rotated(Vector3.UP, 0.25))
+			await shot(far[1], 60)
+		release_face()
 	# Mars lähellä: matala rata päiväpuolella.
 	if want("mars"):
 		orbit_at("Mars", t0, sun_angle("Mars", t0, false) + 0.6)
