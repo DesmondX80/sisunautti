@@ -65,12 +65,19 @@ var manual_button: Button
 var _manual_hud: PanelContainer
 var _manual_label: Label
 var _braking := false
-const MANUAL_RATE := 0.6 # suurin kääntymisnopeus (rad/s)
+const MANUAL_RATE := 0.5 # suurin kääntymisnopeus (rad/s)
 ## Ohjausrakettien kulmakiihtyvyys (rad/s²): sauvaa käännettäessä alus alkaa kääntyä pehmeästi ja saavuttaa
-## suurimman nopeuden noin 2,5 sekunnissa. Sauvan palatessa keskelle vakautus pysäyttää kääntymisen.
-const MANUAL_ANG_ACCEL := 0.25
-const MANUAL_DAMP := 0.4
+## suurimman nopeuden vajaassa kolmessa sekunnissa. Sauvan palatessa keskelle vakautus pysäyttää kääntymisen
+## hitaammin, joten alus liukuu vielä hetken (testaajan palaute: ohjaus totteli liian rivakasti).
+const MANUAL_ANG_ACCEL := 0.18
+const MANUAL_DAMP := 0.25
+## Ohjausrakettien vasteviive (aikavakio, s): sauvan liike välittyy rakettien työntöön viiveellä.
+const MANUAL_LAG_S := 0.3
+## Korkeudenvakaimen kääntökiihtyvyys (rad/s²): vakain kiihdyttää ja jarruttaa kääntymistä pehmeästi.
+const HOLD_ANG_ACCEL := 0.3
 var _ang_vel := Vector3.ZERO # kääntymisnopeus aluksen akseleilla (x nokka, y kääntö, z kallistus; rad/s)
+var _cmd := Vector3.ZERO # ohjausrakettien komento viiveen jälkeen (−1…1)
+var _hold_w := 0.0 # korkeudenvakaimen kääntymisnopeus (rad/s)
 var _stick := Vector3.ZERO # sauvan asento −1…1 (pehmennetty)
 ## Horisonttiristikko ja korkeudenvakain (#58): vakain lukitsee korkeuden (km pinnasta) ja kääntää nokkaa itse.
 var ladder: HudLadder
@@ -472,6 +479,8 @@ func toggle_manual() -> void:
 	manual_throttle = 0.0
 	_braking = false
 	_ang_vel = Vector3.ZERO
+	_cmd = Vector3.ZERO
+	_hold_w = 0.0
 	_stick = Vector3.ZERO
 	alt_hold = false
 	_turn = 0.0
@@ -509,6 +518,7 @@ func set_alt_hold(on: bool, target_km: float = NAN) -> void:
 	if on:
 		alt_target = maxf(0.0, roundf((float(alt) if is_nan(target_km) else target_km) * 10.0) / 10.0)
 		_ang_vel = Vector3.ZERO
+		_hold_w = 0.0
 	_turn = 0.0
 	_hold_sign = 1
 	_hold_auto = false
@@ -553,6 +563,24 @@ static func turn_rate(w: Vector3, input: Vector3, delta: float) -> Vector3:
 	return out
 
 
+## Ohjauskomento vasteviiveen jälkeen: komento lähestyy sauvan asentoa input aikavakiolla MANUAL_LAG_S, ja pienet
+## jäännökset nollataan, kun sauva on keskellä (silloin vakautus jarruttaa).
+static func lag_command(cmd: Vector3, input: Vector3, delta: float) -> Vector3:
+	var out := cmd.lerp(input, 1.0 - exp(-delta / MANUAL_LAG_S))
+	for i in 3:
+		if input[i] == 0.0 and absf(out[i]) < 0.03:
+			out[i] = 0.0
+	return out
+
+
+## Korkeudenvakaimen kääntymisnopeus, kun nokkaa on käännettävä vielä kulma ang (rad): kiihtyy enintään
+## HOLD_ANG_ACCEL:lla suurimpaan nopeuteen ja jarruttaa niin, että pysähtyy kohdalle ilman ylitystä.
+static func hold_turn_rate(w: float, ang: float, delta: float) -> float:
+	var want := minf(MANUAL_RATE, sqrt(2.0 * HOLD_ANG_ACCEL * ang))
+	var out := move_toward(w, want, HOLD_ANG_ACCEL * delta)
+	return minf(out, ang / maxf(delta, 1e-6))
+
+
 # Manuaaliohjaus: näppäimet kääntävät alusta pehmeästi sen omien akselien ympäri (turn_rate). Kaasu polttaa nokan
 # suuntaan ja jarrutus menosuuntaa vastaan (Game.manual_thrust) lennolla, Auringon kiertoradalla ja kappaleen
 # kiertoradalla; ilman kaasua alus jatkaa samalla radalla.
@@ -574,7 +602,8 @@ func _manual_step(s: Dictionary, delta: float) -> void:
 	if alt_hold:
 		hold_power = _hold_step(rel, input.y, delta)
 	else:
-		_ang_vel = turn_rate(_ang_vel, input, delta)
+		_cmd = lag_command(_cmd, input, delta)
+		_ang_vel = turn_rate(_ang_vel, _cmd, delta)
 		if _ang_vel != Vector3.ZERO:
 			# Kääntö nokan (ikkunan keskikohdan) akselien ympäri: Q/E kallistaa nokan ympäri kuten lentokoneessa.
 			var b := Basis(Vector3.RIGHT, CockpitState.AIM_RAISE)
@@ -642,8 +671,10 @@ func _hold_step(rel: Dictionary, yaw_input: float, delta: float) -> float:
 	var q0 := ship.basis.get_rotation_quaternion()
 	var q1 := want.get_rotation_quaternion()
 	var ang := q0.angle_to(q1)
-	ship.basis = Basis(q0.slerp(q1, 1.0 if ang < 1e-5 else minf(1.0, MANUAL_RATE * delta / ang)))
+	_hold_w = hold_turn_rate(_hold_w, ang, delta)
+	ship.basis = Basis(q0.slerp(q1, 1.0 if ang < 1e-5 else minf(1.0, _hold_w * delta / ang)))
 	_ang_vel = Vector3.ZERO
+	_cmd = Vector3.ZERO
 	var b := boresight()
 	var actual := PackedFloat64Array([b.x, -b.z, b.y])
 	var power := clampf(float(c.thrust) / maxf(accel, 1e-12), 0.0, 1.0)

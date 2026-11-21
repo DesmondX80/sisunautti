@@ -267,6 +267,29 @@ func _ready() -> void:
 	check("ohjaus kiihtyy pehmeästi suurimpaan nopeuteen", first > 0.0 and first < 0.05 and absf(full.x - CockpitView.MANUAL_RATE) < 1e-6
 		and absf(full.y + CockpitView.MANUAL_RATE) < 1e-6 and full.z == 0.0)
 	check("vapautettu sauva pysäyttää kääntymisen", w == Vector3.ZERO)
+	# Vasteviive ja liukuma (testaajan palaute): komento seuraa sauvaa viiveellä, ja vapautettaessa alus liukuu.
+	var cmd := CockpitView.lag_command(Vector3.ZERO, Vector3(1, 0, 0), 0.1)
+	check("ohjauskomento viiveellä (0,1 s → alle 30 %)", cmd.x > 0.2 and cmd.x < 0.3)
+	for i in 20:
+		cmd = CockpitView.lag_command(cmd, Vector3.ZERO, 0.1)
+	check("komento palaa nollaan sauvan palatessa", cmd == Vector3.ZERO)
+	var glide := Vector3(CockpitView.MANUAL_RATE, 0, 0)
+	var steps := 0
+	while glide.x > 0.0 and steps < 100:
+		glide = CockpitView.turn_rate(glide, Vector3.ZERO, 0.1)
+		steps += 1
+	check("vapautettu alus liukuu yli sekunnin ennen pysähtymistä", steps > 10 and steps < 40)
+	var hw := 0.0
+	var ang := 1.0
+	var hold_steps := 0
+	var hw_max := 0.0
+	while ang > 1e-4 and hold_steps < 300:
+		hw = CockpitView.hold_turn_rate(hw, ang, 0.05)
+		ang -= hw * 0.05
+		hw_max = maxf(hw_max, hw)
+		hold_steps += 1
+	check("vakain kääntyy pehmeästi ilman ylitystä", ang >= 0.0 and ang < 1e-3 and hw_max <= CockpitView.MANUAL_RATE + 1e-9
+		and CockpitView.hold_turn_rate(0.0, 1.0, 0.05) < 0.02)
 	var orbit_rel := {"r": PackedFloat64Array([6578.0, 0, 0]), "v": PackedFloat64Array([0, 7.78, 0])}
 	var txt := CockpitView.course_text(PackedFloat64Array([0, 1, 0]), orbit_rel.v, orbit_rel)
 	check("kurssirivi: nokan kulma ja rata", txt.begins_with("nokka 0° menosuunnasta") and (Game.state.location == null or txt.contains("rata")))

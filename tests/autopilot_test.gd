@@ -1,6 +1,6 @@
 extends TestCase
 ## Korkeudenvakain (#58): suljetun silmukan lento Flight.fly_air-mallilla eri kappaleilla kuten ohjaamossa: nokka
-## kääntyy vakaimen suuntaan enintään 0,6 rad/s, työntö nokan suuntaan vain linjassa (Autopilot.alignment) ja
+## kääntyy vakaimen suuntaan pehmeästi kuten ohjaamossa (CockpitView.hold_turn_rate), työntö nokan suuntaan vain linjassa (Autopilot.alignment) ja
 ## nopeuden muutos radalle puolen sekunnin sysäyksinä. 10 %:n kaasu (1 g) riittää ilmakehässä vaakalentoon, ja
 ## kiertoradalta vakain laskeutuu tavoitekorkeuteen automaattikaasulla nokka vaakatasossa (ohjausrakettien
 ## pystytyöntö, ei nokan nostoa pystyyn).
@@ -8,7 +8,6 @@ extends TestCase
 
 const ACCEL := 0.098
 const THROTTLE_10 := 0.1 * ACCEL
-const RATE := 0.6
 
 
 func _ready() -> void:
@@ -70,6 +69,7 @@ func fly(name: String, alt: float, target: float, speed: float, thrust: float, d
 	var t := 0.0
 	var nose_v := Flight.scale(v, 1.0 / Flight.norm(v))
 	var sign := 1
+	var w := 0.0
 	var flips := 0
 	var max_pitch := 0.0 # nokan suurin kulma vaakatasosta avaruudessa (rad)
 	var thrust_dir := PackedFloat64Array()
@@ -86,7 +86,8 @@ func fly(name: String, alt: float, target: float, speed: float, thrust: float, d
 				flips += 1
 			sign = c.sign
 			want = c.nose
-			nose_v = _rotate_toward(nose_v, want, RATE * dt)
+			w = CockpitView.hold_turn_rate(w, acos(clampf(Flight.dot(nose_v, want), -1.0, 1.0)), dt)
+			nose_v = _rotate_toward(nose_v, want, w * dt)
 			# Katto vakaimen mukaan, kohtisuoraan todellista nokkaa vastaan.
 			var cr: PackedFloat64Array = c.roof
 			roof = PackedFloat64Array()
