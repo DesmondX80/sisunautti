@@ -83,12 +83,3 @@ jobs:
               gh release delete-asset "$tag" "$asset" --yes && echo "Poistettu $tag: $asset"
             done
           done
-
-  pages:
-    # Selainversio Pagesiin main-haarasta (ympäristö sallii käyttöönoton vain mainista).
-    runs-on: ubuntu-latest
-    steps:
-      - name: Käynnistä Pages-vienti
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: gh workflow run pages.yml --repo "$GITHUB_REPOSITORY" --ref main

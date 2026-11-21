@@ -4,7 +4,8 @@ Avaruuslentopeli selaimessa ja työpöydällä (Windows, Linux, macOS), tehty Go
 kuille. Radat, laukaisuikkunat ja polttoaineen kulutus (Δv) lasketaan oikeilla taivaanmekaniikan kaavoilla, ja
 lentoa seurataan 3D-ohjaamosta.
 
-- Peli selaimessa: https://desmondx80.github.io/sisunautti/
+- Peli selaimessa: https://desmondx80.github.io/sisunautti/ (selainversiota ei toistaiseksi päivitetä, koska peli ei nyt
+  toimi selaimessa; osoitteessa on vanha versio)
 - Työpöytäversiot: [julkaisut](https://github.com/DesmondX80/sisunautti/releases) (Sisunautti-windows.zip, Sisunautti-linux.zip,
   Sisunautti-macos.zip)
   - macOS (Apple Silicon ja Intel, macOS 11 tai uudempi Apple Siliconilla, 10.15 Intelillä): pura zip ja siirrä
@@ -271,7 +272,7 @@ Ohjaamon pintakartat ovat hakemistossa `assets/textures/` (tasavälinen lieriöp
 GitHub-julkaisu (`gh release create vX.Y.Z`) käynnistää `release.yml`:n, joka vie Windows-, Linux- ja macOS-versiot ja
 liittää ne julkaisuun (Sisunautti-windows.zip, Sisunautti-linux.zip, Sisunautti-macos.zip). Liitteet säilyvät viidessä uusimmassa
 julkaisussa; vanhemmista ne poistetaan (julkaisutiedot ja tagi jäävät, ja liitteet voi rakentaa tagista uudelleen
-`release.yml`:n käsiajolla). Lopuksi työnkulku käynnistää `main`-haarasta `pages.yml`:n,
-joka vie selainversion (Compatibility, `web_nothreads`-pohja) GitHub Pagesiin. Pagesiin kopioidaan myös `tools/web/sw.js`,
-joka korvaa vanhan selainversion service workerin ja poistaa sen. `ci.yml` ajaa ikkunattomat testit jokaisesta
+`release.yml`:n käsiajolla). Selainversion vienti GitHub Pagesiin (`pages.yml`: Compatibility, `web_nothreads`-pohja,
+lisäksi `tools/web/sw.js`, joka korvaa vanhan selainversion service workerin ja poistaa sen) on toistaiseksi pois
+käytöstä, koska peli ei nyt toimi selaimessa: julkaisut eivät käynnistä sitä, mutta sen voi ajaa käsin `main`-haarasta. `ci.yml` ajaa ikkunattomat testit jokaisesta
 pushista.

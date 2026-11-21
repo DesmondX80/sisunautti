@@ -1,6 +1,6 @@
-# Selainversio GitHub Pagesiin: Godotin web-vienti (Compatibility, web_nothreads). Julkaisutyönkulku (release.yml)
-# käynnistää tämän main-haarasta, koska github-pages-ympäristö sallii käyttöönoton vain mainista; käsin
-# Actions-välilehdeltä. Peli: https://desmondx80.github.io/sisunautti/
+# Selainversio GitHub Pagesiin: Godotin web-vienti (Compatibility, web_nothreads). Vienti on toistaiseksi pois
+# käytöstä (peli ei nyt toimi selaimessa): julkaisut eivät enää käynnistä tätä. Käsin Actions-välilehdeltä main-
+# haarasta, kun selainversio korjataan (#56). Peli: https://desmondx80.github.io/sisunautti/
 name: Pages
 
 on:

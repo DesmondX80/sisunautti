@@ -1,7 +1,8 @@
 # Sisunautti – ohjeet Claudelle
 
 Avaruuslentopeli: Maan pinnalta kiertoradalle ja planeetoille oikeilla taivaanmekaniikan
-kaavoilla, Godot 4.7. Julkaistaan selaimeen (GitHub Pages, Compatibility) ja työpöydälle (Windows, Linux, macOS).
+kaavoilla, Godot 4.7. Julkaistaan työpöydälle (Windows, Linux, macOS). Selainversion (GitHub Pages, Compatibility) vienti on
+toistaiseksi pois käytöstä, koska peli ei nyt toimi selaimessa (selain ja mobiili myöhemmin, #56).
 Vanha JS-selainversio poistettiin versiossa 1.0.0; sen tallennukset tuodaan selaimessa localStoragesta.
 
 ## Kieli
@@ -55,13 +56,13 @@ Vanha JS-selainversio poistettiin versiossa 1.0.0; sen tallennukset tuodaan sela
   Jos ratamekaniikkaa muutetaan tarkoituksella, vertailuarvot päivitetään (ks. `tools/make_orbit_reference.mjs`).
 - Uudessa työkopiossa aja ensin `godot --headless --import`.
 - CI (`.github/workflows/ci.yml`) ajaa Godot-testit (Godot 4.7.2 välimuistista). Julkaisu käynnistää `release.yml`:n
-  (Windows-, Linux- ja macOS-liitteet), joka käynnistää `pages.yml`:n main-haarasta (selainversio).
+  (Windows-, Linux- ja macOS-liitteet). `pages.yml` (selainversio) ajetaan vain käsin, ja se on toistaiseksi pois käytöstä.
 
 ## Työtapa
 
 1. Issue GitHubista → assign itselle.
 2. Toteutus ja testit, README ajan tasalle.
-3. Commit (`Closes #N`) → push `main`-haaraan → tarkista CI- ja Pages-ajot.
+3. Commit (`Closes #N`) → push `main`-haaraan → tarkista CI-ajo.
 4. Suomenkielinen kommentti issueen: tehdyt asiat (rastit), varaumat ja testaamatta jääneet.
 5. Versionnosto (`project.godot`, `export_presets.cfg`) → GitHub-julkaisu `vX.Y.Z`
    suomenkielisin julkaisutiedoin (`gh release create`).
